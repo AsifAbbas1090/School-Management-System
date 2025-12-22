@@ -45,7 +45,7 @@ const DashboardLayout = () => {
         }}
       />
 
-      <style jsx>{`
+      <style>{`
         .dashboard-layout {
           display: flex;
           min-height: 100vh;

@@ -3,15 +3,18 @@ import { DollarSign, Download, Receipt, CreditCard, Search, Upload, Send, Histor
 import { mockData } from '../../services/mockData';
 import { formatCurrency, formatDate, generateReceiptNumber } from '../../utils';
 import { printTable } from '../../utils/printUtils';
+import { generatePaymentReceipt } from '../../utils/pdfGenerator';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import CSVImport from '../../components/common/CSVImport';
-import { useAuthStore, useFeesStore } from '../../store';
+import { useAuthStore, useFeesStore, useSchoolStore } from '../../store';
+import { USER_ROLES } from '../../constants';
 import toast from 'react-hot-toast';
 
 const FeesPage = () => {
     const { user } = useAuthStore();
-    const { handoverRecords, addHandoverRecord, addFeePayment } = useFeesStore();
+    const { handoverRecords, addHandoverRecord, addFeePayment, feePayments: storePayments } = useFeesStore();
+    const { currentSchool, schools } = useSchoolStore();
 
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
@@ -22,9 +25,15 @@ const FeesPage = () => {
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('cash');
+    const [handoverAmount, setHandoverAmount] = useState('');
 
     const students = mockData.students;
-    const feePayments = mockData.feePayments;
+    // Combine mock data and store payments
+    const feePayments = [...mockData.feePayments, ...(storePayments || [])];
+
+    // Calculate totals
+    const totalCollected = feePayments.reduce((sum, p) => sum + p.paidAmount, 0);
+    const totalPending = feePayments.reduce((sum, p) => sum + p.dueAmount, 0);
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
@@ -32,8 +41,10 @@ const FeesPage = () => {
     ];
 
     // Permission check
-    const canViewRevenue = ['admin', 'management', 'super_admin'].includes(user?.role);
-    const canManageFees = ['admin', 'management', 'super_admin'].includes(user?.role);
+    const canViewRevenue = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+    const canManageFees = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+    const canHandover = user?.role === USER_ROLES.MANAGEMENT; // Only Management can hand over
+    const canViewHandovers = user?.role === USER_ROLES.ADMIN; // Only Admin can view handovers
 
     const handlePaymentClick = (student) => {
         setSelectedStudent(student);
@@ -47,10 +58,90 @@ const FeesPage = () => {
         }
 
         const receiptNumber = generateReceiptNumber();
+
+        // Add payment to store
+        addFeePayment({
+            id: `payment_${Date.now()}`,
+            studentId: selectedStudent.id,
+            paidAmount: parseFloat(paymentAmount),
+            dueAmount: getStudentFeeStatus(selectedStudent.id).dueAmount - parseFloat(paymentAmount),
+            status: parseFloat(paymentAmount) >= getStudentFeeStatus(selectedStudent.id).dueAmount ? 'paid' : 'partial',
+            date: new Date(),
+            paymentMethod: paymentMethod,
+            receiptNumber: receiptNumber,
+            remarks: 'Payment collected'
+        });
+
         toast.success(`Payment received! Receipt: ${receiptNumber}`);
         setShowPaymentModal(false);
         setPaymentAmount('');
         setSelectedStudent(null);
+    };
+
+    const handleDownloadReceipt = async (student) => {
+        try {
+            const feeStatus = getStudentFeeStatus(student.id);
+
+            // Get student's class info
+            const studentClass = mockData.classes.find(c => c.id === student.classId);
+            const studentSection = mockData.sections.find(s => s.id === student.sectionId);
+            const parent = mockData.parents.find(p => p.id === student.parentId);
+
+            // Get latest payment record (prioritize paid payments)
+            const studentPayments = feePayments
+                .filter(p => p.studentId === student.id && (p.paidAmount > 0 || p.status === 'paid'))
+                .sort((a, b) => {
+                    const dateA = a.paidDate || a.date || a.createdAt || new Date(0);
+                    const dateB = b.paidDate || b.date || b.createdAt || new Date(0);
+                    return new Date(dateB) - new Date(dateA);
+                });
+
+            const payment = studentPayments[0];
+
+            // If no payment found but there's paid amount in status, create a mock payment
+            const paymentData = {
+                receiptNumber: payment?.receiptNumber || generateReceiptNumber(),
+                amount: payment?.paidAmount || feeStatus.paidAmount || 0,
+                paidDate: payment?.paidDate || payment?.date || payment?.createdAt || new Date(),
+                paymentMethod: payment?.paymentMethod || 'Cash',
+                feeType: 'Monthly Tuition Fee',
+                transactionId: payment?.transactionId || null,
+                remarks: payment?.remarks || null,
+            };
+
+            const studentData = {
+                name: student.name,
+                rollNumber: student.rollNumber,
+                className: studentClass ? `Class ${studentClass.grade}${studentSection ? ` - Section ${studentSection.name}` : ''}` : 'N/A',
+                fatherName: parent?.name || 'N/A',
+                phone: parent?.phone || student.phone || 'N/A',
+                contact: parent?.phone || student.phone || 'N/A',
+            };
+
+            // Get school data for PDF
+            const schoolData = currentSchool || schools[0] || null;
+            const schoolInfo = schoolData ? {
+                name: schoolData.name,
+                logo: schoolData.logo,
+                principalName: schoolData.principalName,
+                ownerName: schoolData.ownerName,
+                address: schoolData.address,
+                phone: schoolData.phone,
+                email: schoolData.email,
+            } : null;
+
+            // Generate and download PDF
+            const result = await generatePaymentReceipt(paymentData, studentData, schoolInfo);
+
+            if (result.success) {
+                toast.success('Receipt downloaded successfully!');
+            } else {
+                toast.error('Failed to generate receipt: ' + (result.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Error generating receipt:', error);
+            toast.error('Failed to generate receipt. Please try again.');
+        }
     };
 
     const handleImportFees = (data) => {
@@ -84,20 +175,35 @@ const FeesPage = () => {
     };
 
     const handleHandoverSubmit = () => {
-        // Calculate amount to handover (e.g. today's collection)
-        // For mock, just use a dummy amount
-        const amount = 50000;
+        const submittedAmount = parseFloat(handoverAmount);
+
+        if (isNaN(submittedAmount) || submittedAmount <= 0) {
+            toast.error('Please enter a valid amount');
+            return;
+        }
+
+        if (submittedAmount > totalCollected) {
+            toast.error('Cannot submit more than collected amount');
+            return;
+        }
+
+        const remainingBackup = totalCollected - submittedAmount;
 
         addHandoverRecord({
             id: Date.now(),
-            amount,
+            amount: submittedAmount,
+            collectedTotal: totalCollected,
+            backupAmount: remainingBackup,
             submittedBy: user?.name || 'Unknown',
+            submittedById: user?.id || null,
+            submittedByRole: user?.role || USER_ROLES.MANAGEMENT,
             date: new Date(),
-            campusId: 'campus1', // dynamic in real app
+            campusId: 'campus1',
         });
 
-        toast.success(`Successfully handed over ${formatCurrency(amount)}`);
+        toast.success(`Successfully handed over ${formatCurrency(submittedAmount)}. Backup: ${formatCurrency(remainingBackup)}`);
         setShowHandoverModal(false);
+        setHandoverAmount('');
     };
 
     const getStudentFeeStatus = (studentId) => {
@@ -111,6 +217,11 @@ const FeesPage = () => {
     };
 
     const filteredStudents = students.filter((student) => {
+        // If parent, only show their children
+        if (user?.role === USER_ROLES.PARENT) {
+            if (student.parentId !== user.id) return false;
+        }
+
         const feeStatus = getStudentFeeStatus(student.id);
         const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             student.rollNumber.toLowerCase().includes(searchTerm.toLowerCase());
@@ -119,8 +230,7 @@ const FeesPage = () => {
         return matchesSearch && matchesStatus;
     });
 
-    const totalCollected = feePayments.reduce((sum, p) => sum + p.paidAmount, 0);
-    const totalPending = feePayments.reduce((sum, p) => sum + p.dueAmount, 0);
+
 
     const handleExportPDF = () => {
         const data = filteredStudents.map(s => {
@@ -169,10 +279,12 @@ const FeesPage = () => {
                             <Upload size={18} />
                             <span>Import via CSV</span>
                         </button>
-                        <button className="btn btn-primary" onClick={() => setShowHandoverModal(true)}>
-                            <Send size={18} />
-                            <span>Submit Handover</span>
-                        </button>
+                        {canHandover && (
+                            <button className="btn btn-primary" onClick={() => setShowHandoverModal(true)}>
+                                <Send size={18} />
+                                <span>Submit Handover</span>
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -217,6 +329,67 @@ const FeesPage = () => {
                         <div>
                             <div className="stat-value">{handoverRecords?.length || 0}</div>
                             <div className="stat-label">Handovers</div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Handover Records - Admin View */}
+            {canViewHandovers && handoverRecords && handoverRecords.length > 0 && (
+                <div className="card mb-lg">
+                    <div className="card-header">
+                        <h3 className="card-title">Handover Records</h3>
+                        <p className="text-sm text-gray-600">Money received from Management</p>
+                    </div>
+                    <div className="table-container">
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Date & Time</th>
+                                    <th>Handed Over By</th>
+                                    <th>Amount</th>
+                                    <th>Total Collected</th>
+                                    <th>Backup Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {handoverRecords
+                                    .sort((a, b) => new Date(b.date) - new Date(a.date))
+                                    .map((record) => (
+                                        <tr key={record.id}>
+                                            <td>{formatDate(record.date)}</td>
+                                            <td>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
+                                                        <span className="text-primary-600 font-semibold text-xs">
+                                                            {record.submittedBy?.charAt(0) || 'M'}
+                                                        </span>
+                                                    </div>
+                                                    <span className="font-medium">{record.submittedBy || 'Management'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="font-semibold text-success-600">
+                                                {formatCurrency(record.amount)}
+                                            </td>
+                                            <td>{formatCurrency(record.collectedTotal || 0)}</td>
+                                            <td className="text-gray-600">
+                                                {formatCurrency(record.backupAmount || 0)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="card-footer">
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">
+                                Total Handovers: {handoverRecords.length}
+                            </span>
+                            <span className="text-sm font-semibold text-success-600">
+                                Total Received: {formatCurrency(
+                                    handoverRecords.reduce((sum, r) => sum + (r.amount || 0), 0)
+                                )}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -294,7 +467,12 @@ const FeesPage = () => {
                                                     <span>Pay</span>
                                                 </button>
                                             )}
-                                            <button className="btn btn-sm btn-outline">
+                                            <button
+                                                className="btn btn-sm btn-outline"
+                                                onClick={() => handleDownloadReceipt(student)}
+                                                disabled={feeStatus.paidAmount === 0}
+                                                title={feeStatus.paidAmount === 0 ? 'No payment recorded yet' : 'Download Receipt'}
+                                            >
                                                 <Receipt size={16} />
                                                 <span>Receipt</span>
                                             </button>
@@ -389,16 +567,41 @@ const FeesPage = () => {
                 }
             >
                 <div className="p-4">
-                    <p className="mb-4">You are about to submit the collected fees. This action cannot be undone.</p>
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                        <div className="flex justify-between mb-2">
-                            <span className="text-gray-600">Total Collected Today:</span>
-                            <span className="font-bold">{formatCurrency(50000)}</span>
+                    <p className="mb-4 text-gray-600">Please enter the amount you want to submit from the collected fees.</p>
+
+                    <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-gray-600">Total Collected:</span>
+                            <span className="font-bold text-lg">{formatCurrency(totalCollected)}</span>
                         </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-600">Handover To:</span>
-                            <span className="font-medium">Account / Admin</span>
+                    </div>
+
+                    <div className="form-group mb-4">
+                        <label className="form-label">Amount to Submit</label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">PKR</span>
+                            <input
+                                type="number"
+                                className="input pl-12"
+                                placeholder="0"
+                                value={handoverAmount}
+                                onChange={(e) => setHandoverAmount(e.target.value)}
+                            />
                         </div>
+                    </div>
+
+                    {/* Dynamic Backup Calculation */}
+                    <div className="flex justify-between items-center p-3 border rounded-md bg-white">
+                        <span className="text-gray-600">Remaining (Backup):</span>
+                        <span className={`font-bold ${(totalCollected - (parseFloat(handoverAmount) || 0)) < 0 ? 'text-error-600' : 'text-success-600'
+                            }`}>
+                            {formatCurrency(totalCollected - (parseFloat(handoverAmount) || 0))}
+                        </span>
+                    </div>
+
+                    <div className="flex justify-between mt-4">
+                        <span className="text-gray-700 font-medium">Handover To:</span>
+                        <span className="font-semibold text-primary-700">School Admin</span>
                     </div>
                 </div>
             </Modal>
@@ -412,7 +615,7 @@ const FeesPage = () => {
                 />
             )}
 
-            <style jsx>{`
+            <style>{`
         .fees-page {
           animation: fadeIn 0.3s ease-in-out;
         }
@@ -429,6 +632,24 @@ const FeesPage = () => {
           font-weight: 700;
           color: var(--gray-900);
           margin-bottom: var(--spacing-xs);
+        }
+
+        .card-header {
+          padding: var(--spacing-lg);
+          border-bottom: 1px solid var(--gray-200);
+        }
+
+        .card-title {
+          font-size: 1.25rem;
+          font-weight: 600;
+          color: var(--gray-900);
+          margin-bottom: var(--spacing-xs);
+        }
+
+        .card-footer {
+          padding: var(--spacing-lg);
+          border-top: 1px solid var(--gray-200);
+          background: var(--gray-50);
         }
 
         .stat-card {

@@ -1,223 +1,224 @@
 import React, { useState } from 'react';
 import { Send, Inbox, Mail, Search } from 'lucide-react';
-import { useMessagesStore } from '../../store';
+import { useMessagesStore, useAuthStore } from '../../store';
 import { getRelativeTime } from '../../utils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import Avatar from '../../components/common/Avatar';
+import { AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const MessagesPage = () => {
-    const { messages, setMessages, addMessage, markAsRead } = useMessagesStore();
-    const [viewMode, setViewMode] = useState('inbox');
-    const [showComposeModal, setShowComposeModal] = useState(false);
-    const [selectedMessage, setSelectedMessage] = useState(null);
-    const [searchTerm, setSearchTerm] = useState('');
+  const { user } = useAuthStore();
+  const { messages, setMessages, addMessage, markAsRead } = useMessagesStore();
+  const [viewMode, setViewMode] = useState('inbox');
+  const [showComposeModal, setShowComposeModal] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
-    const breadcrumbItems = [
-        { label: 'Dashboard', path: '/dashboard' },
-        { label: 'Messages', path: null },
-    ];
+  const breadcrumbItems = [
+    { label: 'Dashboard', path: '/dashboard' },
+    { label: 'Messages', path: null },
+  ];
 
-    React.useEffect(() => {
-        setMessages([
-            {
-                id: '1',
-                senderId: 'parent1',
-                senderName: 'Michael Brown',
-                receiverId: 'teacher1',
-                subject: 'Question about homework',
-                content: 'Hello, I wanted to ask about the mathematics homework assigned yesterday.',
-                isRead: false,
-                createdAt: new Date(Date.now() - 3600000),
-            },
-            {
-                id: '2',
-                senderId: 'admin',
-                senderName: 'Admin',
-                receiverId: 'teacher1',
-                subject: 'Staff meeting reminder',
-                content: 'Reminder: Staff meeting tomorrow at 3 PM in the conference room.',
-                isRead: true,
-                readAt: new Date(),
-                createdAt: new Date(Date.now() - 86400000),
-            },
-        ]);
-    }, []);
-
-    const handleSendMessage = () => {
-        toast.success('Message sent successfully');
-        setShowComposeModal(false);
-    };
-
-    const handleMessageClick = (message) => {
-        setSelectedMessage(message);
-        if (!message.isRead) {
-            markAsRead(message.id);
+  React.useEffect(() => {
+    // Only initialize if empty to avoid overwriting real messages
+    if (messages.length === 0) {
+      setMessages([
+        {
+          id: '1',
+          senderId: 'parent1',
+          senderName: 'Michael Brown',
+          receiverId: user?.id,
+          subject: 'Welcome to Messaging',
+          content: 'Hello, this is your internal school messaging system. You can communicate with teachers and administrators here.',
+          isRead: false,
+          createdAt: new Date(Date.now() - 3600000),
         }
-    };
+      ]);
+    }
+  }, [user?.id]);
 
-    const filteredMessages = messages.filter(msg =>
-        msg.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        msg.senderName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  const handleSendMessage = () => {
+    toast.success('Message sent successfully');
+    setShowComposeModal(false);
+  };
 
-    return (
-        <div className="messages-page">
-            <Breadcrumb items={breadcrumbItems} />
+  const handleMessageClick = (message) => {
+    setSelectedMessage(message);
+    if (!message.isRead) {
+      markAsRead(message.id);
+    }
+  };
 
-            <div className="page-header">
-                <div>
-                    <h1>Messages</h1>
-                    <p className="text-gray-600">Internal communication system</p>
-                </div>
-                <button className="btn btn-primary" onClick={() => setShowComposeModal(true)}>
-                    <Send size={18} />
-                    <span>Compose Message</span>
-                </button>
-            </div>
+  // SECURE FILTERING: Only show messages where the user is sender or receiver
+  const visibleMessages = messages.filter(msg => {
+    const isParticipant = msg.receiverId === user?.id || msg.senderId === user?.id;
+    const matchesMode = viewMode === 'inbox' ? msg.receiverId === user?.id : msg.senderId === user?.id;
+    return isParticipant && matchesMode;
+  });
 
-            <div className="messages-container">
-                {/* Sidebar */}
-                <div className="messages-sidebar">
-                    <div className="search-box mb-md">
-                        <Search size={18} className="search-icon" />
-                        <input
-                            type="text"
-                            placeholder="Search messages..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="input"
-                        />
-                    </div>
+  const filteredMessages = visibleMessages.filter(msg =>
+    msg.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    msg.senderName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-                    <div className="sidebar-menu">
-                        <button
-                            className={`menu-item ${viewMode === 'inbox' ? 'active' : ''}`}
-                            onClick={() => setViewMode('inbox')}
-                        >
-                            <Inbox size={18} />
-                            <span>Inbox</span>
-                            <span className="badge badge-primary">{messages.filter(m => !m.isRead).length}</span>
-                        </button>
-                        <button
-                            className={`menu-item ${viewMode === 'sent' ? 'active' : ''}`}
-                            onClick={() => setViewMode('sent')}
-                        >
-                            <Send size={18} />
-                            <span>Sent</span>
-                        </button>
-                    </div>
-                </div>
+  return (
+    <div className="messages-page">
+      <Breadcrumb items={breadcrumbItems} />
 
-                {/* Messages List */}
-                <div className="messages-list">
-                    {filteredMessages.length === 0 ? (
-                        <div className="empty-state">
-                            <div className="empty-state-icon">📬</div>
-                            <h3 className="empty-state-title">No messages</h3>
-                            <p className="empty-state-description">Your inbox is empty</p>
-                        </div>
-                    ) : (
-                        filteredMessages.map((message) => (
-                            <div
-                                key={message.id}
-                                className={`message-item ${!message.isRead ? 'unread' : ''} ${selectedMessage?.id === message.id ? 'selected' : ''}`}
-                                onClick={() => handleMessageClick(message)}
-                            >
-                                <Avatar name={message.senderName} size="sm" />
-                                <div className="message-preview">
-                                    <div className="message-header">
-                                        <span className="sender-name">{message.senderName}</span>
-                                        <span className="message-time">{getRelativeTime(message.createdAt)}</span>
-                                    </div>
-                                    <div className="message-subject">{message.subject}</div>
-                                    <div className="message-snippet">{message.content}</div>
-                                </div>
-                                {!message.isRead && <div className="unread-dot"></div>}
-                            </div>
-                        ))
-                    )}
-                </div>
+      <div className="page-header">
+        <div>
+          <h1>Messages</h1>
+          <p className="text-gray-600">Internal communication system</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => setShowComposeModal(true)}>
+          <Send size={18} />
+          <span>Compose Message</span>
+        </button>
+      </div>
 
-                {/* Message Detail */}
-                <div className="message-detail">
-                    {selectedMessage ? (
-                        <>
-                            <div className="detail-header">
-                                <div className="flex items-center gap-md">
-                                    <Avatar name={selectedMessage.senderName} size="md" />
-                                    <div>
-                                        <h3 className="sender-name">{selectedMessage.senderName}</h3>
-                                        <p className="message-time">{getRelativeTime(selectedMessage.createdAt)}</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="detail-subject">
-                                <h2>{selectedMessage.subject}</h2>
-                            </div>
-                            <div className="detail-content">
-                                <p>{selectedMessage.content}</p>
-                            </div>
-                            <div className="detail-actions">
-                                <button className="btn btn-primary">
-                                    <Send size={18} />
-                                    <span>Reply</span>
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="empty-state">
-                            <div className="empty-state-icon">✉️</div>
-                            <h3 className="empty-state-title">Select a message</h3>
-                            <p className="empty-state-description">Choose a message to read</p>
-                        </div>
-                    )}
-                </div>
-            </div>
+      <div className="messages-container">
+        {/* Sidebar */}
+        <div className="messages-sidebar">
+          <div className="search-box mb-md">
+            <Search size={18} className="search-icon" />
+            <input
+              type="text"
+              placeholder="Search messages..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input"
+            />
+          </div>
 
-            {/* Compose Modal */}
-            <Modal
-                isOpen={showComposeModal}
-                onClose={() => setShowComposeModal(false)}
-                title="Compose Message"
-                size="lg"
-                footer={
-                    <>
-                        <button className="btn btn-outline" onClick={() => setShowComposeModal(false)}>
-                            Cancel
-                        </button>
-                        <button className="btn btn-primary" onClick={handleSendMessage}>
-                            <Send size={18} />
-                            <span>Send</span>
-                        </button>
-                    </>
-                }
+          <div className="sidebar-menu">
+            <button
+              className={`menu-item ${viewMode === 'inbox' ? 'active' : ''}`}
+              onClick={() => setViewMode('inbox')}
             >
-                <form>
-                    <div className="form-group">
-                        <label className="form-label">To *</label>
-                        <select className="select">
-                            <option value="">Select recipient</option>
-                            <option value="teacher">Teachers</option>
-                            <option value="parent">Parents</option>
-                            <option value="admin">Admin</option>
-                        </select>
-                    </div>
+              <Inbox size={18} />
+              <span>Inbox</span>
+              <span className="badge badge-primary">{visibleMessages.filter(m => !m.isRead && m.receiverId === user?.id).length}</span>
+            </button>
+            <button
+              className={`menu-item ${viewMode === 'sent' ? 'active' : ''}`}
+              onClick={() => setViewMode('sent')}
+            >
+              <Send size={18} />
+              <span>Sent</span>
+            </button>
+          </div>
+        </div>
 
-                    <div className="form-group">
-                        <label className="form-label">Subject *</label>
-                        <input type="text" className="input" placeholder="Enter subject" />
-                    </div>
+        {/* Messages List */}
+        <div className="messages-list">
+          {filteredMessages.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">📬</div>
+              <h3 className="empty-state-title">No messages</h3>
+              <p className="empty-state-description">Your inbox is empty</p>
+            </div>
+          ) : (
+            filteredMessages.map((message) => (
+              <div
+                key={message.id}
+                className={`message-item ${!message.isRead ? 'unread' : ''} ${selectedMessage?.id === message.id ? 'selected' : ''}`}
+                onClick={() => handleMessageClick(message)}
+              >
+                <Avatar name={message.senderName} size="sm" />
+                <div className="message-preview">
+                  <div className="message-header">
+                    <span className="sender-name">{message.senderName}</span>
+                    <span className="message-time">{getRelativeTime(message.createdAt)}</span>
+                  </div>
+                  <div className="message-subject">{message.subject}</div>
+                  <div className="message-snippet">{message.content}</div>
+                </div>
+                {!message.isRead && <div className="unread-dot"></div>}
+              </div>
+            ))
+          )}
+        </div>
 
-                    <div className="form-group">
-                        <label className="form-label">Message *</label>
-                        <textarea className="textarea" placeholder="Type your message" rows="8" />
-                    </div>
-                </form>
-            </Modal>
+        {/* Message Detail */}
+        <div className="message-detail">
+          {selectedMessage ? (
+            <>
+              <div className="detail-header">
+                <div className="flex items-center gap-md">
+                  <Avatar name={selectedMessage.senderName} size="md" />
+                  <div>
+                    <h3 className="sender-name">{selectedMessage.senderName}</h3>
+                    <p className="message-time">{getRelativeTime(selectedMessage.createdAt)}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="detail-subject">
+                <h2>{selectedMessage.subject}</h2>
+              </div>
+              <div className="detail-content">
+                <p>{selectedMessage.content}</p>
+              </div>
+              <div className="detail-actions">
+                <button className="btn btn-primary">
+                  <Send size={18} />
+                  <span>Reply</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-state-icon">✉️</div>
+              <h3 className="empty-state-title">Select a message</h3>
+              <p className="empty-state-description">Choose a message to read</p>
+            </div>
+          )}
+        </div>
+      </div>
 
-            <style jsx>{`
+      {/* Compose Modal */}
+      <Modal
+        isOpen={showComposeModal}
+        onClose={() => setShowComposeModal(false)}
+        title="Compose Message"
+        size="lg"
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={() => setShowComposeModal(false)}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" onClick={handleSendMessage}>
+              <Send size={18} />
+              <span>Send</span>
+            </button>
+          </>
+        }
+      >
+        <form>
+          <div className="form-group">
+            <label className="form-label">To *</label>
+            <select className="select">
+              <option value="">Select recipient</option>
+              <option value="teacher">Teachers</option>
+              <option value="parent">Parents</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Subject *</label>
+            <input type="text" className="input" placeholder="Enter subject" />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Message *</label>
+            <textarea className="textarea" placeholder="Type your message" rows="8" />
+          </div>
+        </form>
+      </Modal>
+
+      <style>{`
         .messages-page {
           animation: fadeIn 0.3s ease-in-out;
         }
@@ -422,8 +423,8 @@ const MessagesPage = () => {
           }
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 };
 
 export default MessagesPage;

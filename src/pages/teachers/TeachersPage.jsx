@@ -1,18 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Search, Edit, Trash2, Download, UserCheck, Upload } from 'lucide-react';
-import { useTeachersStore, useClassesStore } from '../../store';
+import { useTeachersStore, useClassesStore, useAuthStore, useSchoolStore } from '../../store';
+import { USER_ROLES } from '../../constants';
 import { mockData } from '../../services/mockData';
-import { formatDate, exportToCSV, generateId } from '../../utils';
+import { formatDate, exportToCSV, generateId, formatCurrency } from '../../utils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import Avatar from '../../components/common/Avatar';
 import CSVImport from '../../components/common/CSVImport';
 import Loading from '../../components/common/Loading';
+import { AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const TeachersPage = () => {
-    const { teachers, setTeachers, addTeacher, updateTeacher, deleteTeacher } = useTeachersStore();
-    const { subjects, setSubjects } = useClassesStore();
+    const { user } = useAuthStore();
+    const canManageTeachers = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+
+    const { teachers, setTeachers, addTeacher, updateTeacher, deleteTeacher, getTeachersBySchool } = useTeachersStore();
+    const { subjects, addSubject, setSubjects, getSubjectsBySchool } = useClassesStore();
+    const { currentSchool } = useSchoolStore();
+
+    if (!canManageTeachers) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+                <AlertCircle size={64} className="text-error-500 mb-4" />
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">You do not have permission to access teachers management. This area is restricted to administrators and school management only.</p>
+            </div>
+        );
+    }
 
     const [searchTerm, setSearchTerm] = useState('');
     const [filterSubject, setFilterSubject] = useState('');
@@ -28,6 +44,7 @@ const TeachersPage = () => {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
+        password: '',
         employeeId: '',
         phone: '',
         gender: 'male',
@@ -39,15 +56,34 @@ const TeachersPage = () => {
         status: 'active',
     });
 
+    const [customSubject, setCustomSubject] = useState('');
     const [errors, setErrors] = useState({});
 
     useEffect(() => {
         loadData();
-    }, []);
+    }, [currentSchool]);
 
     const loadData = () => {
-        setTeachers(mockData.teachers);
-        setSubjects(mockData.subjects);
+        // Load school-specific data
+        if (currentSchool) {
+            const schoolDataKey = `school_data_${currentSchool.id}`;
+            const storedData = localStorage.getItem(schoolDataKey);
+            
+            if (storedData) {
+                const schoolData = JSON.parse(storedData);
+                setTeachers(schoolData.teachers || []);
+                setSubjects(schoolData.subjects || []);
+            } else {
+                // Filter by school
+                const schoolTeachers = mockData.teachers.filter(t => t.schoolId === currentSchool.id);
+                const schoolSubjects = mockData.subjects.filter(s => s.schoolId === currentSchool.id);
+                setTeachers(schoolTeachers);
+                setSubjects(schoolSubjects);
+            }
+        } else {
+            setTeachers(mockData.teachers);
+            setSubjects(mockData.subjects);
+        }
     };
 
     const breadcrumbItems = [
@@ -62,6 +98,7 @@ const TeachersPage = () => {
             setFormData({
                 name: teacher.name,
                 email: teacher.email,
+                password: teacher.password || '',
                 employeeId: teacher.employeeId,
                 phone: teacher.phone,
                 gender: teacher.gender,
@@ -82,6 +119,7 @@ const TeachersPage = () => {
         setFormData({
             name: '',
             email: '',
+            password: '',
             employeeId: '',
             phone: '',
             gender: 'male',
@@ -92,6 +130,7 @@ const TeachersPage = () => {
             joiningDate: '',
             status: 'active',
         });
+        setCustomSubject('');
         setErrors({});
         setSelectedTeacher(null);
     };
@@ -118,11 +157,33 @@ const TeachersPage = () => {
         }
     };
 
+    const handleAddSubject = () => {
+        if (!customSubject.trim()) return;
+
+        // Check if exists
+        const existing = subjects.find(s => s.name.toLowerCase() === customSubject.toLowerCase());
+        if (existing) {
+            if (!formData.subjectIds.includes(existing.id)) {
+                setFormData(prev => ({ ...prev, subjectIds: [...prev.subjectIds, existing.id] }));
+            }
+        } else {
+            const newId = `sub_${Date.now()}`;
+            addSubject({ id: newId, name: customSubject.trim() });
+            setFormData(prev => ({ ...prev, subjectIds: [...prev.subjectIds, newId] }));
+        }
+        setCustomSubject('');
+    };
+
+    const handleRemoveSubject = (id) => {
+        setFormData(prev => ({ ...prev, subjectIds: prev.subjectIds.filter(sid => sid !== id) }));
+    };
+
     const validate = () => {
         const newErrors = {};
 
         if (!formData.name.trim()) newErrors.name = 'Name is required';
         if (!formData.email.trim()) newErrors.email = 'Email is required';
+        if (!formData.password.trim() && modalMode === 'add') newErrors.password = 'Password is required';
         if (!formData.employeeId.trim()) newErrors.employeeId = 'Employee ID is required';
         if (!formData.phone.trim()) newErrors.phone = 'Phone is required';
         if (!formData.dateOfBirth) newErrors.dateOfBirth = 'Date of birth is required';
@@ -146,6 +207,9 @@ const TeachersPage = () => {
             joiningDate: new Date(formData.joiningDate),
             salary: parseFloat(formData.salary),
             classIds: [],
+            password: formData.password || selectedTeacher?.password || 'teacher123', // Keep existing password if editing
+            role: USER_ROLES.TEACHER,
+            schoolId: currentSchool?.id || null, // Link to school
             createdAt: selectedTeacher?.createdAt || new Date(),
             updatedAt: new Date(),
         };
@@ -196,10 +260,14 @@ const TeachersPage = () => {
     };
 
     const filteredTeachers = teachers.filter((teacher) => {
+        // Filter by school
+        const matchesSchool = !currentSchool || teacher.schoolId === currentSchool.id;
+        if (!matchesSchool) return false;
+        
         const matchesSearch = teacher.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             teacher.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
             teacher.employeeId.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesSubject = !filterSubject || teacher.subjectIds.includes(filterSubject);
+        const matchesSubject = !filterSubject || (teacher.subjectIds && teacher.subjectIds.includes(filterSubject));
         const matchesStatus = !filterStatus || teacher.status === filterStatus;
 
         return matchesSearch && matchesSubject && matchesStatus;
@@ -276,7 +344,7 @@ const TeachersPage = () => {
                             <th>Employee ID</th>
                             <th>Subjects</th>
                             <th>Phone</th>
-                            <th>Salary</th>
+                            <th>Salary (PKR)</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -309,9 +377,17 @@ const TeachersPage = () => {
                                         </div>
                                     </td>
                                     <td>{teacher.employeeId}</td>
-                                    <td className="text-sm">{getSubjectNames(teacher.subjectIds) || 'Not assigned'}</td>
+                                    <td className="text-sm">
+                                        <div className="flex flex-wrap gap-xs">
+                                            {(teacher.subjectIds || []).map(sid => {
+                                                const sub = subjects.find(s => s.id === sid);
+                                                return sub ? <span key={sid} className="badge badge-gray text-xs">{sub.name}</span> : null;
+                                            })}
+                                            {(!teacher.subjectIds || teacher.subjectIds.length === 0) && <span className="text-gray-400">Not assigned</span>}
+                                        </div>
+                                    </td>
                                     <td>{teacher.phone}</td>
-                                    <td className="font-medium">${teacher.salary.toLocaleString()}</td>
+                                    <td className="font-medium">{formatCurrency(teacher.salary)}</td>
                                     <td>
                                         <span className={`badge badge-${teacher.status === 'active' ? 'success' : 'gray'}`}>
                                             {teacher.status}
@@ -360,7 +436,7 @@ const TeachersPage = () => {
                 }
             >
                 <form className="teacher-form">
-                    <div className="grid grid-cols-2">
+                    <div className="grid grid-cols-2 gap-md">
                         <div className="form-group">
                             <label className="form-label">Full Name *</label>
                             <input
@@ -398,6 +474,23 @@ const TeachersPage = () => {
                                 placeholder="Enter email address"
                             />
                             {errors.email && <span className="form-error">{errors.email}</span>}
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Password {modalMode === 'add' ? '*' : ''}</label>
+                            <input
+                                type="text"
+                                name="password"
+                                value={formData.password}
+                                onChange={handleChange}
+                                className={`input ${errors.password ? 'input-error' : ''}`}
+                                placeholder="Set login password"
+                                disabled={modalMode === 'edit'}
+                            />
+                            {errors.password && <span className="form-error">{errors.password}</span>}
+                            {modalMode === 'edit' && (
+                                <p className="text-xs text-gray-500 mt-1">Password cannot be changed after creation</p>
+                            )}
                         </div>
 
                         <div className="form-group">
@@ -452,7 +545,7 @@ const TeachersPage = () => {
                         </div>
 
                         <div className="form-group">
-                            <label className="form-label">Salary *</label>
+                            <label className="form-label">Salary (PKR) *</label>
                             <input
                                 type="number"
                                 name="salary"
@@ -462,23 +555,6 @@ const TeachersPage = () => {
                                 placeholder="Enter salary"
                             />
                             {errors.salary && <span className="form-error">{errors.salary}</span>}
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Subjects</label>
-                            <select
-                                name="subjectIds"
-                                value={formData.subjectIds}
-                                onChange={handleChange}
-                                className="select"
-                                multiple
-                                size="4"
-                            >
-                                {subjects.map((subject) => (
-                                    <option key={subject.id} value={subject.id}>{subject.name}</option>
-                                ))}
-                            </select>
-                            <span className="text-xs text-gray-500">Hold Ctrl/Cmd to select multiple</span>
                         </div>
 
                         <div className="form-group">
@@ -495,7 +571,40 @@ const TeachersPage = () => {
                         </div>
                     </div>
 
-                    <div className="form-group">
+                    <div className="form-group mt-lg">
+                        <label className="form-label">Subjects (Search or Type Custom) *</label>
+                        <div className="flex gap-sm mb-sm">
+                            <input
+                                type="text"
+                                list="subject-list"
+                                value={customSubject}
+                                onChange={(e) => setCustomSubject(e.target.value)}
+                                className="input"
+                                placeholder="Type subject name..."
+                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubject())}
+                            />
+                            <datalist id="subject-list">
+                                {subjects.map(s => <option key={s.id} value={s.name} />)}
+                            </datalist>
+                            <button type="button" className="btn btn-primary" onClick={handleAddSubject}>Add</button>
+                        </div>
+                        <div className="flex flex-wrap gap-sm p-md bg-gray-50 rounded-lg border min-h-[50px]">
+                            {formData.subjectIds.map(sid => {
+                                const sub = subjects.find(s => s.id === sid);
+                                return sub ? (
+                                    <span key={sid} className="badge badge-primary flex items-center gap-xs">
+                                        {sub.name}
+                                        <button type="button" onClick={() => handleRemoveSubject(sid)} className="hover:text-error-200">
+                                            <Trash2 size={12} />
+                                        </button>
+                                    </span>
+                                ) : null;
+                            })}
+                            {formData.subjectIds.length === 0 && <span className="text-gray-400 text-sm">No subjects added yet</span>}
+                        </div>
+                    </div>
+
+                    <div className="form-group mt-md">
                         <label className="form-label">Address *</label>
                         <textarea
                             name="address"
@@ -503,7 +612,7 @@ const TeachersPage = () => {
                             onChange={handleChange}
                             className={`textarea ${errors.address ? 'input-error' : ''}`}
                             placeholder="Enter full address"
-                            rows="3"
+                            rows="2"
                         />
                         {errors.address && <span className="form-error">{errors.address}</span>}
                     </div>
@@ -546,7 +655,15 @@ const TeachersPage = () => {
                                 // Find subject IDs from names
                                 const subjectNames = row.subjects ? row.subjects.split(';') : [];
                                 const subjectIds = subjectNames
-                                    .map(name => subjects.find(s => s.name.toLowerCase() === name.trim().toLowerCase())?.id)
+                                    .map(name => {
+                                        const trimmed = name.trim();
+                                        const existing = subjects.find(s => s.name.toLowerCase() === trimmed.toLowerCase());
+                                        if (existing) return existing.id;
+                                        // Auto-create missing subjects from import
+                                        const newId = `sub_${generateId()}`;
+                                        addSubject({ id: newId, name: trimmed });
+                                        return newId;
+                                    })
                                     .filter(Boolean);
 
                                 addTeacher({
@@ -555,8 +672,8 @@ const TeachersPage = () => {
                                     email: row.email,
                                     employeeId: row.employeeId,
                                     phone: row.phone || '',
-                                    gender: 'male', // Default or parse if needed
-                                    dateOfBirth: new Date('1990-01-01'), // Default or parse
+                                    gender: 'male',
+                                    dateOfBirth: new Date('1990-01-01'),
                                     address: 'Address not provided',
                                     salary: parseFloat(row.salary),
                                     joiningDate: row.joiningDate ? new Date(row.joiningDate) : new Date(),
@@ -578,7 +695,7 @@ const TeachersPage = () => {
                 </Modal>
             )}
 
-            <style jsx>{`
+            <style>{`
         .teachers-page {
           animation: fadeIn 0.3s ease-in-out;
         }
@@ -624,8 +741,10 @@ const TeachersPage = () => {
         }
 
         .teacher-form {
-          max-height: 60vh;
+          max-height: 70vh;
           overflow-y: auto;
+          overflow-x: hidden;
+          padding: 5px;
         }
 
         @keyframes fadeIn {

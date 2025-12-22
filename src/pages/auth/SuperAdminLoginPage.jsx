@@ -96,13 +96,13 @@ const SuperAdminLoginPage = () => {
 
                     <div className="text-center mt-6">
                         <a href="/login" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
-                            Return to Standard Portal
+                            Return to School Portal
                         </a>
                     </div>
                 </form>
             </div>
 
-            <style jsx>{`
+            <style>{`
                 .super-admin-login {
                     min-height: 100vh;
                     background: #111827; /* Dark background */

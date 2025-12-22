@@ -1,13 +1,32 @@
-import React, { useState } from 'react';
-import { Building, Users, MapPin, Plus, TrendingUp, Settings, School, Activity } from 'lucide-react';
-import Modal from '../../components/common/Modal';
-import { useSchoolStore } from '../../store';
+import React from 'react';
+import { Building, Users, MapPin, Plus, TrendingUp, Settings, School, ShieldAlert } from 'lucide-react';
+import { useSchoolStore, useAuthStore } from '../../store';
+import { USER_ROLES } from '../../constants';
 import { formatDate } from '../../utils';
-import toast from 'react-hot-toast';
 
 const SuperAdminDashboard = () => {
-    const { schools, addSchool, setCurrentSchool } = useSchoolStore();
-    const [showSchoolModal, setShowSchoolModal] = useState(false);
+    const { user } = useAuthStore();
+    const { schools, setCurrentSchool } = useSchoolStore();
+
+    const isAuthorized = user?.role === USER_ROLES.SUPER_ADMIN;
+
+    if (!isAuthorized) {
+        return (
+            <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
+                <ShieldAlert size={64} className="text-error mb-md" />
+                <h1 className="text-2xl font-bold mb-sm">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">
+                    You do not have permission to view the super admin dashboard.
+                </p>
+                <button
+                    className="btn btn-primary mt-lg"
+                    onClick={() => window.history.back()}
+                >
+                    Go Back
+                </button>
+            </div>
+        );
+    }
 
     // Mock Global Stats
     const stats = {
@@ -15,24 +34,6 @@ const SuperAdminDashboard = () => {
         totalStudents: 12500,
         totalRevenue: 5200000,
         activeCampuses: 8
-    };
-
-    const handleCreateSchool = (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-
-        addSchool({
-            id: `school_${Date.now()}`,
-            name: formData.get('name'),
-            code: formData.get('code'),
-            address: formData.get('address'),
-            contactEmail: formData.get('email'),
-            status: 'active',
-            createdAt: new Date(),
-        });
-
-        toast.success('New school created successfully');
-        setShowSchoolModal(false);
     };
 
     const handleEnterSchool = (school) => {
@@ -49,9 +50,9 @@ const SuperAdminDashboard = () => {
                     <p className="text-gray-600">Overview of all schools and global performance</p>
                 </div>
                 <div className="flex gap-md">
-                    <button className="btn btn-primary" onClick={() => setShowSchoolModal(true)}>
+                    <button className="btn btn-primary" onClick={() => window.location.href = '/schools'}>
                         <Plus size={18} />
-                        <span>Add New School</span>
+                        <span>Manage Schools</span>
                     </button>
                     <button className="btn btn-outline">
                         <Settings size={18} />
@@ -128,8 +129,8 @@ const SuperAdminDashboard = () => {
                                             {school.status}
                                         </span>
                                         <span className={`text-xs px-2 py-1 rounded-full ${school.subscriptionPlan === 'enterprise' ? 'bg-purple-100 text-purple-700' :
-                                                school.subscriptionPlan === 'premium' ? 'bg-amber-100 text-amber-700' :
-                                                    'bg-gray-100 text-gray-700'
+                                            school.subscriptionPlan === 'premium' ? 'bg-amber-100 text-amber-700' :
+                                                'bg-gray-100 text-gray-700'
                                             }`}>
                                             {school.subscriptionPlan?.toUpperCase()}
                                         </span>
@@ -166,67 +167,8 @@ const SuperAdminDashboard = () => {
                 </div>
             </div>
 
-            {/* Create School Modal */}
-            <Modal
-                isOpen={showSchoolModal}
-                onClose={() => setShowSchoolModal(false)}
-                title="Register New School"
-                size="lg"
-                footer={null} // Custom footer within form
-            >
-                <form onSubmit={handleCreateSchool} className="space-y-md">
-                    <div className="grid grid-cols-2 gap-md">
-                        <div className="form-group">
-                            <label className="form-label">School Name *</label>
-                            <input name="name" type="text" className="input" required placeholder="e.g. Springfield Academy" />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">School Code *</label>
-                            <input name="code" type="text" className="input" required placeholder="e.g. SPG01" />
-                        </div>
-                    </div>
 
-                    <div className="form-group">
-                        <label className="form-label">Logo URL</label>
-                        <input name="logo" type="url" className="input" placeholder="https://example.com/logo.png" />
-                        <p className="text-xs text-gray-500 mt-1">Direct link to school logo image (PNG/JPG)</p>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Address</label>
-                        <input name="address" type="text" className="input" placeholder="Full physical address" />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-md">
-                        <div className="form-group">
-                            <label className="form-label">Contact Email *</label>
-                            <input name="email" type="email" className="input" required />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Phone</label>
-                            <input name="phone" type="tel" className="input" />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-md">
-                        <div className="form-group">
-                            <label className="form-label">Subscription Plan</label>
-                            <select name="subscriptionPlan" className="select">
-                                <option value="standard">Standard Plan</option>
-                                <option value="premium">Premium Plan</option>
-                                <option value="enterprise">Enterprise Plan</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="flex justify-end gap-sm pt-md">
-                        <button type="button" className="btn btn-outline" onClick={() => setShowSchoolModal(false)}>Cancel</button>
-                        <button type="submit" className="btn btn-primary">Create School</button>
-                    </div>
-                </form>
-            </Modal>
-
-            <style jsx>{`
+            <style>{`
                 .super-admin-dashboard {
                     animation: fadeIn 0.3s ease-in-out;
                 }

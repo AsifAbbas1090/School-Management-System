@@ -112,26 +112,60 @@
 
 /* Dark Theme Variables */
 [data-theme="dark"] {
-  --gray-50: #0f172a;
-  --gray-100: #1e293b;
-  --gray-200: #334155;
-  --gray-300: #475569;
-  --gray-400: #64748b;
-  --gray-500: #94a3b8;
-  --gray-600: #cbd5e1;
-  --gray-700: #e2e8f0;
-  --gray-800: #f1f5f9;
-  --gray-900: #f8fafc;
+  /* Inverted Gray Scale for Dark Mode - Better Contrast */
+  --gray-50: #0a0e1a;
+  /* Darkest background */
+  --gray-100: #151b2e;
+  /* Card backgrounds */
+  --gray-200: #1f2937;
+  /* Input backgrounds, elevated surfaces */
+  --gray-300: #374151;
+  /* Borders, separators */
+  --gray-400: #6b7280;
+  /* Disabled text, placeholders */
+  --gray-500: #9ca3af;
+  /* Secondary text */
+  --gray-600: #d1d5db;
+  /* Primary text (lighter) */
+  --gray-700: #e5e7eb;
+  /* Headings */
+  --gray-800: #f3f4f6;
+  /* Emphasis text */
+  --gray-900: #f9fafb;
+  /* High contrast text */
 
-  --bg-body: var(--gray-50);
-  --bg-card: var(--gray-100);
-  --bg-input: var(--gray-200);
-  --text-primary: var(--gray-900);
-  --text-secondary: var(--gray-500);
-  --border-color: var(--gray-200);
+  /* Semantic colors adapted for dark theme */
+  --bg-body: #0a0e1a;
+  --bg-card: #151b2e;
+  --bg-input: #1f2937;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --border-color: #374151;
 
-  --primary-50: #172554;
-  --primary-100: #1e3a8a;
+  /* Adjusted primary colors for dark mode (brighter) */
+  --primary-50: #1e3a8a;
+  --primary-100: #1d4ed8;
+  --primary-500: #60a5fa;
+  --primary-600: #93c5fd;
+  --primary-700: #bfdbfe;
+
+  /* Success colors for dark mode */
+  --success-100: #064e3b;
+  --success-500: #10b981;
+  --success-600: #34d399;
+  --success-700: #6ee7b7;
+
+  /* Warning colors for dark mode */
+  --warning-100: #78350f;
+  --warning-500: #f59e0b;
+  --warning-600: #fbbf24;
+  --warning-700: #fde047;
+
+  /* Error colors for dark mode */
+  --error-100: #7f1d1d;
+  --error-500: #ef4444;
+  --error-600: #f87171;
+  --error-700: #fca5a5;
 }
 
 /* ===========================
@@ -830,4 +864,148 @@ a:hover {
   .no-print {
     display: none !important;
   }
+}
+
+/* ===========================
+   DARK THEME SPECIFIC OVERRIDES
+   =========================== */
+
+[data-theme="dark"] .table {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .table thead {
+  background: var(--gray-200);
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .table th {
+  color: var(--gray-700);
+}
+
+[data-theme="dark"] .table td {
+  color: var(--text-primary);
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .table tbody tr:hover {
+  background: var(--gray-200);
+}
+
+[data-theme="dark"] .modal {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .modal-header {
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .modal-footer {
+  border-top-color: var(--border-color);
+}
+
+[data-theme="dark"] .modal-title {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .modal-close {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .modal-close:hover {
+  color: var(--text-primary);
+}
+
+/* Badge improvements for dark mode */
+[data-theme="dark"] .badge-green,
+[data-theme="dark"] .badge-success {
+  background: var(--success-100);
+  color: var(--success-600);
+}
+
+[data-theme="dark"] .badge-orange,
+[data-theme="dark"] .badge-warning {
+  background: var(--warning-100);
+  color: var(--warning-600);
+}
+
+[data-theme="dark"] .badge-red,
+[data-theme="dark"] .badge-error,
+[data-theme="dark"] .badge-danger {
+  background: var(--error-100);
+  color: var(--error-600);
+}
+
+/* Icon button improvements */
+[data-theme="dark"] .icon-btn {
+  color: var(--text-secondary);
+  background: var(--gray-200);
+}
+
+[data-theme="dark"] .icon-btn:hover {
+  background: var(--gray-300);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .icon-btn-danger:hover {
+  background: var(--error-500);
+  color: white;
+}
+
+/* Empty state improvements */
+[data-theme="dark"] .empty-state {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .empty-state-title {
+  color: var(--text-primary);
+}
+
+/* Alert/notification improvements */
+[data-theme="dark"] .alert {
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .alert-warning {
+  background: var(--warning-100);
+  border-color: var(--warning-500);
+  color: var(--warning-600);
+}
+
+[data-theme="dark"] .alert-success {
+  background: var(--success-100);
+  border-color: var(--success-500);
+  color: var(--success-600);
+}
+
+[data-theme="dark"] .alert-error {
+  background: var(--error-100);
+  border-color: var(--error-500);
+  color: var(--error-600);
+}
+
+/* Form label improvements */
+[data-theme="dark"] .form-label {
+  color: var(--gray-700);
+}
+
+/* Skeleton loader for dark mode */
+[data-theme="dark"] .skeleton {
+  background: linear-gradient(90deg, var(--gray-200) 25%, var(--gray-300) 50%, var(--gray-200) 75%);
+}
+
+/* Stats card improvements */
+[data-theme="dark"] .stat-card {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .stat-value {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .stat-label {
+  color: var(--text-secondary);
 }

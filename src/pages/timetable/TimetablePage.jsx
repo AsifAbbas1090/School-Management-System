@@ -1,12 +1,18 @@
 import React, { useState } from 'react';
 import { Calendar, Plus, Edit, Trash2 } from 'lucide-react';
 import { mockData } from '../../services/mockData';
+import { useAuthStore } from '../../store';
 import { DAYS_OF_WEEK, PERIODS } from '../../constants';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
+import { AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const TimetablePage = () => {
+    const { user } = useAuthStore();
+    const canManageTimetable = ['admin', 'management', 'super_admin'].includes(user?.role);
+    const canViewTimetable = ['admin', 'management', 'teacher', 'student', 'super_admin'].includes(user?.role);
+
     const [selectedClass, setSelectedClass] = useState('');
     const [selectedSection, setSelectedSection] = useState('');
     const [showModal, setShowModal] = useState(false);
@@ -16,6 +22,16 @@ const TimetablePage = () => {
     const sections = mockData.sections;
     const subjects = mockData.subjects;
     const teachers = mockData.teachers;
+
+    if (!canViewTimetable) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+                <AlertCircle size={64} className="text-error-500 mb-4" />
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">You do not have permission to access the timetable.</p>
+            </div>
+        );
+    }
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
@@ -39,6 +55,7 @@ const TimetablePage = () => {
     };
 
     const handleSlotClick = (day, period) => {
+        if (!canManageTimetable) return; // Only management can edit
         if (period.id.startsWith('break')) return;
         setSelectedSlot({ day, period });
         setShowModal(true);
@@ -205,7 +222,7 @@ const TimetablePage = () => {
                 </form>
             </Modal>
 
-            <style jsx>{`
+            <style>{`
         .timetable-page {
           animation: fadeIn 0.3s ease-in-out;
         }

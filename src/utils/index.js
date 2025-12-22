@@ -110,16 +110,30 @@ export const isValidPhone = (phone) => {
 };
 
 /**
- * Format currency
+ * Format currency in PKR
  * @param {number} amount
  * @param {string} currency
  * @returns {string}
  */
-export const formatCurrency = (amount, currency = 'USD') => {
-    return new Intl.NumberFormat('en-US', {
+export const formatCurrency = (amount, currency = 'PKR') => {
+    if (amount === null || amount === undefined) return 'PKR 0';
+
+    return new Intl.NumberFormat('en-PK', {
         style: 'currency',
         currency: currency,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
     }).format(amount);
+};
+
+/**
+ * Format date and time
+ * @param {Date|string} date
+ * @returns {string}
+ */
+export const formatDateTime = (date) => {
+    if (!date) return '';
+    return formatDate(date, 'MMM dd, yyyy hh:mm a');
 };
 
 /**

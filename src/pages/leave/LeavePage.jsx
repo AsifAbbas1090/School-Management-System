@@ -1,76 +1,110 @@
 import React, { useState } from 'react';
 import { Plus, CheckCircle, XCircle, Clock } from 'lucide-react';
-import { useLeaveStore } from '../../store';
+import { useLeaveStore, useAuthStore, useStudentsStore } from '../../store';
 import { formatDate, getRelativeTime } from '../../utils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
 
 const LeavePage = () => {
-    const { leaves, setLeaves, addLeave, updateLeave } = useLeaveStore();
+    const { user } = useAuthStore();
+    const { leaves, addLeave, updateLeave } = useLeaveStore();
+    const { students } = useStudentsStore();
     const [showModal, setShowModal] = useState(false);
     const [filterStatus, setFilterStatus] = useState('');
+    const [formData, setFormData] = useState({
+        leaveType: 'sick',
+        startDate: '',
+        endDate: '',
+        reason: '',
+        studentId: '', // For parents applying for children
+    });
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
         { label: 'Leave Management', path: null },
     ];
 
-    React.useEffect(() => {
-        setLeaves([
-            {
-                id: '1',
-                userId: 'teacher1',
-                userName: 'John Smith',
-                userRole: 'teacher',
-                leaveType: 'sick',
-                startDate: new Date('2024-12-20'),
-                endDate: new Date('2024-12-22'),
-                reason: 'Medical checkup',
-                status: 'pending',
-                appliedAt: new Date(Date.now() - 3600000),
-            },
-            {
-                id: '2',
-                userId: 'student1',
-                userName: 'Emma Wilson',
-                userRole: 'student',
-                leaveType: 'casual',
-                startDate: new Date('2024-12-18'),
-                endDate: new Date('2024-12-18'),
-                reason: 'Family function',
-                status: 'approved',
-                appliedAt: new Date(Date.now() - 86400000),
-                approvedBy: 'Admin',
-                approvedAt: new Date(),
-            },
-        ]);
-    }, []);
+    const canApprove = ['admin', 'management', 'super_admin'].includes(user?.role);
+    const isParent = user?.role === 'parent';
+    const isTeacher = user?.role === 'teacher';
 
     const handleApprove = (leaveId) => {
-        updateLeave(leaveId, { status: 'approved', approvedBy: 'Admin', approvedAt: new Date() });
+        updateLeave(leaveId, {
+            status: 'approved',
+            approvedBy: user?.name,
+            approvedAt: new Date()
+        });
         toast.success('Leave approved');
     };
 
     const handleReject = (leaveId) => {
-        updateLeave(leaveId, { status: 'rejected', rejectedBy: 'Admin', rejectedAt: new Date() });
+        updateLeave(leaveId, {
+            status: 'rejected',
+            rejectedBy: user?.name,
+            rejectedAt: new Date()
+        });
         toast.error('Leave rejected');
     };
 
-    const handleSubmitLeave = () => {
-        toast.success('Leave application submitted');
-        setShowModal(false);
+    const handleFormChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const filteredLeaves = leaves.filter(leave =>
-        !filterStatus || leave.status === filterStatus
-    );
+    const handleSubmitLeave = (e) => {
+        e.preventDefault();
+
+        if (!formData.startDate || !formData.endDate || !formData.reason) {
+            toast.error('Please fill in all required fields');
+            return;
+        }
+
+        let applicantName = user?.name;
+        let applicantRole = user?.role;
+
+        if (isParent && formData.studentId) {
+            const student = students.find(s => s.id === formData.studentId);
+            if (student) {
+                applicantName = `${student.name} (Child of ${user?.name})`;
+                applicantRole = 'student';
+            }
+        }
+
+        const newLeave = {
+            id: `leave_${Date.now()}`,
+            userId: user?.id,
+            userName: applicantName,
+            userRole: applicantRole,
+            leaveType: formData.leaveType,
+            startDate: new Date(formData.startDate),
+            endDate: new Date(formData.endDate),
+            reason: formData.reason,
+            status: 'pending',
+            appliedAt: new Date(),
+        };
+
+        addLeave(newLeave);
+        toast.success('Leave application submitted successfully');
+        setShowModal(false);
+        setFormData({ leaveType: 'sick', startDate: '', endDate: '', reason: '', studentId: '' });
+    };
+
+    // Filter logic: Admins see all, users see their own
+    const visibleLeaves = leaves.filter(leave => {
+        const matchesStatus = !filterStatus || leave.status === filterStatus;
+        const matchesUser = canApprove || leave.userId === user?.id;
+        return matchesStatus && matchesUser;
+    });
 
     const stats = {
-        pending: leaves.filter(l => l.status === 'pending').length,
-        approved: leaves.filter(l => l.status === 'approved').length,
-        rejected: leaves.filter(l => l.status === 'rejected').length,
+        pending: visibleLeaves.filter(l => l.status === 'pending').length,
+        approved: visibleLeaves.filter(l => l.status === 'approved').length,
+        rejected: visibleLeaves.filter(l => l.status === 'rejected').length,
     };
+
+    // For parent: find their children from students store
+    const myChildren = isParent ? students.filter(s => s.parentId === user?.id) : [];
 
     return (
         <div className="leave-page">
@@ -79,12 +113,16 @@ const LeavePage = () => {
             <div className="page-header">
                 <div>
                     <h1>Leave Management</h1>
-                    <p className="text-gray-600">Manage leave applications and approvals</p>
+                    <p className="text-gray-600">
+                        {canApprove ? 'Manage and approve leave applications' : 'View and track your leave requests'}
+                    </p>
                 </div>
-                <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                    <Plus size={18} />
-                    <span>Apply Leave</span>
-                </button>
+                {!canApprove && (
+                    <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                        <Plus size={18} />
+                        <span>Request Leave</span>
+                    </button>
+                )}
             </div>
 
             {/* Stats Cards */}
@@ -158,45 +196,57 @@ const LeavePage = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredLeaves.map((leave) => (
-                                <tr key={leave.id}>
-                                    <td className="font-medium">{leave.userName}</td>
-                                    <td className="capitalize">{leave.userRole}</td>
-                                    <td className="capitalize">{leave.leaveType}</td>
-                                    <td>
-                                        {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
-                                    </td>
-                                    <td className="text-sm">{leave.reason}</td>
-                                    <td>
-                                        <span className={`badge badge-${leave.status === 'approved' ? 'success' :
-                                                leave.status === 'rejected' ? 'error' :
-                                                    'warning'
-                                            }`}>
-                                            {leave.status}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {leave.status === 'pending' && (
-                                            <div className="flex gap-sm">
-                                                <button
-                                                    className="btn btn-sm btn-success"
-                                                    onClick={() => handleApprove(leave.id)}
-                                                >
-                                                    <CheckCircle size={16} />
-                                                    <span>Approve</span>
-                                                </button>
-                                                <button
-                                                    className="btn btn-sm btn-danger"
-                                                    onClick={() => handleReject(leave.id)}
-                                                >
-                                                    <XCircle size={16} />
-                                                    <span>Reject</span>
-                                                </button>
-                                            </div>
-                                        )}
+                            {visibleLeaves.length === 0 ? (
+                                <tr>
+                                    <td colSpan="7" className="text-center py-8 text-gray-500">
+                                        No leave requests found.
                                     </td>
                                 </tr>
-                            ))}
+                            ) : (
+                                visibleLeaves.map((leave) => (
+                                    <tr key={leave.id}>
+                                        <td className="font-medium">{leave.userName}</td>
+                                        <td className="capitalize">{leave.userRole}</td>
+                                        <td className="capitalize">{leave.leaveType}</td>
+                                        <td>
+                                            {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
+                                        </td>
+                                        <td className="text-sm">{leave.reason}</td>
+                                        <td>
+                                            <span className={`badge badge-${leave.status === 'approved' ? 'success' :
+                                                leave.status === 'rejected' ? 'error' :
+                                                    'warning'
+                                                }`}>
+                                                {leave.status}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {leave.status === 'pending' && canApprove ? (
+                                                <div className="flex gap-sm">
+                                                    <button
+                                                        className="btn btn-sm btn-success"
+                                                        onClick={() => handleApprove(leave.id)}
+                                                    >
+                                                        <CheckCircle size={16} />
+                                                        <span>Approve</span>
+                                                    </button>
+                                                    <button
+                                                        className="btn btn-sm btn-danger"
+                                                        onClick={() => handleReject(leave.id)}
+                                                    >
+                                                        <XCircle size={16} />
+                                                        <span>Reject</span>
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <span className="text-sm text-gray-400">
+                                                    {leave.status !== 'pending' ? 'Processed' : 'Waiting'}
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -206,7 +256,7 @@ const LeavePage = () => {
             <Modal
                 isOpen={showModal}
                 onClose={() => setShowModal(false)}
-                title="Apply for Leave"
+                title={isParent ? "Apply for Child's Leave" : "Apply for Leave"}
                 footer={
                     <>
                         <button className="btn btn-outline" onClick={() => setShowModal(false)}>
@@ -219,9 +269,32 @@ const LeavePage = () => {
                 }
             >
                 <form>
+                    {isParent && (
+                        <div className="form-group">
+                            <label className="form-label">Select Child *</label>
+                            <select
+                                name="studentId"
+                                className="select"
+                                value={formData.studentId}
+                                onChange={handleFormChange}
+                                required
+                            >
+                                <option value="">Select Child</option>
+                                {myChildren.map(child => (
+                                    <option key={child.id} value={child.id}>{child.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div className="form-group">
                         <label className="form-label">Leave Type *</label>
-                        <select className="select">
+                        <select
+                            name="leaveType"
+                            className="select"
+                            value={formData.leaveType}
+                            onChange={handleFormChange}
+                        >
                             <option value="sick">Sick Leave</option>
                             <option value="casual">Casual Leave</option>
                             <option value="emergency">Emergency Leave</option>
@@ -232,27 +305,45 @@ const LeavePage = () => {
                     <div className="grid grid-cols-2">
                         <div className="form-group">
                             <label className="form-label">Start Date *</label>
-                            <input type="date" className="input" />
+                            <input
+                                type="date"
+                                name="startDate"
+                                className="input"
+                                value={formData.startDate}
+                                onChange={handleFormChange}
+                                required
+                            />
                         </div>
 
                         <div className="form-group">
                             <label className="form-label">End Date *</label>
-                            <input type="date" className="input" />
+                            <input
+                                type="date"
+                                name="endDate"
+                                className="input"
+                                value={formData.endDate}
+                                onChange={handleFormChange}
+                                required
+                            />
                         </div>
                     </div>
 
                     <div className="form-group">
                         <label className="form-label">Reason *</label>
                         <textarea
+                            name="reason"
                             className="textarea"
                             placeholder="Explain the reason for leave"
                             rows="4"
+                            value={formData.reason}
+                            onChange={handleFormChange}
+                            required
                         />
                     </div>
                 </form>
             </Modal>
 
-            <style jsx>{`
+            <style>{`
         .leave-page {
           animation: fadeIn 0.3s ease-in-out;
         }

@@ -75,7 +75,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           </p>
         </div>
 
-        <style jsx>{`
+        <style>{`
         .sidebar {
           width: 280px;
           height: 100vh;

@@ -9,6 +9,7 @@ import DashboardLayout from './components/layout/DashboardLayout';
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
 import SuperAdminLoginPage from './pages/auth/SuperAdminLoginPage';
+import SchoolLoginPage from './pages/auth/SchoolLoginPage';
 
 // Dashboard Pages
 import AdminDashboard from './pages/dashboard/AdminDashboard';
@@ -31,6 +32,8 @@ import LeavePage from './pages/leave/LeavePage';
 import SettingsPage from './pages/settings/SettingsPage';
 import StaffPerformancePage from './pages/admin/StaffPerformancePage';
 import SupportStaffPage from './pages/staff/SupportStaffPage';
+import SchoolsPage from './pages/schools/SchoolsPage';
+import ClassesManagementPage from './pages/classes/ClassesManagementPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -90,10 +93,20 @@ function App() {
 
         {/* Super Admin Login */}
         <Route
-          path="/super-admin/login"
+          path="/superadmin/login"
           element={
             <PublicRoute>
               <SuperAdminLoginPage />
+            </PublicRoute>
+          }
+        />
+
+        {/* School-Specific Login */}
+        <Route
+          path="/:schoolSlug/signin"
+          element={
+            <PublicRoute>
+              <SchoolLoginPage />
             </PublicRoute>
           }
         />
@@ -109,6 +122,8 @@ function App() {
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardRouter />} />
+          <Route path="schools" element={<SchoolsPage />} />
+          <Route path="classes" element={<ClassesManagementPage />} />
 
           {/* Module Routes */}
           <Route path="students" element={<StudentsPage />} />

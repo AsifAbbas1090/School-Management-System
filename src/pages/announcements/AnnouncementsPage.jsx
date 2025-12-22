@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Megaphone, Pin, Trash2 } from 'lucide-react';
-import { useAnnouncementsStore } from '../../store';
+import { useAnnouncementsStore, useAuthStore } from '../../store';
 import { formatDate, getRelativeTime, generateId } from '../../utils';
 import { USER_ROLES } from '../../constants';
 import Breadcrumb from '../../components/common/Breadcrumb';
@@ -8,7 +8,11 @@ import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
 
 const AnnouncementsPage = () => {
+    const { user } = useAuthStore();
     const { announcements, setAnnouncements, addAnnouncement, deleteAnnouncement } = useAnnouncementsStore();
+
+    const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+
     const [showModal, setShowModal] = useState(false);
     const [formData, setFormData] = useState({
         title: '',
@@ -53,7 +57,7 @@ const AnnouncementsPage = () => {
         const newAnnouncement = {
             ...formData,
             id: generateId(),
-            createdBy: 'Admin',
+            createdBy: user?.name || 'Admin',
             publishDate: new Date(),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -86,16 +90,23 @@ const AnnouncementsPage = () => {
             <div className="page-header">
                 <div>
                     <h1>Announcements</h1>
-                    <p className="text-gray-600">Create and manage school announcements</p>
+                    <p className="text-gray-600">
+                        {isAuthorized
+                            ? 'Create and manage school announcements'
+                            : 'View latest school announcements and updates'
+                        }
+                    </p>
                 </div>
-                <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                    <Plus size={18} />
-                    <span>New Announcement</span>
-                </button>
+                {isAuthorized && (
+                    <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                        <Plus size={18} />
+                        <span>New Announcement</span>
+                    </button>
+                )}
             </div>
 
             <div className="announcements-list">
-                {announcements.map((announcement) => (
+                {announcements.filter(ann => isAuthorized || ann.targetRoles.includes(user?.role)).map((announcement) => (
                     <div key={announcement.id} className={`announcement-card ${announcement.isPinned ? 'pinned' : ''}`}>
                         {announcement.isPinned && (
                             <div className="pin-badge">
@@ -111,16 +122,22 @@ const AnnouncementsPage = () => {
                                     <span>By {announcement.createdBy}</span>
                                     <span>•</span>
                                     <span>{getRelativeTime(announcement.createdAt)}</span>
-                                    <span>•</span>
-                                    <span>To: {announcement.targetRoles.join(', ')}</span>
+                                    {isAuthorized && (
+                                        <>
+                                            <span>•</span>
+                                            <span>To: {announcement.targetRoles.join(', ')}</span>
+                                        </>
+                                    )}
                                 </div>
                             </div>
-                            <button
-                                className="btn btn-sm btn-danger"
-                                onClick={() => handleDelete(announcement.id)}
-                            >
-                                <Trash2 size={16} />
-                            </button>
+                            {isAuthorized && (
+                                <button
+                                    className="btn btn-sm btn-danger"
+                                    onClick={() => handleDelete(announcement.id)}
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            )}
                         </div>
 
                         <div className="announcement-content">
@@ -200,7 +217,7 @@ const AnnouncementsPage = () => {
                 </form>
             </Modal>
 
-            <style jsx>{`
+            <style>{`
         .announcements-page {
           animation: fadeIn 0.3s ease-in-out;
         }
@@ -314,7 +331,7 @@ const AnnouncementsPage = () => {
           }
         }
       `}</style>
-        </div>
+        </div >
     );
 };
 

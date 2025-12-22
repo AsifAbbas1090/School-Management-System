@@ -1,108 +1,296 @@
-import React, { useState } from 'react';
-import { Plus, FileText, Award, TrendingUp, Download, Upload } from 'lucide-react';
-import { mockData } from '../../services/mockData';
-import { calculateGrade, formatDate } from '../../utils';
-import { printTable } from '../../utils/printUtils';
+import React, { useState, useEffect } from 'react';
+import { Plus, FileText, Award, TrendingUp, Download, Upload, BookOpen } from 'lucide-react';
+import { useAuthStore, useClassesStore, useStudentsStore, useTeachersStore } from '../../store';
+import { calculateGrade, formatDate, exportToCSV } from '../../utils';
+import { USER_ROLES } from '../../constants';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import CSVImport from '../../components/common/CSVImport';
 import toast from 'react-hot-toast';
 
 const ExamsPage = () => {
+    const { user } = useAuthStore();
+    const { classes, sections } = useClassesStore();
+    const { students } = useStudentsStore();
+    const { teachers } = useTeachersStore();
+
+    // Access control: Authorized roles for full management
+    const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+    const isTeacher = user?.role === USER_ROLES.TEACHER;
+    const isStudent = user?.role === USER_ROLES.STUDENT;
+    const isParent = user?.role === USER_ROLES.PARENT;
+
     const [viewMode, setViewMode] = useState('exams'); // 'exams' or 'results'
     const [showExamModal, setShowExamModal] = useState(false);
     const [showMarksModal, setShowMarksModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
+
     const [selectedExam, setSelectedExam] = useState(null);
+    const [selectedClass, setSelectedClass] = useState(null);
+    const [selectedSection, setSelectedSection] = useState(null);
+    const [selectedSubject, setSelectedSubject] = useState(null);
 
-    // Students list for Marks Entry - defaults to mock students, but can be imported
-    const [examStudents, setExamStudents] = useState([]);
+    // For marks entry
+    const [marksData, setMarksData] = useState([]);
 
-    const students = mockData.students;
-    const subjects = mockData.subjects;
+    // Exam creation form
+    const [examFormData, setExamFormData] = useState({
+        name: '',
+        type: 'midterm',
+        classId: '',
+        examDate: '',
+        totalMarks: '100',
+        passingMarks: '40',
+        description: '',
+    });
 
-    const exams = [
-        { id: 'e1', name: 'Midterm Exam', type: 'midterm', startDate: new Date('2024-12-15'), endDate: new Date('2024-12-20'), totalMarks: 100, passingMarks: 40 },
-        { id: 'e2', name: 'Final Exam', type: 'final', startDate: new Date('2025-01-10'), endDate: new Date('2025-01-20'), totalMarks: 100, passingMarks: 40 },
-        { id: 'e3', name: 'Unit Test 1', type: 'quiz', startDate: new Date('2024-11-01'), endDate: new Date('2024-11-05'), totalMarks: 50, passingMarks: 20 },
-    ];
+    // Mock exams - in real app, this would come from a store
+    const [exams, setExams] = useState([
+        {
+            id: 'e1',
+            name: 'Midterm Exam',
+            type: 'midterm',
+            classId: null,
+            examDate: new Date('2024-12-15'),
+            totalMarks: 100,
+            passingMarks: 40
+        },
+    ]);
 
-    const results = [
-        { studentId: 'st1', examId: 'e1', subjectId: 'sub1', marksObtained: 92, totalMarks: 100 },
-        { studentId: 'st1', examId: 'e1', subjectId: 'sub2', marksObtained: 88, totalMarks: 100 },
-        { studentId: 'st1', examId: 'e1', subjectId: 'sub3', marksObtained: 85, totalMarks: 100 },
-        { studentId: 'st2', examId: 'e1', subjectId: 'sub1', marksObtained: 78, totalMarks: 100 },
-        { studentId: 'st2', examId: 'e1', subjectId: 'sub2', marksObtained: 82, totalMarks: 100 },
-    ];
+    // Mock results - in real app, from store
+    const [results] = useState([]);
+
+    // Get teacher's assigned subjects (if logged in as teacher)
+    const getTeacherSubjects = () => {
+        if (user?.role !== USER_ROLES.TEACHER) {
+            return []; // Not a teacher, return empty
+        }
+
+        // Find current logged-in teacher
+        const currentTeacher = teachers.find(t => t.email === user.email);
+        if (!currentTeacher || !currentTeacher.subjects) {
+            return [];
+        }
+
+        // Return teacher's assigned subjects
+        return currentTeacher.subjects || [];
+    };
+
+    const teacherSubjects = getTeacherSubjects();
+
+    // Get students for selected class and section
+    const getClassStudents = () => {
+        if (!selectedClass || !selectedSection) return [];
+
+        return students.filter(s =>
+            s.classId === selectedClass &&
+            s.sectionId === selectedSection
+        );
+    };
+
+    const classStudents = getClassStudents();
+
+    // Get sections for selected class
+    const getClassSections = () => {
+        if (!selectedClass) return [];
+        return sections.filter(s => s.classId === selectedClass);
+    };
+
+    const classSections = getClassSections();
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
         { label: 'Exams & Results', path: null },
     ];
 
-    const handleCreateExam = () => {
-        toast.success('Exam created successfully');
+    // Exam creation handlers
+    const handleExamFormChange = (e) => {
+        const { name, value } = e.target;
+        setExamFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleCreateExam = (e) => {
+        e.preventDefault();
+
+        if (!examFormData.name || !examFormData.examDate) {
+            toast.error('Please fill in all required fields');
+            return;
+        }
+
+        const newExam = {
+            id: `e${Date.now()}`,
+            name: examFormData.name,
+            type: examFormData.type,
+            classId: examFormData.classId || null,
+            examDate: new Date(examFormData.examDate),
+            totalMarks: parseInt(examFormData.totalMarks),
+            passingMarks: parseInt(examFormData.passingMarks),
+            description: examFormData.description,
+        };
+
+        setExams(prev => [...prev, newExam]);
+        toast.success('Exam created successfully!');
         setShowExamModal(false);
+
+        // Reset form
+        setExamFormData({
+            name: '',
+            type: 'midterm',
+            classId: '',
+            examDate: '',
+            totalMarks: '100',
+            passingMarks: '40',
+            description: '',
+        });
+    };
+
+    const handleClassChange = (classId) => {
+        setSelectedClass(classId);
+        setSelectedSection(null);
+        setSelectedSubject(null);
+        setMarksData([]);
+    };
+
+    const handleSectionChange = (sectionId) => {
+        setSelectedSection(sectionId);
+        setSelectedSubject(null);
+        initializeMarksData(sectionId);
+    };
+
+    const handleSubjectChange = (subject) => {
+        setSelectedSubject(subject);
+    };
+
+    const initializeMarksData = (sectionId) => {
+        const studentsInClass = students.filter(s =>
+            s.classId === selectedClass &&
+            s.sectionId === sectionId
+        );
+
+        const initialData = studentsInClass.map(student => ({
+            studentId: student.id,
+            rollNumber: student.rollNumber,
+            name: student.name,
+            subject: '',
+            marksObtained: '',
+        }));
+
+        setMarksData(initialData);
     };
 
     const handleEnterMarks = (exam) => {
+        if (user?.role === USER_ROLES.TEACHER && teacherSubjects.length === 0) {
+            toast.error('You are not assigned to any subjects. Contact admin.');
+            return;
+        }
+
         setSelectedExam(exam);
-        // Default: Load all students or empty. Let's load mock for now.
-        setExamStudents(students.slice(0, 5));
         setShowMarksModal(true);
     };
 
-    const handleSubmitMarks = () => {
-        toast.success('Marks submitted successfully');
-        setShowMarksModal(false);
+    const handleMarksChange = (studentId, field, value) => {
+        setMarksData(prev =>
+            prev.map(m =>
+                m.studentId === studentId
+                    ? { ...m, [field]: value }
+                    : m
+            )
+        );
     };
 
-    const handleImportStudents = (importedData) => {
-        // Map imported data to student structure
-        // Expects: studentName, rollNumber
-        const newStudents = importedData.map((record, index) => ({
-            id: `imported_${Date.now()}_${index}`,
-            name: record.studentName,
-            rollNumber: record.rollNumber,
-            // ... other fields default or empty
+    const handleSubmitMarks = () => {
+        if (!selectedClass || !selectedSection || !selectedSubject) {
+            toast.error('Please select class, section, and subject');
+            return;
+        }
+
+        // Validate that all students have marks
+        const incomplete = marksData.some(m =>
+            m.marksObtained === '' || m.marksObtained === null
+        );
+
+        if (incomplete) {
+            toast.error('Please enter marks for all students');
+            return;
+        }
+
+        // Validate marks don't exceed total
+        const invalid = marksData.some(m =>
+            parseFloat(m.marksObtained) > selectedExam.totalMarks
+        );
+
+        if (invalid) {
+            toast.error(`Marks cannot exceed ${selectedExam.totalMarks}`);
+            return;
+        }
+
+        // In real app, save to store
+        // Submitting marks for student: examId, classId, sectionId, subject, marks
+
+        toast.success('Marks submitted successfully!');
+        setShowMarksModal(false);
+        resetMarksEntry();
+    };
+
+    const resetMarksEntry = () => {
+        setSelectedClass(null);
+        setSelectedSection(null);
+        setSelectedSubject(null);
+        setMarksData([]);
+    };
+
+    const handleImportMarks = (importedData) => {
+        // CSV format: rollNumber, subject, marks
+        // Map to existing students
+        const updatedMarks = marksData.map(existing => {
+            const imported = importedData.find(imp =>
+                imp.rollNumber === existing.rollNumber
+            );
+
+            if (imported) {
+                return {
+                    ...existing,
+                    subject: imported.subject || existing.subject,
+                    marksObtained: imported.marks || existing.marksObtained,
+                };
+            }
+
+            return existing;
+        });
+
+        setMarksData(updatedMarks);
+        toast.success(`Imported marks for ${importedData.length} students`);
+        setShowImportModal(false);
+    };
+
+    const handleExportMarksTemplate = () => {
+        if (!selectedExam) {
+            toast.error('No exam selected');
+            return;
+        }
+
+        const template = marksData.map(m => ({
+            rollNumber: m.rollNumber,
+            studentName: m.name,
+            subject: selectedSubject || '',
+            [`marks (out of ${selectedExam.totalMarks})`]: '',
         }));
 
-        setExamStudents(newStudents);
-        // setShowImportModal(false) handled by CSVImport onClose or we close it here? 
-        // CSVImport calls onImport then we might want to close it? 
-        // Logic in CSVImport: onImport(preview); toast...; onClose();
-        // So onClose is called inside CSVImport but it triggers the prop onClose.
+        exportToCSV(template, `marks_template_${selectedClass}_${selectedSubject}_${Date.now()}.csv`);
+        toast.success(`Template downloaded! Total marks: ${selectedExam.totalMarks}`);
     };
 
-    const handleExportResultsPDF = () => {
-        // Flat list of all results
-        const data = results.map(r => {
-            const student = students.find(s => s.id === r.studentId);
-            const exam = exams.find(e => e.id === r.examId);
-            const subject = subjects.find(s => s.id === r.subjectId);
-            return {
-                student: student?.name || 'Unknown',
-                roll: student?.rollNumber || '',
-                exam: exam?.name || '',
-                subject: subject?.name || '',
-                marks: `${r.marksObtained} / ${r.totalMarks}`,
-                grade: calculateGrade((r.marksObtained / r.totalMarks) * 100)
-            };
-        });
+    const canTeacherAddMarksForSubject = (subject) => {
+        if (user?.role !== USER_ROLES.TEACHER) {
+            return true; // Admin/Management can add for all subjects
+        }
 
-        printTable({
-            title: 'Examination Results Report',
-            columns: [
-                { header: 'Student Name', accessor: 'student' },
-                { header: 'Roll No', accessor: 'roll' },
-                { header: 'Exam', accessor: 'exam' },
-                { header: 'Subject', accessor: 'subject' },
-                { header: 'Marks Obtained', accessor: 'marks' },
-                { header: 'Grade', accessor: 'grade' }
-            ],
-            data: data
-        });
+        return teacherSubjects.includes(subject);
     };
+
+    const availableSubjects = user?.role === USER_ROLES.TEACHER
+        ? teacherSubjects
+        : ['Mathematics', 'Physics', 'Chemistry', 'Biology', 'English', 'Urdu', 'Computer Science', 'Islamiat'];
 
     return (
         <div className="exams-page">
@@ -111,15 +299,14 @@ const ExamsPage = () => {
             <div className="page-header">
                 <div>
                     <h1>Exams & Results</h1>
-                    <p className="text-gray-600">Manage exams, enter marks, and generate results</p>
+                    <p className="text-gray-600">
+                        {user?.role === USER_ROLES.TEACHER
+                            ? `Manage exams and enter marks for: ${teacherSubjects.join(', ') || 'No subjects assigned'}`
+                            : 'Manage exams, enter marks, and generate results'
+                        }
+                    </p>
                 </div>
                 <div className="flex gap-md">
-                    {viewMode === 'results' && (
-                        <button className="btn btn-outline" onClick={handleExportResultsPDF}>
-                            <Download size={18} />
-                            <span>Export Data</span>
-                        </button>
-                    )}
                     <button
                         className={`btn ${viewMode === 'exams' ? 'btn-primary' : 'btn-outline'}`}
                         onClick={() => setViewMode('exams')}
@@ -134,10 +321,12 @@ const ExamsPage = () => {
                         <Award size={18} />
                         <span>Results</span>
                     </button>
-                    <button className="btn btn-success" onClick={() => setShowExamModal(true)}>
-                        <Plus size={18} />
-                        <span>Create Exam</span>
-                    </button>
+                    {isAuthorized && (
+                        <button className="btn btn-success" onClick={() => setShowExamModal(true)}>
+                            <Plus size={18} />
+                            <span>Create Exam</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -152,8 +341,7 @@ const ExamsPage = () => {
                                 <tr>
                                     <th>Exam Name</th>
                                     <th>Type</th>
-                                    <th>Start Date</th>
-                                    <th>End Date</th>
+                                    <th>Exam Date</th>
                                     <th>Total Marks</th>
                                     <th>Passing Marks</th>
                                     <th>Actions</th>
@@ -166,12 +354,11 @@ const ExamsPage = () => {
                                         <td>
                                             <span className="badge badge-primary capitalize">{exam.type}</span>
                                         </td>
-                                        <td>{formatDate(exam.startDate)}</td>
-                                        <td>{formatDate(exam.endDate)}</td>
+                                        <td>{formatDate(exam.examDate)}</td>
                                         <td>{exam.totalMarks}</td>
                                         <td>{exam.passingMarks}</td>
                                         <td>
-                                            <div className="flex gap-sm">
+                                            {(isAuthorized || isTeacher) && (
                                                 <button
                                                     className="btn btn-sm btn-primary"
                                                     onClick={() => handleEnterMarks(exam)}
@@ -179,11 +366,7 @@ const ExamsPage = () => {
                                                     <TrendingUp size={16} />
                                                     <span>Enter Marks</span>
                                                 </button>
-                                                <button className="btn btn-sm btn-outline">
-                                                    <FileText size={16} />
-                                                    <span>View</span>
-                                                </button>
-                                            </div>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
@@ -195,10 +378,6 @@ const ExamsPage = () => {
                 <div className="card">
                     <div className="card-header">
                         <h3 className="card-title">Student Results</h3>
-                        <button className="btn btn-outline btn-sm">
-                            <Download size={16} />
-                            <span>Download Report Cards</span>
-                        </button>
                     </div>
                     <div className="table-container">
                         <table className="table">
@@ -206,6 +385,7 @@ const ExamsPage = () => {
                                 <tr>
                                     <th>Student</th>
                                     <th>Roll Number</th>
+                                    <th>Class</th>
                                     <th>Exam</th>
                                     <th>Subject</th>
                                     <th>Marks</th>
@@ -213,36 +393,204 @@ const ExamsPage = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {results.map((result, index) => {
-                                    const student = students.find(s => s.id === result.studentId);
-                                    const exam = exams.find(e => e.id === result.examId);
-                                    const subject = subjects.find(s => s.id === result.subjectId);
-                                    const grade = calculateGrade(result.marksObtained, result.totalMarks);
-
-                                    return (
+                                {results.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="7" className="text-center text-gray-500">
+                                            No results available yet
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    results.filter(result => {
+                                        if (isParent) {
+                                            const student = students.find(s => s.id === result.studentId);
+                                            return student && student.parentId === user?.id;
+                                        }
+                                        if (isStudent) {
+                                            return result.studentId === user?.id;
+                                        }
+                                        return true;
+                                    }).map((result, index) => (
                                         <tr key={index}>
-                                            <td className="font-medium">{student?.name}</td>
-                                            <td>{student?.rollNumber}</td>
-                                            <td>{exam?.name}</td>
-                                            <td>{subject?.name}</td>
+                                            <td>{result.studentName}</td>
+                                            <td>{result.rollNumber}</td>
+                                            <td>{result.className}</td>
+                                            <td>{result.examName}</td>
+                                            <td>{result.subject}</td>
                                             <td>{result.marksObtained}/{result.totalMarks}</td>
                                             <td>
-                                                <span className={`badge badge-${grade.startsWith('A') ? 'success' :
-                                                    grade.startsWith('B') ? 'primary' :
-                                                        grade.startsWith('C') ? 'warning' :
-                                                            'error'
-                                                    }`}>
-                                                    {grade}
+                                                <span className={`badge badge-success`}>
+                                                    {calculateGrade(result.marksObtained, result.totalMarks)}
                                                 </span>
                                             </td>
                                         </tr>
-                                    );
-                                })}
+                                    ))
+                                )}
                             </tbody>
                         </table>
                     </div>
                 </div>
             )}
+
+            {/* Enter Marks Modal - Step-by-Step */}
+            <Modal
+                isOpen={showMarksModal}
+                onClose={() => {
+                    setShowMarksModal(false);
+                    resetMarksEntry();
+                }}
+                title={`Enter Marks - ${selectedExam?.name}`}
+                size="xl"
+            >
+                <div className="marks-entry-wizard">
+                    {/* Step 1: Select Class */}
+                    <div className="wizard-step">
+                        <h4 className="step-title">
+                            <span className="step-number">1</span>
+                            Select Class
+                        </h4>
+                        <select
+                            className="select"
+                            value={selectedClass || ''}
+                            onChange={(e) => handleClassChange(e.target.value)}
+                        >
+                            <option value="">-- Select Class --</option>
+                            {classes.map(cls => (
+                                <option key={cls.id} value={cls.id}>{cls.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Step 2: Select Section */}
+                    {selectedClass && (
+                        <div className="wizard-step">
+                            <h4 className="step-title">
+                                <span className="step-number">2</span>
+                                Select Section
+                            </h4>
+                            <select
+                                className="select"
+                                value={selectedSection || ''}
+                                onChange={(e) => handleSectionChange(e.target.value)}
+                            >
+                                <option value="">-- Select Section --</option>
+                                {classSections.map(sec => (
+                                    <option key={sec.id} value={sec.id}>Section {sec.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Step 3: Select Subject */}
+                    {selectedSection && (
+                        <div className="wizard-step">
+                            <h4 className="step-title">
+                                <span className="step-number">3</span>
+                                Select Subject
+                            </h4>
+                            <select
+                                className="select"
+                                value={selectedSubject || ''}
+                                onChange={(e) => handleSubjectChange(e.target.value)}
+                            >
+                                <option value="">-- Select Subject --</option>
+                                {availableSubjects.map((subject, idx) => (
+                                    <option key={idx} value={subject}>{subject}</option>
+                                ))}
+                            </select>
+                            {user?.role === USER_ROLES.TEACHER && (
+                                <p className="text-sm text-gray-500 mt-2">
+                                    You can only enter marks for subjects you teach
+                                </p>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Step 4: Enter Marks */}
+                    {selectedSubject && (
+                        <div className="wizard-step">
+                            <div className="step-header">
+                                <h4 className="step-title">
+                                    <span className="step-number">4</span>
+                                    Enter Marks for {selectedSubject}
+                                </h4>
+                                <div className="flex gap-sm">
+                                    <button
+                                        className="btn btn-outline btn-sm"
+                                        onClick={handleExportMarksTemplate}
+                                    >
+                                        <Download size={16} />
+                                        Download Template
+                                    </button>
+                                    <button
+                                        className="btn btn-outline btn-sm"
+                                        onClick={() => setShowImportModal(true)}
+                                    >
+                                        <Upload size={16} />
+                                        Import CSV
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="table-container mt-md">
+                                <table className="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Roll No</th>
+                                            <th>Student Name</th>
+                                            <th>Marks (out of {selectedExam?.totalMarks})</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {marksData.map((student) => (
+                                            <tr key={student.studentId}>
+                                                <td>{student.rollNumber}</td>
+                                                <td>{student.name}</td>
+                                                <td>
+                                                    <input
+                                                        type="number"
+                                                        className="input"
+                                                        placeholder="0"
+                                                        min="0"
+                                                        max={selectedExam?.totalMarks}
+                                                        value={student.marksObtained}
+                                                        onChange={(e) =>
+                                                            handleMarksChange(student.studentId, 'marksObtained', e.target.value)
+                                                        }
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {marksData.length === 0 && (
+                                    <div className="text-center p-4 text-gray-500">
+                                        No students in this class/section
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="modal-footer">
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => {
+                                        setShowMarksModal(false);
+                                        resetMarksEntry();
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className="btn btn-success"
+                                    onClick={handleSubmitMarks}
+                                    disabled={marksData.length === 0}
+                                >
+                                    Submit Marks
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </Modal>
 
             {/* Create Exam Modal */}
             <Modal
@@ -250,179 +598,213 @@ const ExamsPage = () => {
                 onClose={() => setShowExamModal(false)}
                 title="Create New Exam"
                 size="lg"
-                footer={
-                    <>
-                        <button className="btn btn-outline" onClick={() => setShowExamModal(false)}>
-                            Cancel
-                        </button>
-                        <button className="btn btn-success" onClick={handleCreateExam}>
-                            Create Exam
-                        </button>
-                    </>
-                }
             >
-                <form className="exam-form">
+                <form onSubmit={handleCreateExam}>
                     <div className="grid grid-cols-2">
                         <div className="form-group">
                             <label className="form-label">Exam Name *</label>
-                            <input type="text" className="input" placeholder="Enter exam name" />
+                            <input
+                                type="text"
+                                name="name"
+                                className="input"
+                                placeholder="e.g., Midterm Exam, Final Exam"
+                                value={examFormData.name}
+                                onChange={handleExamFormChange}
+                                required
+                            />
                         </div>
 
                         <div className="form-group">
                             <label className="form-label">Exam Type *</label>
-                            <select className="select">
+                            <select
+                                name="type"
+                                className="select"
+                                value={examFormData.type}
+                                onChange={handleExamFormChange}
+                            >
                                 <option value="midterm">Midterm</option>
                                 <option value="final">Final</option>
                                 <option value="quiz">Quiz</option>
                                 <option value="assignment">Assignment</option>
+                                <option value="test">Class Test</option>
                             </select>
                         </div>
 
                         <div className="form-group">
-                            <label className="form-label">Start Date *</label>
-                            <input type="date" className="input" />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">End Date *</label>
-                            <input type="date" className="input" />
+                            <label className="form-label">Class (Optional)</label>
+                            <select
+                                name="classId"
+                                className="select"
+                                value={examFormData.classId}
+                                onChange={handleExamFormChange}
+                            >
+                                <option value="">-- All Classes --</option>
+                                {classes.map(cls => (
+                                    <option key={cls.id} value={cls.id}>{cls.name}</option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="form-group">
                             <label className="form-label">Total Marks *</label>
-                            <input type="number" className="input" placeholder="100" />
+                            <input
+                                type="number"
+                                name="totalMarks"
+                                className="input"
+                                placeholder="100"
+                                min="1"
+                                value={examFormData.totalMarks}
+                                onChange={handleExamFormChange}
+                                required
+                            />
                         </div>
 
                         <div className="form-group">
                             <label className="form-label">Passing Marks *</label>
-                            <input type="number" className="input" placeholder="40" />
+                            <input
+                                type="number"
+                                name="passingMarks"
+                                className="input"
+                                placeholder="40"
+                                min="1"
+                                value={examFormData.passingMarks}
+                                onChange={handleExamFormChange}
+                                required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Exam Date *</label>
+                            <input
+                                type="date"
+                                name="examDate"
+                                className="input"
+                                value={examFormData.examDate}
+                                onChange={handleExamFormChange}
+                                required
+                            />
                         </div>
                     </div>
 
                     <div className="form-group">
-                        <label className="form-label">Description</label>
-                        <textarea className="textarea" placeholder="Add exam description" rows="3" />
+                        <label className="form-label">Description (Optional)</label>
+                        <textarea
+                            name="description"
+                            className="textarea"
+                            placeholder="Add exam description or instructions"
+                            rows="3"
+                            value={examFormData.description}
+                            onChange={handleExamFormChange}
+                        />
+                    </div>
+
+                    <div className="modal-footer">
+                        <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => setShowExamModal(false)}
+                        >
+                            Cancel
+                        </button>
+                        <button type="submit" className="btn btn-success">
+                            <Plus size={18} />
+                            Create Exam
+                        </button>
                     </div>
                 </form>
             </Modal>
 
-            {/* Enter Marks Modal */}
-            <Modal
-                isOpen={showMarksModal}
-                onClose={() => setShowMarksModal(false)}
-                title={`Enter Marks - ${selectedExam?.name}`}
-                size="xl"
-                footer={
-                    <>
-                        <button className="btn btn-outline" onClick={() => setShowMarksModal(false)}>
-                            Cancel
-                        </button>
-                        <button className="btn btn-success" onClick={handleSubmitMarks}>
-                            Submit Marks
-                        </button>
-                    </>
-                }
-            >
-                <div className="marks-entry">
-                    <div className="flex justify-end mb-4">
-                        <button className="btn btn-outline btn-sm" onClick={() => setShowImportModal(true)}>
-                            <Upload size={16} />
-                            <span>Import Student List (CSV)</span>
-                        </button>
-                    </div>
-
-                    <div className="table-container">
-                        <table className="table">
-                            <thead>
-                                <tr>
-                                    <th>Roll No</th>
-                                    <th>Student Name</th>
-                                    <th>Subject</th>
-                                    <th>Marks Obtained</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {examStudents.map((student) => (
-                                    <tr key={student.id}>
-                                        <td>{student.rollNumber}</td>
-                                        <td>{student.name}</td>
-                                        <td>
-                                            <select className="select">
-                                                {subjects.map(sub => (
-                                                    <option key={sub.id} value={sub.id}>{sub.name}</option>
-                                                ))}
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                className="input"
-                                                placeholder="0"
-                                                max={selectedExam?.totalMarks}
-                                            />
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        {examStudents.length === 0 && (
-                            <div className="text-center p-4 text-gray-500">
-                                No students loaded. Import from CSV or select manually.
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </Modal>
-
-            {/* Import Modal */}
+            {/* Import Marks CSV Modal */}
             {showImportModal && (
                 <CSVImport
                     type="examMarks"
-                    onImport={handleImportStudents}
+                    expectedFields={['rollNumber', 'subject', 'marks']}
+                    onImport={handleImportMarks}
                     onClose={() => setShowImportModal(false)}
                 />
             )}
 
-            <style jsx>{`
-        .exams-page {
-          animation: fadeIn 0.3s ease-in-out;
-        }
+            <style>{`
+                .exams-page {
+                    animation: fadeIn 0.3s ease-in-out;
+                }
 
-        .page-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: var(--spacing-xl);
-        }
+                .page-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    margin-bottom: var(--spacing-xl);
+                }
 
-        .page-header h1 {
-          font-size: 2rem;
-          font-weight: 700;
-          color: var(--gray-900);
-          margin-bottom: var(--spacing-xs);
-        }
+                .page-header h1 {
+                    font-size: 2rem;
+                    font-weight: 700;
+                    color: var(--gray-900);
+                    margin-bottom: var(--spacing-xs);
+                }
 
-        .exam-form {
-          max-height: 60vh;
-          overflow-y: auto;
-        }
+                .marks-entry-wizard {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--spacing-xl);
+                }
 
-        .marks-entry {
-          max-height: 60vh;
-          overflow-y: auto;
-        }
-        
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
+                .wizard-step {
+                    background: var(--gray-50);
+                    padding: var(--spacing-lg);
+                    border-radius: var(--radius-lg);
+                    border: 2px solid var(--gray-200);
+                }
+
+                .step-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: var(--spacing-md);
+                }
+
+                .step-title {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--spacing-md);
+                    font-size: 1.125rem;
+                    font-weight: 600;
+                    color: var(--gray-900);
+                    margin-bottom: var(--spacing-md);
+                }
+
+                .step-number {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 32px;
+                    height:32px;
+                    background: var(--primary-600);
+                    color: white;
+                    border-radius: var(--radius-full);
+                    font-weight: 700;
+                }
+
+                .modal-footer {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: var(--spacing-md);
+                    margin-top: var(--spacing-lg);
+                    padding-top: var(--spacing-lg);
+                    border-top: 1px solid var(--border-color);
+                }
+
+                @keyframes fadeIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(10px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+            `}</style>
         </div>
     );
 };

@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
-import { Bell, Search, Moon, Sun, LogOut, User, Menu } from 'lucide-react';
+import { Bell, Search, Moon, Sun, LogOut, User, Menu, Building } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore, useThemeStore } from '../../store';
+import { useAuthStore, useThemeStore, useSchoolStore } from '../../store';
 import Avatar from '../common/Avatar';
 
 const Header = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { theme, toggleTheme } = useThemeStore();
+  const { currentSchool } = useSchoolStore();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  // Use current school for branding
+  const userSchool = currentSchool;
 
   const handleLogout = () => {
     logout();
@@ -21,6 +25,17 @@ const Header = ({ onMenuClick }) => {
         <button className="menu-btn" onClick={onMenuClick} aria-label="Toggle menu">
           <Menu size={24} />
         </button>
+
+        <div className="branding">
+          {userSchool?.logo ? (
+            <img src={userSchool.logo} alt={userSchool.name} className="header-school-logo" />
+          ) : (
+            <div className="header-school-icon">
+              <Building size={20} />
+            </div>
+          )}
+          <span className="header-school-name">{userSchool?.name || 'School CMS'}</span>
+        </div>
 
         <div className="search-bar">
           <Search size={18} className="search-icon" />
@@ -74,7 +89,7 @@ const Header = ({ onMenuClick }) => {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .header {
           height: 70px;
           background: var(--bg-card);
@@ -267,9 +282,57 @@ const Header = ({ onMenuClick }) => {
           }
         }
 
+        .branding {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          margin-right: var(--spacing-lg);
+          padding-right: var(--spacing-lg);
+          border-right: 1px solid var(--border-color);
+        }
+
+        .header-school-logo {
+          height: 32px;
+          width: auto;
+          object-fit: contain;
+        }
+
+        .header-school-icon {
+          width: 32px;
+          height: 32px;
+          background: var(--primary-100);
+          color: var(--primary-600);
+          border-radius: var(--radius-md);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .header-school-name {
+          font-weight: 600;
+          font-size: 0.9375rem;
+          color: var(--text-primary);
+          white-space: nowrap;
+          max-width: 200px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        @media (max-width: 1024px) {
+           .header-school-name {
+             display: none;
+           }
+        }
+
         @media (max-width: 768px) {
           .menu-btn {
             display: flex;
+          }
+
+          .branding {
+             margin-right: 0;
+             padding-right: 0;
+             border-right: none;
           }
 
           .search-bar {

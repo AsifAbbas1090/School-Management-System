@@ -1,17 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Search, Edit, Trash2, Download, UserCircle, Link as LinkIcon, Upload } from 'lucide-react';
-import { useParentsStore, useStudentsStore } from '../../store';
+import { useParentsStore, useStudentsStore, useAuthStore, useSchoolStore } from '../../store';
+import { USER_ROLES } from '../../constants';
 import { mockData } from '../../services/mockData';
 import { exportToCSV, generateId } from '../../utils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import Avatar from '../../components/common/Avatar';
 import CSVImport from '../../components/common/CSVImport';
+import { AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const ParentsPage = () => {
-    const { parents, setParents, addParent, updateParent, deleteParent } = useParentsStore();
+    const { user } = useAuthStore();
+    const canManageParents = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+    const canManageManagement = user?.role === USER_ROLES.ADMIN; // Only Admin can add Management
+
+    const { parents, setParents, addParent, updateParent, deleteParent, getParentsBySchool } = useParentsStore();
     const { students, setStudents } = useStudentsStore();
+    const { currentSchool } = useSchoolStore();
+
+    if (!canManageParents) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+                <AlertCircle size={64} className="text-error-500 mb-4" />
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">You do not have permission to access parents management. This area is restricted to administrators and school management only.</p>
+            </div>
+        );
+    }
 
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
@@ -21,10 +38,19 @@ const ParentsPage = () => {
     const [selectedParent, setSelectedParent] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [parentToDelete, setParentToDelete] = useState(null);
+    const [showManagementModal, setShowManagementModal] = useState(false);
+    const [managementFormData, setManagementFormData] = useState({
+        name: '',
+        email: '',
+        password: '',
+        phone: '',
+    });
+    const [managementErrors, setManagementErrors] = useState({});
 
     const [formData, setFormData] = useState({
         name: '',
         email: '',
+        password: '',
         phone: '',
         address: '',
         occupation: '',
@@ -36,11 +62,29 @@ const ParentsPage = () => {
 
     useEffect(() => {
         loadData();
-    }, []);
+    }, [currentSchool]);
 
     const loadData = () => {
-        setParents(mockData.parents);
-        setStudents(mockData.students);
+        // Load school-specific data
+        if (currentSchool) {
+            const schoolDataKey = `school_data_${currentSchool.id}`;
+            const storedData = localStorage.getItem(schoolDataKey);
+            
+            if (storedData) {
+                const schoolData = JSON.parse(storedData);
+                setParents(schoolData.parents || []);
+                setStudents(schoolData.students || []);
+            } else {
+                // Filter by school
+                const schoolParents = mockData.parents.filter(p => p.schoolId === currentSchool.id);
+                const schoolStudents = mockData.students.filter(s => s.schoolId === currentSchool.id);
+                setParents(schoolParents);
+                setStudents(schoolStudents);
+            }
+        } else {
+            setParents(mockData.parents);
+            setStudents(mockData.students);
+        }
     };
 
     const breadcrumbItems = [
@@ -55,6 +99,7 @@ const ParentsPage = () => {
             setFormData({
                 name: parent.name,
                 email: parent.email,
+                password: parent.password || '',
                 phone: parent.phone,
                 address: parent.address,
                 occupation: parent.occupation,
@@ -71,6 +116,7 @@ const ParentsPage = () => {
         setFormData({
             name: '',
             email: '',
+            password: '',
             phone: '',
             address: '',
             occupation: '',
@@ -108,6 +154,7 @@ const ParentsPage = () => {
 
         if (!formData.name.trim()) newErrors.name = 'Name is required';
         if (!formData.email.trim()) newErrors.email = 'Email is required';
+        if (!formData.password.trim() && modalMode === 'add') newErrors.password = 'Password is required';
         if (!formData.phone.trim()) newErrors.phone = 'Phone is required';
         if (!formData.address.trim()) newErrors.address = 'Address is required';
         if (!formData.occupation.trim()) newErrors.occupation = 'Occupation is required';
@@ -124,6 +171,9 @@ const ParentsPage = () => {
         const parentData = {
             ...formData,
             id: selectedParent?.id || generateId(),
+            password: formData.password || selectedParent?.password || 'parent123', // Keep existing password if editing
+            role: USER_ROLES.PARENT,
+            schoolId: currentSchool?.id || null, // Link to school
             createdAt: selectedParent?.createdAt || new Date(),
             updatedAt: new Date(),
         };
@@ -173,6 +223,10 @@ const ParentsPage = () => {
     };
 
     const filteredParents = parents.filter((parent) => {
+        // Filter by school
+        const matchesSchool = !currentSchool || parent.schoolId === currentSchool.id;
+        if (!matchesSchool) return false;
+        
         const matchesSearch = parent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             parent.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
             parent.phone.toLowerCase().includes(searchTerm.toLowerCase());
@@ -199,6 +253,12 @@ const ParentsPage = () => {
                         <Download size={18} />
                         <span>Export</span>
                     </button>
+                    {canManageManagement && (
+                        <button className="btn btn-outline" onClick={() => setShowManagementModal(true)}>
+                            <Plus size={18} />
+                            <span>Add Management</span>
+                        </button>
+                    )}
                     <button className="btn btn-primary" onClick={() => handleOpenModal('add')}>
                         <Plus size={18} />
                         <span>Add Parent</span>
@@ -360,6 +420,23 @@ const ParentsPage = () => {
                         </div>
 
                         <div className="form-group">
+                            <label className="form-label">Password {modalMode === 'add' ? '*' : ''}</label>
+                            <input
+                                type="text"
+                                name="password"
+                                value={formData.password}
+                                onChange={handleChange}
+                                className={`input ${errors.password ? 'input-error' : ''}`}
+                                placeholder="Set login password"
+                                disabled={modalMode === 'edit'}
+                            />
+                            {errors.password && <span className="form-error">{errors.password}</span>}
+                            {modalMode === 'edit' && (
+                                <p className="text-xs text-gray-500 mt-1">Password cannot be changed after creation</p>
+                            )}
+                        </div>
+
+                        <div className="form-group">
                             <label className="form-label">Phone *</label>
                             <input
                                 type="tel"
@@ -452,6 +529,134 @@ const ParentsPage = () => {
                 <p>Are you sure you want to delete <strong>{parentToDelete?.name}</strong>? This action cannot be undone.</p>
             </Modal>
 
+            {/* Add Management Modal */}
+            {showManagementModal && (
+                <Modal
+                    isOpen={showManagementModal}
+                    onClose={() => {
+                        setShowManagementModal(false);
+                        setManagementFormData({ name: '', email: '', password: '', phone: '' });
+                        setManagementErrors({});
+                    }}
+                    title="Add Management User"
+                    footer={
+                        <>
+                            <button className="btn btn-outline" onClick={() => {
+                                setShowManagementModal(false);
+                                setManagementFormData({ name: '', email: '', password: '', phone: '' });
+                                setManagementErrors({});
+                            }}>
+                                Cancel
+                            </button>
+                            <button className="btn btn-primary" onClick={() => {
+                                const errors = {};
+                                if (!managementFormData.name.trim()) errors.name = 'Name is required';
+                                if (!managementFormData.email.trim()) errors.email = 'Email is required';
+                                if (!managementFormData.password.trim()) errors.password = 'Password is required';
+                                if (!managementFormData.phone.trim()) errors.phone = 'Phone is required';
+
+                                if (Object.keys(errors).length > 0) {
+                                    setManagementErrors(errors);
+                                    return;
+                                }
+
+                                // Add management user
+                                // Note: In production, this would call a backend API
+                                const newManagement = {
+                                    id: generateId(),
+                                    name: managementFormData.name,
+                                    email: managementFormData.email,
+                                    password: managementFormData.password,
+                                    phone: managementFormData.phone,
+                                    role: USER_ROLES.MANAGEMENT,
+                                    status: 'active',
+                                    schoolId: currentSchool?.id || null, // Link to school
+                                    createdAt: new Date(),
+                                    updatedAt: new Date(),
+                                };
+
+                                // Store in localStorage for persistence (in production, use backend)
+                                const existingUsers = JSON.parse(localStorage.getItem('management-users') || '[]');
+                                existingUsers.push(newManagement);
+                                localStorage.setItem('management-users', JSON.stringify(existingUsers));
+                                
+                                toast.success(`Management user "${managementFormData.name}" added successfully with password set`);
+                                setShowManagementModal(false);
+                                setManagementFormData({ name: '', email: '', password: '', phone: '' });
+                                setManagementErrors({});
+                            }}>
+                                Add Management
+                            </button>
+                        </>
+                    }
+                >
+                    <form className="management-form">
+                        <div className="grid grid-cols-2 gap-md">
+                            <div className="form-group">
+                                <label className="form-label">Full Name *</label>
+                                <input
+                                    type="text"
+                                    value={managementFormData.name}
+                                    onChange={(e) => {
+                                        setManagementFormData(prev => ({ ...prev, name: e.target.value }));
+                                        if (managementErrors.name) setManagementErrors(prev => ({ ...prev, name: '' }));
+                                    }}
+                                    className={`input ${managementErrors.name ? 'input-error' : ''}`}
+                                    placeholder="Enter management name"
+                                />
+                                {managementErrors.name && <span className="form-error">{managementErrors.name}</span>}
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Email *</label>
+                                <input
+                                    type="email"
+                                    value={managementFormData.email}
+                                    onChange={(e) => {
+                                        setManagementFormData(prev => ({ ...prev, email: e.target.value }));
+                                        if (managementErrors.email) setManagementErrors(prev => ({ ...prev, email: '' }));
+                                    }}
+                                    className={`input ${managementErrors.email ? 'input-error' : ''}`}
+                                    placeholder="Enter email address"
+                                />
+                                {managementErrors.email && <span className="form-error">{managementErrors.email}</span>}
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Password *</label>
+                                <input
+                                    type="text"
+                                    value={managementFormData.password}
+                                    onChange={(e) => {
+                                        setManagementFormData(prev => ({ ...prev, password: e.target.value }));
+                                        if (managementErrors.password) setManagementErrors(prev => ({ ...prev, password: '' }));
+                                    }}
+                                    className={`input ${managementErrors.password ? 'input-error' : ''}`}
+                                    placeholder="Set login password"
+                                />
+                                {managementErrors.password && <span className="form-error">{managementErrors.password}</span>}
+                                <p className="text-xs text-gray-500 mt-1">Password will be set by you and cannot be changed by the user</p>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Phone *</label>
+                                <input
+                                    type="tel"
+                                    value={managementFormData.phone}
+                                    onChange={(e) => {
+                                        setManagementFormData(prev => ({ ...prev, phone: e.target.value }));
+                                        if (managementErrors.phone) setManagementErrors(prev => ({ ...prev, phone: '' }));
+                                    }}
+                                    className={`input ${managementErrors.phone ? 'input-error' : ''}`}
+                                    placeholder="Enter phone number"
+                                />
+                                {managementErrors.phone && <span className="form-error">{managementErrors.phone}</span>}
+                            </div>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
             {/* Import Modal */}
             {showImportModal && (
                 <Modal
@@ -496,7 +701,7 @@ const ParentsPage = () => {
                 </Modal>
             )}
 
-            <style jsx>{`
+            <style>{`
         .parents-page {
           animation: fadeIn 0.3s ease-in-out;
         }

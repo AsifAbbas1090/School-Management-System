@@ -1,12 +1,35 @@
 import React, { useState } from 'react';
-import { Save, School, Calendar, Users, Bell, Lock, Database } from 'lucide-react';
-import { SCHOOL_INFO } from '../../constants';
+import { Save, School, Calendar, Users, Bell, Lock, Database, ShieldAlert } from 'lucide-react';
+import { SCHOOL_INFO, USER_ROLES } from '../../constants';
+import { useAuthStore } from '../../store';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import toast from 'react-hot-toast';
 
 const SettingsPage = () => {
+    const { user } = useAuthStore();
     const [activeTab, setActiveTab] = useState('school');
     const [schoolSettings, setSchoolSettings] = useState(SCHOOL_INFO);
+
+    const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+
+    if (!isAuthorized) {
+        return (
+            <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
+                <ShieldAlert size={64} className="text-error mb-md" />
+                <h1 className="text-2xl font-bold mb-sm">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">
+                    You do not have permission to view or modify system settings.
+                    Please contact your system administrator if you believe this is an error.
+                </p>
+                <button
+                    className="btn btn-primary mt-lg"
+                    onClick={() => window.history.back()}
+                >
+                    Go Back
+                </button>
+            </div>
+        );
+    }
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
@@ -339,7 +362,7 @@ const SettingsPage = () => {
                 </div>
             </div>
 
-            <style jsx>{`
+            <style>{`
         .settings-page {
           animation: fadeIn 0.3s ease-in-out;
         }

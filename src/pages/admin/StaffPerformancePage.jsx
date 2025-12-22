@@ -1,9 +1,31 @@
 import React from 'react';
-import { TrendingUp, CheckCircle, AlertTriangle, Users } from 'lucide-react';
+import { TrendingUp, CheckCircle, AlertTriangle, Users, ShieldAlert } from 'lucide-react';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import { formatCurrency } from '../../utils';
+import { useAuthStore } from '../../store';
+import { USER_ROLES } from '../../constants';
 
 const StaffPerformancePage = () => {
+    const { user } = useAuthStore();
+    const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+
+    if (!isAuthorized) {
+        return (
+            <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
+                <ShieldAlert size={64} className="text-error mb-md" />
+                <h1 className="text-2xl font-bold mb-sm">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">
+                    You do not have permission to view staff performance metrics.
+                </p>
+                <button
+                    className="btn btn-primary mt-lg"
+                    onClick={() => window.history.back()}
+                >
+                    Go Back
+                </button>
+            </div>
+        );
+    }
     // Mock Data for Performance
     const performanceStats = {
         feeCollectionEfficiency: 85, // percentage
@@ -139,7 +161,7 @@ const StaffPerformancePage = () => {
                 </div>
             </div>
 
-            <style jsx>{`
+            <style>{`
                 .performance-page {
                     animation: fadeIn 0.3s ease-in-out;
                 }

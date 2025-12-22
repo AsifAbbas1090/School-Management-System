@@ -25,10 +25,11 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
             ]
         },
         examMarks: {
-            headers: ['studentName', 'rollNumber'],
+            headers: ['rollNumber', 'subject', 'marks'],
             sample: [
-                ['John Doe', 'STU001'],
-                ['Jane Smith', 'STU002'],
+                ['STU001', 'Mathematics', '85'],
+                ['STU002', 'Mathematics', '92'],
+                ['STU003', 'Mathematics', '78'],
             ]
         },
         feeCollection: {
@@ -116,8 +117,13 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
                         continue;
                     }
                 } else if (type === 'examMarks') {
-                    if (!row.studentName || !row.rollNumber) {
-                        parseErrors.push(`Row ${i}: Student Name and Roll Number are required`);
+                    if (!row.rollNumber || !row.subject || !row.marks) {
+                        parseErrors.push(`Row ${i}: Roll Number, Subject, and Marks are required`);
+                        continue;
+                    }
+                    // Validate marks is a number
+                    if (isNaN(row.marks)) {
+                        parseErrors.push(`Row ${i}: Marks must be a valid number`);
                         continue;
                     }
                 } else if (type === 'feeCollection') {
@@ -304,7 +310,7 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
                 )}
             </div>
 
-            <style jsx>{`
+            <style>{`
         .csv-import {
           display: flex;
           flex-direction: column;

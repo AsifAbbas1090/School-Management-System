@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
 import { Calendar, CheckCircle, XCircle, Clock, Download, Filter, CheckSquare, Square } from 'lucide-react';
+import { useAuthStore } from '../../store';
 import { mockData } from '../../services/mockData';
 import { formatDate, exportToCSV } from '../../utils';
 import { printTable } from '../../utils/printUtils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
+import { AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const AttendancePage = () => {
+    const { user } = useAuthStore();
+    const canManageAttendance = ['admin', 'management', 'teacher', 'super_admin'].includes(user?.role);
+
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedClass, setSelectedClass] = useState('');
     const [selectedSection, setSelectedSection] = useState('');
@@ -18,6 +23,16 @@ const AttendancePage = () => {
 
     // For summary view
     const [submissionSummary, setSubmissionSummary] = useState(null);
+
+    if (!canManageAttendance) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+                <AlertCircle size={64} className="text-error-500 mb-4" />
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">You do not have permission to access attendance management. This area is restricted to staff only.</p>
+            </div>
+        );
+    }
 
     const classes = mockData.classes;
     const sections = mockData.sections;
@@ -336,7 +351,7 @@ const AttendancePage = () => {
                 </div>
             )}
 
-            <style jsx>{`
+            <style>{`
         .attendance-page {
           animation: fadeIn 0.3s ease-in-out;
         }

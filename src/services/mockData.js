@@ -312,16 +312,52 @@ export const mockFeePayments = [
  * Authentication Service
  */
 export const authService = {
-    login: async (email, password) => {
+    login: async (email, password, schoolId = null) => {
         // Simulate API call
         return new Promise((resolve, reject) => {
             setTimeout(() => {
-                const user = mockUsers.find(
+                // First check mock users
+                let user = mockUsers.find(
                     (u) => u.email === email && u.password === password
                 );
 
+                // If not found in mock users, check school-specific users from localStorage
+                if (!user) {
+                    const allSchoolData = [];
+                    // Get all school data from localStorage
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith('school_data_')) {
+                            try {
+                                const data = JSON.parse(localStorage.getItem(key));
+                                if (data.teachers) allSchoolData.push(...data.teachers);
+                                if (data.parents) allSchoolData.push(...data.parents);
+                            } catch (e) {
+                                console.warn('Error parsing school data:', e);
+                            }
+                        }
+                    }
+                    
+                    // Check admin users
+                    const adminUsers = JSON.parse(localStorage.getItem('admin-users') || '[]');
+                    allSchoolData.push(...adminUsers);
+                    
+                    // Also check management users
+                    const managementUsers = JSON.parse(localStorage.getItem('management-users') || '[]');
+                    allSchoolData.push(...managementUsers);
+                    
+                    user = allSchoolData.find(
+                        (u) => u.email === email && u.password === password
+                    );
+                }
+
                 if (user) {
-                    const { password, ...userData } = user;
+                    const { password: pwd, ...userData } = user;
+                    // If schoolId provided, verify user belongs to that school
+                    if (schoolId && userData.schoolId && userData.schoolId !== schoolId) {
+                        reject({ success: false, message: 'User does not belong to this school' });
+                        return;
+                    }
                     resolve({ success: true, data: userData });
                 } else {
                     reject({ success: false, message: 'Invalid credentials' });

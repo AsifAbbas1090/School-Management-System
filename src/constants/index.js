@@ -108,6 +108,7 @@ export const NAVIGATION_ITEMS = {
     ],
     admin: [
         { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard' },
+        { id: 'classes', label: 'Classes', icon: 'BookOpen', path: '/classes' },
         { id: 'students', label: 'Students', icon: 'Users', path: '/students' },
         { id: 'teachers', label: 'Teachers', icon: 'UserCheck', path: '/teachers' },
         { id: 'parents', label: 'Parents', icon: 'UserCircle', path: '/parents' },
@@ -124,6 +125,7 @@ export const NAVIGATION_ITEMS = {
     ],
     management: [
         { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard' },
+        { id: 'classes', label: 'Classes', icon: 'BookOpen', path: '/classes' },
         { id: 'students', label: 'Students', icon: 'Users', path: '/students' },
         { id: 'teachers', label: 'Teachers', icon: 'UserCheck', path: '/teachers' },
         { id: 'support_staff', label: 'Support Staff', icon: 'UserCog', path: '/support-staff' },
@@ -136,18 +138,14 @@ export const NAVIGATION_ITEMS = {
     ],
     teacher: [
         { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard' },
-        { id: 'attendance', label: 'Attendance', icon: 'ClipboardCheck', path: '/attendance' },
         { id: 'exams', label: 'Marks Entry', icon: 'FileText', path: '/exams' },
-        { id: 'timetable', label: 'My Timetable', icon: 'Calendar', path: '/timetable' },
         { id: 'messages', label: 'Messages', icon: 'MessageSquare', path: '/messages' },
         { id: 'leave', label: 'My Leave', icon: 'CalendarX', path: '/leave' },
     ],
     parent: [
         { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard' },
-        { id: 'attendance', label: 'Attendance', icon: 'ClipboardCheck', path: '/attendance' },
         { id: 'fees', label: 'Fees', icon: 'DollarSign', path: '/fees' },
         { id: 'results', label: 'Results', icon: 'FileText', path: '/exams' },
-        { id: 'timetable', label: 'Timetable', icon: 'Calendar', path: '/timetable' },
         { id: 'messages', label: 'Messages', icon: 'MessageSquare', path: '/messages' },
         { id: 'leave', label: 'Leave Request', icon: 'CalendarX', path: '/leave' },
     ],
@@ -178,11 +176,18 @@ export const DATE_FORMAT = 'MMM dd, yyyy';
 export const DATE_TIME_FORMAT = 'MMM dd, yyyy hh:mm a';
 export const TIME_FORMAT = 'hh:mm a';
 
+export const SUBSCRIPTION_STATUS = {
+    ACTIVE: 'active',
+    EXPIRED: 'expired',
+    DUE_SOON: 'due_soon',
+    PENDING: 'pending',
+};
+
 export const SCHOOL_INFO = {
-    name: 'Bright Future Academy',
-    tagline: 'Nurturing Excellence, Building Future',
-    address: '123 Education Street, Knowledge City',
-    phone: '+1 234 567 8900',
-    email: 'info@brightfuture.edu',
-    website: 'www.brightfuture.edu',
+    name: 'AL-ABBAS COLLEGE OF SCIENCE AND ARTS Shah Jamal',
+    tagline: 'Excellence in Education, Building Tomorrow\'s Leaders',
+    address: 'Shah Jamal, Lahore',
+    phone: '+92 300 1234567',
+    email: 'info@alabbascollege.edu.pk',
+    website: 'www.alabbascollege.edu.pk',
 };

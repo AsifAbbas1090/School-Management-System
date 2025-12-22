@@ -4,9 +4,25 @@ import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
 
+import { useAuthStore } from '../../store';
+import { AlertCircle } from 'lucide-react';
+
 const SupportStaffPage = () => {
+    const { user } = useAuthStore();
+    const canManageStaff = ['admin', 'management', 'super_admin'].includes(user?.role);
+
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState(false);
+
+    if (!canManageStaff) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+                <AlertCircle size={64} className="text-error-500 mb-4" />
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">You do not have permission to access support staff management. This area is restricted to administrators and school management only.</p>
+            </div>
+        );
+    }
 
     // Mock Data
     const [staffList, setStaffList] = useState([
@@ -140,7 +156,7 @@ const SupportStaffPage = () => {
                     </div>
                 </form>
             </Modal>
-            <style jsx>{`
+            <style>{`
                 .support-staff-page {
                     animation: fadeIn 0.3s ease-in-out;
                 }

@@ -3,16 +3,42 @@ import { Users, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { dashboardService } from '../../services/mockData';
 import { formatCurrency } from '../../utils';
+import { useAuthStore } from '../../store';
+import { USER_ROLES } from '../../constants';
 import Loading from '../../components/common/Loading';
 import Breadcrumb from '../../components/common/Breadcrumb';
+import { ShieldAlert } from 'lucide-react';
 
 const ManagementDashboard = () => {
+    const { user } = useAuthStore();
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN, USER_ROLES.MANAGEMENT].includes(user?.role);
+
     useEffect(() => {
-        loadDashboardData();
-    }, []);
+        if (isAuthorized) {
+            loadDashboardData();
+        }
+    }, [isAuthorized]);
+
+    if (!isAuthorized) {
+        return (
+            <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
+                <ShieldAlert size={64} className="text-error mb-md" />
+                <h1 className="text-2xl font-bold mb-sm">Access Denied</h1>
+                <p className="text-gray-600 max-w-md">
+                    You do not have permission to view the management dashboard.
+                </p>
+                <button
+                    className="btn btn-primary mt-lg"
+                    onClick={() => window.history.back()}
+                >
+                    Go Back
+                </button>
+            </div>
+        );
+    }
 
     const loadDashboardData = async () => {
         try {
@@ -223,7 +249,7 @@ const ManagementDashboard = () => {
                 </div>
             </div>
 
-            <style jsx>{`
+            <style>{`
         .dashboard-page {
           animation: fadeIn 0.3s ease-in-out;
         }
