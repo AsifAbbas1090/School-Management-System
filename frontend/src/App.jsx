@@ -1,0 +1,160 @@
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useAuthStore } from './store';
+import { USER_ROLES } from './constants';
+
+// Layouts
+import DashboardLayout from './components/layout/DashboardLayout';
+
+// Auth Pages
+import LoginPage from './pages/auth/LoginPage';
+import SuperAdminLoginPage from './pages/auth/SuperAdminLoginPage';
+import SchoolLoginPage from './pages/auth/SchoolLoginPage';
+
+// Dashboard Pages
+import AdminDashboard from './pages/dashboard/AdminDashboard';
+import SuperAdminDashboard from './pages/dashboard/SuperAdminDashboard';
+import ManagementDashboard from './pages/dashboard/ManagementDashboard';
+import TeacherDashboard from './pages/dashboard/TeacherDashboard';
+import ParentDashboard from './pages/dashboard/ParentDashboard';
+import StudentDashboard from './pages/dashboard/StudentDashboard';
+
+// Module Pages
+import StudentsPage from './pages/students/StudentsPage';
+import TeachersPage from './pages/teachers/TeachersPage';
+import ParentsPage from './pages/parents/ParentsPage';
+import AttendancePage from './pages/attendance/AttendancePage';
+import FeesPage from './pages/fees/FeesPage';
+import ExpensesPage from './pages/expenses/ExpensesPage';
+import ExamsPage from './pages/exams/ExamsPage';
+import TimetablePage from './pages/timetable/TimetablePage';
+import AnnouncementsPage from './pages/announcements/AnnouncementsPage';
+import MessagesPage from './pages/messaging/MessagesPage';
+import LeavePage from './pages/leave/LeavePage';
+import SettingsPage from './pages/settings/SettingsPage';
+import StaffPerformancePage from './pages/admin/StaffPerformancePage';
+import SupportStaffPage from './pages/staff/SupportStaffPage';
+import SchoolsPage from './pages/schools/SchoolsPage';
+import ClassesManagementPage from './pages/classes/ClassesManagementPage';
+import TeacherAttendancePage from './pages/teacher-attendance/TeacherAttendancePage';
+import MyAttendancePage from './pages/teacher-attendance/MyAttendancePage';
+
+// Protected Route Component
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated } = useAuthStore();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
+
+// Public Route Component (redirects to dashboard if already logged in)
+const PublicRoute = ({ children }) => {
+  const { isAuthenticated } = useAuthStore();
+
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+};
+
+// Dashboard Router - routes to correct dashboard based on user role
+const DashboardRouter = () => {
+  const { user } = useAuthStore();
+
+  switch (user?.role) {
+    case USER_ROLES.ADMIN:
+      return <AdminDashboard />;
+    case USER_ROLES.SUPER_ADMIN:
+      return <SuperAdminDashboard />;
+    case USER_ROLES.MANAGEMENT:
+      return <ManagementDashboard />;
+    case USER_ROLES.TEACHER:
+      return <TeacherDashboard />;
+    case USER_ROLES.PARENT:
+      return <ParentDashboard />;
+    case USER_ROLES.STUDENT:
+      return <StudentDashboard />;
+    default:
+      return <AdminDashboard />;
+  }
+};
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Public Routes */}
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <LoginPage />
+            </PublicRoute>
+          }
+        />
+
+        {/* Super Admin Login */}
+        <Route
+          path="/superadmin/login"
+          element={
+            <PublicRoute>
+              <SuperAdminLoginPage />
+            </PublicRoute>
+          }
+        />
+
+        {/* School-Specific Login */}
+        <Route
+          path="/:schoolSlug/signin"
+          element={
+            <PublicRoute>
+              <SchoolLoginPage />
+            </PublicRoute>
+          }
+        />
+
+        {/* Protected Routes */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardRouter />} />
+          <Route path="schools" element={<SchoolsPage />} />
+          <Route path="classes" element={<ClassesManagementPage />} />
+
+          {/* Module Routes */}
+          <Route path="students" element={<StudentsPage />} />
+          <Route path="teachers" element={<TeachersPage />} />
+          <Route path="parents" element={<ParentsPage />} />
+          <Route path="attendance" element={<AttendancePage />} />
+          <Route path="fees" element={<FeesPage />} />
+          <Route path="expenses" element={<ExpensesPage />} />
+          <Route path="exams" element={<ExamsPage />} />
+          <Route path="timetable" element={<TimetablePage />} />
+          <Route path="announcements" element={<AnnouncementsPage />} />
+          <Route path="messages" element={<MessagesPage />} />
+          <Route path="staff-performance" element={<StaffPerformancePage />} />
+          <Route path="support-staff" element={<SupportStaffPage />} />
+          <Route path="leave" element={<LeavePage />} />
+          <Route path="teacher-attendance" element={<TeacherAttendancePage />} />
+          <Route path="my-attendance" element={<MyAttendancePage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+
+        {/* 404 Route */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;

@@ -1,535 +1,272 @@
-# 🎓 Multi-School Management System
+# Multi-School Management System
 
-A production-ready, **multi-school, multi-campus SaaS platform** built with React for managing educational institutions. This is a complete **frontend-only** implementation designed to be scalable, reusable, and extensible.
+A comprehensive, production-grade school management system built with React, NestJS, PostgreSQL, and Firebase. Designed for managing multiple schools with role-based access control, fee management, student tracking, and more.
 
-> **Important**: This is a frontend-only system using mock data and hardcoded authentication. No backend server or real authentication system is implemented.
+## 🚀 Features
 
----
+### Core Features
 
-## 🌟 **Product Philosophy**
+- **Multi-School Management**: Manage multiple schools from a single platform
+- **Role-Based Access Control**: Super Admin, Admin, Management, Teacher, Parent, Support Staff
+- **Student Management**: Complete student lifecycle management with admission tracking
+- **Fee Management**: Fee structures, invoices, payments, receipts, and handovers
+- **Academic Structure**: Classes, sections, subjects management
+- **User Management**: Teachers, parents, and management user accounts
+- **Leave Management**: Request and approve leave for teachers and students
+- **Announcements**: School-wide and targeted announcements
+- **Messaging**: Internal messaging system
+- **Exams & Results**: Exam creation and result management
+- **Expenses**: Track school expenses with receipt uploads
+- **Analytics Dashboard**: Comprehensive analytics for all roles
+- **File Storage**: Firebase Storage integration for receipts and logos
 
-This is **NOT a single-school demo** — it's a complete **SaaS-style platform** where:
-- **One Super Admin** manages multiple schools
-- Each school operates **independently** with isolated data
-- **Scalable architecture** ready for production
-- **Clean, reusable components** with zero junk code
-- Frontend-only with **localStorage persistence**
-- **School-specific URLs** for branded login experiences
+### Technical Features
 
----
+- **JWT Authentication**: Secure token-based authentication
+- **Soft Delete**: Logical deletion for data recovery
+- **Data Validation**: Input validation on both frontend and backend
+- **API Documentation**: Swagger/OpenAPI documentation
+- **Error Handling**: Comprehensive error handling
+- **Type Safety**: TypeScript throughout
+- **Responsive Design**: Mobile-friendly UI
 
-## 👥 **User Roles & Permissions**
+## 🛠️ Tech Stack
 
-### 1. **Super Admin** (Platform Owner)
-- **Login URL**: `/superadmin/login`
-- Manage multiple schools
-- Add, view, edit, and delete schools
-- Set admin credentials (email + password) for each school
-- Track subscription & revenue across all schools
-- View aggregated statistics per school
-- Upload school logos (actual file upload - PNG/JPG, max 5MB)
-- Set principal name for each school
-- Set owner/admin name for signature on documents
-- **Auto-generates** comprehensive school data when adding a school:
-  - 10 Classes (Class 1-10)
-  - 20 Sections (2 per class: A & B)
-  - 14 Subjects (Math, English, Science, etc.)
-  - 25 Teachers with subjects assigned
-  - 200-300 Students with parent accounts
-  - All data is school-specific and isolated
+### Frontend
+- **React 19** with Vite
+- **React Router DOM** for routing
+- **Zustand** for state management
+- **Lucide React** for icons
+- **Recharts** for charts
+- **React Hot Toast** for notifications
+- **jsPDF** for PDF generation
+- **date-fns** for date handling
 
-### 2. **School Admin**
-- **Login URL**: `/{school-slug}/signin` (e.g., `/al-abbas-college/signin`)
-- Complete school management dashboard
-- Add and manage:
-  - **Management** users (email + password set by admin)
-  - **Students** (email optional, **no login** - records only)
-  - **Teachers** (email + password set by admin/management)
-  - **Parents** (email + password set by admin/management)
-- View fee handovers from Management
-- Approve/reject leave requests from Teachers and Parents
-- **Cannot change** their own password (set by Super Admin)
+### Backend
+- **NestJS** (Node.js framework)
+- **TypeScript**
+- **Prisma** (ORM)
+- **PostgreSQL** (Database)
+- **JWT** (Authentication)
+- **bcrypt** (Password hashing)
+- **class-validator** (Validation)
+- **Swagger/OpenAPI** (API Documentation)
+- **Firebase Admin SDK** (File Storage)
 
-### 3. **Management** (Principal/Director)
-- **Login URL**: `/{school-slug}/signin`
-- Academic performance tracking
-- **Financial Handover System**: Hand over collected fees to Admin
-- **Leave Approval System**: Approve or reject leave requests from:
-  - Teachers
-  - Parents
-- View students, teachers, and support staff
-- Access exam results and announcements
-- Can add Teachers and Parents with passwords
-
-### 4. **Teacher**
-- **Login URL**: `/{school-slug}/signin`
-- Dashboard with class overview
-- Marks entry for exams
-- **Leave Request** (for self only, cannot approve)
-- Messages and internal communication
-- ❌ **No Attendance** (removed)
-- ❌ **No Timetable** (removed)
-- **Cannot change** password (set by Admin/Management)
-
-### 5. **Parent**
-- **Login URL**: `/{school-slug}/signin`
-- View child's academic progress
-- View and pay fees
-- View exam results
-- **Leave Request** (for child only, cannot approve)
-- Messages
-- ❌ **No Attendance** (removed)
-- ❌ **No Timetable** (removed)
-- **Cannot change** password (set by Admin/Management)
-
-### 6. **Student**
-- Records only — **no login capability**
-- Email is **optional**
-- Data managed by Admin/Management
-
----
-
-## 🚀 **Key Features**
-
-### **Multi-School System**
-- ✅ Add and manage **multiple schools**
-- ✅ Each school has **completely isolated data**
-- ✅ **School-specific URLs**: `/{school-slug}/signin`
-- ✅ **Auto-generation**: When a school is added, the system automatically creates:
-  - 10 Classes (Class 1-10)
-  - 20 Sections (A & B for each class)
-  - 14 Subjects (Math, English, Science, Computer Science, etc.)
-  - 25 Teachers with assigned subjects
-  - 200-300 Students with linked parent accounts
-  - All with realistic mock data for testing
-
-### **School Branding**
-- ✅ **Logo Upload**: Upload actual image files (PNG, JPG) - max 5MB
-- ✅ **Logo Display**: School logo appears in:
-  - Login pages
-  - Dashboard headers
-  - PDF receipts
-  - All school-branded documents
-- ✅ **Principal Name**: Set principal name when creating school
-- ✅ **Owner/Admin Name**: Set owner or admin name for signature on documents
-- ✅ **Principal in PDFs**: Principal name appears on all receipts and documents
-- ✅ **Owner/Admin Signature**: Owner/Admin name appears at bottom of all PDFs with signature line
-
-### **Subscription & Revenue Management** (Super Admin)
-- ✅ **Monthly subscription** tracking per school
-- ✅ **Revenue calculation**: Monthly & Total (in PKR)
-- ✅ **Subscription status**: Active, Expired, Due Soon, Pending
-- ✅ **Visual notifications** for due/expired subscriptions
-- ✅ Automated billing cycle (monthly)
-- ✅ Custom subscription amount per school
-
-### **Financial Handover System** (Management → Admin)
-- ✅ Management can hand over collected fees to Admin
-- ✅ Admin view shows: Amount, Management User, Timestamp
-- ✅ Complete handover history
-- ✅ Dynamic backup calculation
-
-### **Leave Approval System**
-- ✅ **Teachers** can request leave for themselves
-- ✅ **Parents** can request leave for their child
-- ✅ **Management & Admin** can approve or reject leaves
-- ✅ Status: Pending, Approved, Rejected
-
-### **PDF Payment Receipts & Reports**
-- ✅ **Download receipts** as PDF
-- ✅ **Print-ready** format
-- ✅ **School-branded** with:
-  - **School logo** at top (if uploaded)
-  - **School name** prominently displayed (large, bold, uppercase)
-  - **Principal name** (if set)
-  - School address, phone, email
-- ✅ **All PDF Reports** include:
-  - School branding at top
-  - **Owner/Admin signature section** at bottom
-  - **Legal disclaimer**: "This is a computer-generated document. Errors and omissions are accepted. Cannot be challenged in court."
-  - Professional layout with proper spacing
-- ✅ Includes:
-  - Student information
-  - Payment details
-  - Receipt number and timestamp
-  - Signature line with owner/admin name
-
-### **Password Management**
-- ✅ **Super Admin** sets admin passwords (cannot be changed by admin)
-- ✅ **Admin** sets Management passwords
-- ✅ **Admin & Management** set Teacher and Parent passwords
-- ✅ **Passwords cannot be changed** after creation (security feature)
-- ✅ All passwords are **hardcoded** (frontend-only limitation)
-
-### **User Management**
-- ✅ Role-based CRUD operations
-- ✅ Hardcoded passwords (frontend only)
-- ✅ Email required for Management and Teachers
-- ✅ Email **optional** for Students (no login)
-- ✅ School-specific data isolation
-
-### **Modern UI/UX**
-- ✅ **Stunning login pages** with animated gradients
-- ✅ **School-specific login pages** with school branding
-- ✅ Glassmorphism effects
-- ✅ Dark mode support (improved contrast)
-- ✅ Fully responsive (desktop, tablet, mobile)
-- ✅ Smooth animations and micro-interactions
-
----
-
-## 📁 **Architecture & Folder Structure**
+## 📁 Project Structure
 
 ```
-src/
-├── components/
-│   ├── common/           # Reusable UI components
-│   │   ├── Avatar.jsx
-│   │   ├── Breadcrumb.jsx
-│   │   ├── Loading.jsx
-│   │   ├── Modal.jsx
-│   │   └── CSVImport.jsx
-│   ├── layout/           # Layout components
-│   │   ├── DashboardLayout.jsx
-│   │   ├── Header.jsx (shows school logo)
-│   │   └── Sidebar.jsx
-│   └── [module]/         # Module-specific components
-├── pages/
-│   ├── auth/             # Authentication
-│   │   ├── LoginPage.jsx (main login)
-│   │   ├── SuperAdminLoginPage.jsx (/superadmin)
-│   │   └── SchoolLoginPage.jsx (/{school-slug}/signin)
-│   ├── schools/          # Schools management (Super Admin)
-│   ├── dashboard/        # Role-based dashboards
-│   ├── students/         # Student management
-│   ├── teachers/         # Teacher management
-│   ├── fees/             # Fee management & receipts
-│   ├── leave/            # Leave management
-│   └── ...
-├── store/                # Zustand state management
-│   └── index.js          # All stores (auth, students, schools, fees, etc.)
-├── services/             # API services (mock data)
-│   └── mockData.js
-├── utils/                # Utility functions
-│   ├── index.js          # Helper functions
-│   ├── pdfGenerator.js   # PDF receipt generation (school-branded)
-│   └── schoolDataGenerator.js  # Auto-generate school data
-├── constants/            # Application constants
-│   └── index.js          # Roles, statuses, navigation
-├── App.jsx               # Main app with routing
-├── main.jsx              # Entry point
-└── index.css             # Global styles
+academy/
+├── frontend/          # React frontend application
+│   ├── src/
+│   │   ├── components/    # Reusable components
+│   │   ├── pages/         # Page components
+│   │   ├── services/      # API services
+│   │   ├── store/         # Zustand stores
+│   │   └── utils/         # Utility functions
+│   └── package.json
+│
+├── backend/           # NestJS backend application
+│   ├── src/
+│   │   ├── academic/      # Academic module (classes, students, etc.)
+│   │   ├── auth/         # Authentication module
+│   │   ├── fees/         # Fees module
+│   │   ├── schools/      # Schools module
+│   │   ├── users/        # Users module
+│   │   └── ...           # Other modules
+│   ├── prisma/
+│   │   ├── schema.prisma # Database schema
+│   │   └── seed.ts       # Database seed script
+│   └── package.json
+│
+└── README.md
 ```
 
----
+## 🚦 Getting Started
 
-## 🔧 **Tech Stack**
+See [HOW_TO_RUN.md](./HOW_TO_RUN.md) for detailed setup instructions.
 
-| Category | Technology |
-|----------|------------|
-| **Core** | React 19 + Vite |
-| **Routing** | React Router DOM |
-| **State Management** | Zustand (with persistence) |
-| **Styling** | Vanilla CSS (design system) |
-| **Icons** | Lucide React |
-| **Charts** | Recharts |
-| **Notifications** | React Hot Toast |
-| **PDF Generation** | jsPDF |
-| **Date Handling** | date-fns |
+**Note**: The frontend is partially integrated with the backend API. See [FRONTEND_BACKEND_INTEGRATION.md](./FRONTEND_BACKEND_INTEGRATION.md) for integration status and how to complete the integration.
 
----
-
-## 🏁 **Getting Started**
-
-### **Prerequisites**
-- Node.js (v16 or higher)
-- npm or yarn
-
-### **Installation**
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd academy
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Start development server**
-   ```bash
-   npm run dev
-   ```
-
-4. **Open in browser**
-   ```
-   http://localhost:5173
-   ```
-
----
-
-## 🔐 **Demo Credentials**
-
-### **Super Admin**
-- **URL**: `/superadmin/login`
-- **Email:** superadmin@school.com
-- **Password:** superadmin123
-
-### **School Admin**
-- **URL**: `/login` or `/{school-slug}/signin`
-- **Email:** admin@school.com
-- **Password:** admin123
-
-### **Management (Principal)**
-- **URL**: `/login` or `/{school-slug}/signin`
-- **Email:** principal@school.com  
-- **Password:** principal123
-
-### **Teacher**
-- **URL**: `/login` or `/{school-slug}/signin`
-- **Email:** teacher@school.com
-- **Password:** teacher123
-
-### **Parent**
-- **URL**: `/login` or `/{school-slug}/signin`
-- **Email:** parent@school.com
-- **Password:** parent123
-
----
-
-## 📊 **Multi-School Workflow**
-
-1. **Super Admin logs in** at `/superadmin`
-2. **Adds a new school** with:
-   - School name (auto-generates slug: `al-abbas-college`)
-   - Principal name
-   - Logo file upload
-   - Subscription amount
-   - Admin email and password
-3. **System auto-generates**:
-   - 10 Classes, 20 Sections, 14 Subjects
-   - 25 Teachers with subjects
-   - 200-300 Students with parent accounts
-4. **School Admin logs in** at `/{school-slug}/signin` (e.g., `/al-abbas-college/signin`)
-5. **Admin adds Management** users (1, 2, or more) with passwords
-6. **Admin/Management add** Teachers and Parents with passwords
-7. Each school's data is **completely isolated**
-
----
-
-## 💰 **Subscription & Revenue Logic**
-
-- Each school has a **monthly subscription fee** (set by Super Admin)
-- **Subscription start date** sets the billing cycle
-- **Next billing date** = Start date + 1 month (recurring)
-- **Status indicators**:
-  - 🟢 **Active**: Subscription is up to date
-  - 🟡 **Due Soon**: Billing date within 7 days
-  - 🔴 **Expired**: Billing date has passed
-- **Monthly Revenue** = Sum of all active subscriptions (PKR)
-- **Total Revenue** = Subscription amount × months since start (all schools) (PKR)
-
----
-
-## 📝 **Leave Management Workflow**
-
-1. **Teachers** request leave for themselves
-2. **Parents** request leave for their child
-3. **Management/Admin** sees all pending leave requests
-4. Management/Admin can **approve or reject**
-5. Status updates: Pending → Approved/Rejected
-
----
-
-## 🧾 **Payment Receipt Workflow**
-
-1. Admin/Management collects fee payment
-2. Payment is recorded in the system
-3. **Download PDF Receipt** button generates:
-   - **School-branded PDF** with:
-     - School logo (if uploaded)
-     - School name
-     - Principal name
-     - School contact information
-   - Student details
-   - Payment information
-   - Receipt number
-4. Receipt can be **printed** for physical records
-5. All amounts displayed in **PKR**
-
----
-
-## 🎨 **School-Specific Features**
-
-### **Logo Management**
-- Upload logo file (PNG, JPG) - max 5MB
-- Logo appears in:
-  - School login page
-  - Dashboard header
-  - PDF receipts
-  - All school documents
-
-### **Principal Name**
-- Set when creating school
-- Appears on:
-  - PDF receipts
-  - School documents
-  - Login page (optional)
-
-### **School URLs**
-- Each school gets a unique slug from school name
-- Login URL: `/{school-slug}/signin`
-- Example: `/al-abbas-college/signin`
-- School-specific branding on login page
-
----
-
-## 🔒 **Authentication & Security**
-
-> **Frontend-Only Limitation**
-
-- All passwords are **hardcoded** (for demo purposes)
-- No real authentication backend
-- No password reset or email verification
-- Data is stored in browser **localStorage** (Zustand persist)
-- **Password Management**:
-  - Super Admin sets admin passwords (cannot be changed)
-  - Admin sets Management passwords
-  - Admin/Management set Teacher/Parent passwords
-  - Passwords cannot be changed after creation
-- In production, replace with:
-  - JWT authentication
-  - Backend API integration
-  - Secure password hashing
-  - Password reset functionality
-
----
-
-## 📦 **Data Storage**
-
-### **LocalStorage Keys**
-- `auth-storage`: User authentication
-- `theme-storage`: Theme preference
-- `school_data_{schoolId}`: School-specific data (classes, students, teachers, etc.)
-- `school_logo_{schoolId}`: School logo (base64)
-- `management-users`: Management users created by Admin
-
-### **Data Isolation**
-- Each school's data is stored separately
-- Data is filtered by `schoolId` in all queries
-- Super Admin can see all schools
-- School users only see their school's data
-
----
-
-## 🎨 **Design System**
-
-- **CSS Variables** for theming
-- **Reusable utility classes**
-- **Consistent spacing and typography**
-- **Responsive breakpoints**
-- **Dark mode support** (improved contrast)
-- **Smooth animations and transitions**
-
----
-
-## 📦 **Production Build**
+### Quick Start
 
 ```bash
-npm run build
+# 1. Install dependencies
+cd backend && npm install
+cd ../frontend && npm install
+
+# 2. Setup environment variables
+# Copy .env.example to .env and configure
+
+# 3. Setup database
+cd backend
+npm run prisma:generate
+npx prisma db push
+npm run prisma:seed
+
+# 4. Start servers
+# Terminal 1: Backend
+cd backend && npm run start:dev
+
+# Terminal 2: Frontend
+cd frontend && npm run dev
 ```
 
-The optimized production bundle will be in the `dist` folder.
+## 📚 API Documentation
 
----
+Once the backend is running, visit:
+- **Swagger UI**: `http://localhost:3000/api/docs`
+- **API Base**: `http://localhost:3000/api`
 
-## 🔮 **Scalability & Future Extensibility**
+## 🔐 User Roles & Permissions
 
-This system is designed for **easy extension**:
+### Super Admin
+- Manage all schools
+- View system-wide analytics
+- Full access to all features
 
-### **Ready to Add:**
-- ✅ Multiple campuses per school
-- ✅ Advanced fee structures
-- ✅ Exam scheduling and report cards
-- ✅ Payroll management
-- ✅ More user roles (Accountant, Librarian, etc.)
-- ✅ Real backend API integration
-- ✅ Email/SMS notifications
-- ✅ Online payment gateway
-- ✅ Multi-language support
+### Admin
+- Manage school settings
+- Manage users (teachers, parents, management)
+- Manage students, classes, fees
+- View school analytics
 
-### **Architecture Benefits:**
-- Component-based design
-- Centralized state management
-- Modular folder structure
-- Separation of concerns
-- Clean, documented code
-- School-specific data isolation
+### Management
+- Manage students and parents
+- Manage teachers
+- View fees and payments
+- Approve leave requests
+- View school analytics
 
----
+### Teacher
+- View assigned classes and students
+- Create exams and enter results
+- Request leave
+- Send messages
 
-## 🛠️ **Adding New Modules**
+### Parent
+- View child's information
+- View fees and make payments
+- Request leave for child
+- Send messages
 
-1. Create page component in `src/pages/<module>/`
-2. Create related components in `src/components/<module>/`
-3. Add store in `src/store/index.js`
-4. Add route in `src/App.jsx`
-5. Update navigation in `src/constants/index.js`
-6. Ensure school-specific filtering if needed
+### Support Staff
+- Limited access based on assignment
 
----
+## 📊 Database Schema
 
-## 📚 **Code Quality Standards**
+The system uses PostgreSQL with Prisma ORM. Key models:
 
-- ✅ **Component-based architecture**
-- ✅ **Reusable utility functions**
-- ✅ **Consistent naming conventions**
-- ✅ **Proper error handling**
-- ✅ **Form validation**
-- ✅ **No dead code**
-- ✅ **No duplicate logic**
-- ✅ **Production-ready structure**
-- ✅ **School-specific data isolation**
+- **User**: All user accounts (admin, teachers, parents, etc.)
+- **School**: School information and subscription
+- **Student**: Student records with admission tracking
+- **Class, Section, Subject**: Academic structure
+- **FeeStructure, FeeInvoice, FeePayment**: Fee management
+- **LeaveRequest**: Leave management
+- **Announcement, Message**: Communication
+- **Exam, ExamResult**: Exam management
+- **Expense**: Expense tracking
 
----
+See `backend/prisma/schema.prisma` for complete schema.
 
-## 🎯 **Key Principles**
+## 🔧 Configuration
 
-1. **Multi-school from Day 1** — Not an afterthought
-2. **Production-grade code** — No shortcuts
-3. **Scalable architecture** — Easy to extend
-4. **Clean state management** — Centralized with Zustand
-5. **Role-based everything** — UI, data, and features
-6. **Frontend-only** — Clear separation of concerns
-7. **School isolation** — Complete data separation
-8. **Auto-generation** — Comprehensive mock data for testing
+### Environment Variables
 
----
+**Backend** (`backend/.env`):
+- `DATABASE_URL`: PostgreSQL connection string
+- `JWT_SECRET`: Secret key for JWT tokens
+- `PORT`: Server port (default: 3000)
+- `FRONTEND_URL`: Frontend URL for CORS
+- Firebase configuration
 
-## 💡 **Important Notes**
+**Frontend** (`frontend/.env`):
+- `VITE_API_URL`: Backend API URL
 
-- This is **frontend only** — no backend server
-- Authentication is **hardcoded** for demonstration
-- Data is stored in **browser local storage**
-- PDF generation requires **jsPDF** library
-- Multi-school support is **UI-level separation** with localStorage
-- **School logos** are stored as base64 in localStorage
-- **Principal names** are stored with school data
-- For production, integrate with a real backend
+## 🧪 Testing
 
----
+### Backend API Testing
 
-## 📞 **Support & Contact**
+Use the provided curl commands or Swagger UI:
 
-For questions or support:
-- **Email:** info@alabbascollege.edu.pk
-- **Phone:** +92 300 1234567
-- **Address:** Shah Jamal, Lahore
+```bash
+# Login
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@school.com","password":"admin123"}'
 
----
+# Get current user
+curl -X GET http://localhost:3000/api/auth/me \
+  -H "Authorization: Bearer <token>"
+```
 
-**Built with ❤️ for AL-ABBAS COLLEGE OF SCIENCE AND ARTS**
+### Frontend Testing
 
-*Excellence in Education, Building Tomorrow's Leaders*
+1. Login with default credentials
+2. Create a school (Super Admin)
+3. Login as Admin/Management
+4. Add students, teachers, parents
+5. Test fee management
+6. Test other features
+
+## 📝 Development Notes
+
+### Adding New Features
+
+1. **Backend**:
+   - Create module in `backend/src/`
+   - Add routes in controller
+   - Update Prisma schema if needed
+   - Run migrations
+
+2. **Frontend**:
+   - Add API service in `frontend/src/services/api.js`
+   - Create page component
+   - Add route in `App.jsx`
+   - Update navigation if needed
+
+### Database Migrations
+
+```bash
+# Development (push schema)
+npx prisma db push
+
+# Production (create migration)
+npm run prisma:migrate
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **Database Connection**: Check `DATABASE_URL` and database status
+2. **CORS Errors**: Verify `FRONTEND_URL` in backend `.env`
+3. **Firebase Upload**: Check service account file and permissions
+4. **Port Conflicts**: Change port in `.env` or kill existing process
+
+See [HOW_TO_RUN.md](./HOW_TO_RUN.md) for detailed troubleshooting.
+
+## 📄 License
+
+This project is proprietary software.
+
+## 👥 Support
+
+For issues and questions:
+1. Check [HOW_TO_RUN.md](./HOW_TO_RUN.md)
+2. Review API documentation at `/api/docs`
+3. Check console logs for errors
+
+## 🎯 Roadmap
+
+- [ ] Email notifications
+- [ ] SMS integration
+- [ ] Advanced reporting
+- [ ] Mobile app
+- [ ] Multi-language support
+- [ ] Attendance tracking automation
+- [ ] Timetable management
+
+## 🙏 Acknowledgments
+
+Built with modern web technologies and best practices for scalability and maintainability.

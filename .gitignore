@@ -29,3 +29,34 @@ dist-ssr
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.db-journal
+
+# Firebase
+**/firebase-service-account.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+coverage/
+.nyc_output/
