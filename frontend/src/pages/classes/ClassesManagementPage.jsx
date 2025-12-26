@@ -1,36 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, BookOpen, Trash2, Edit, Users, Download } from 'lucide-react';
 import { useClassesStore, useStudentsStore, useAuthStore, useSchoolStore } from '../../store';
 import { USER_ROLES } from '../../constants';
 import { classesService, sectionsService, studentsService } from '../../services/api';
-import { generateId } from '../../utils';
 import { printTable } from '../../utils/printUtils';
 import { AlertCircle } from 'lucide-react';
+import DeleteWarningModal from '../../components/common/DeleteWarningModal';
+import Loading from '../../components/common/Loading';
 import toast from 'react-hot-toast';
 
 const ClassesManagementPage = () => {
     const { user } = useAuthStore();
-    // Use USER_ROLES constants for permission check
     const canManageClasses = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
 
-    // Explicitly import USER_ROLES if not already imported, but it seems to be missing in imports too.
-    // Wait, I need to check imports first. 
-    // The previous view_file showed: import { useClassesStore, useStudentsStore, useAuthStore, useSchoolStore } from '../../store';
-    // It did NOT show USER_ROLES import. I need to add it.
-
-    const { classes, sections, setClasses, setSections, addClass, addSection } = useClassesStore();
+    const { classes, sections, setClasses, setSections } = useClassesStore();
     const { students, setStudents } = useStudentsStore();
     const { currentSchool } = useSchoolStore();
+    
     const [loading, setLoading] = useState(false);
+    const [showModal, setShowModal] = useState(false);
+    const [editingClass, setEditingClass] = useState(null);
+    const [formData, setFormData] = useState({
+        name: '',
+        grade: '',
+        numberOfSections: '1',
+        capacity: '30',
+    });
+    const [deleteModal, setDeleteModal] = useState({ isOpen: false, classId: null, className: null });
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
-    useEffect(() => {
-        loadData();
-    }, [currentSchool]);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            // Load classes, sections, and students in parallel for accurate counts
             const [classesResponse, sectionsResponse, studentsResponse] = await Promise.all([
                 classesService.getAll(),
                 sectionsService.getAll(),
@@ -47,7 +48,6 @@ const ClassesManagementPage = () => {
                 setSections(Array.isArray(sectionsData) ? sectionsData : []);
             }
 
-            // Load students to calculate accurate counts
             if (studentsResponse.success && studentsResponse.data) {
                 const studentsData = studentsResponse.data.data || studentsResponse.data;
                 setStudents(Array.isArray(studentsData) ? studentsData : []);
@@ -55,10 +55,17 @@ const ClassesManagementPage = () => {
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error('Failed to load classes and sections');
+            setClasses([]);
+            setSections([]);
+            setStudents([]);
         } finally {
             setLoading(false);
         }
-    };
+    }, [setClasses, setSections, setStudents]);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData, currentSchool]);
 
     if (!canManageClasses) {
         return (
@@ -69,21 +76,36 @@ const ClassesManagementPage = () => {
             </div>
         );
     }
-    const [showModal, setShowModal] = useState(false);
-    const [editingClass, setEditingClass] = useState(null);
-    const [formData, setFormData] = useState({
-        name: '',
-        grade: '',
-        numberOfSections: '1',
-        capacity: '30',
-    });
 
-    const handleChange = (e) => {
+    const handleChange = useCallback((e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
-    };
+    }, []);
 
-    const handleSubmit = async (e) => {
+    const resetForm = useCallback(() => {
+        setFormData({
+            name: '',
+            grade: '',
+            numberOfSections: '1',
+            capacity: '30',
+        });
+        setEditingClass(null);
+        setShowModal(false);
+    }, []);
+
+    const handleEdit = useCallback((classItem) => {
+        const classSections = sections.filter(s => s.classId === classItem.id && !s.deletedAt);
+        setEditingClass(classItem);
+        setFormData({
+            name: classItem.name,
+            grade: classItem.grade,
+            numberOfSections: classSections.length.toString(),
+            capacity: '30',
+        });
+        setShowModal(true);
+    }, [sections]);
+
+    const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
 
         if (!formData.name || !formData.grade || !formData.numberOfSections) {
@@ -99,20 +121,57 @@ const ClassesManagementPage = () => {
 
         try {
             if (editingClass) {
-                // Update class
+                // Update class details
                 const classData = {
                     name: formData.name,
                     grade: formData.grade,
                     displayName: formData.name,
                 };
-                const response = await classesService.update(editingClass.id, classData);
-                if (response.success && response.data) {
-                    toast.success('Class updated successfully!');
-                    loadData();
-                } else {
-                    toast.error(response.error || 'Failed to update class');
+                const classResponse = await classesService.update(editingClass.id, classData);
+                if (!classResponse.success) {
+                    toast.error(classResponse.error || 'Failed to update class');
                     return;
                 }
+
+                // Handle section addition/removal
+                const existingSections = sections.filter(s => s.classId === editingClass.id && !s.deletedAt);
+                const targetSectionCount = numSections;
+                const currentSectionCount = existingSections.length;
+
+                if (targetSectionCount !== currentSectionCount) {
+                    const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                    
+                    if (targetSectionCount > currentSectionCount) {
+                        // Add new sections
+                        for (let i = currentSectionCount; i < targetSectionCount; i++) {
+                            const sectionData = {
+                                classId: editingClass.id,
+                                name: sectionLetters[i],
+                                capacity: parseInt(formData.capacity) || 30,
+                            };
+                            await sectionsService.create(sectionData);
+                        }
+                    } else {
+                        // Delete excess sections (from the end)
+                        const sectionsToDelete = existingSections
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .slice(targetSectionCount);
+                        
+                        for (const section of sectionsToDelete) {
+                            // Check if section has students
+                            const sectionStudents = students.filter(s => s.sectionId === section.id);
+                            if (sectionStudents.length > 0) {
+                                toast.error(`Cannot delete section ${section.name} as it has ${sectionStudents.length} student(s). Please reassign students first.`);
+                                continue;
+                            }
+                            await sectionsService.delete(section.id);
+                        }
+                    }
+                }
+
+                toast.success('Class updated successfully!');
+                await loadData();
+                resetForm();
             } else {
                 // Create class
                 const classData = {
@@ -120,98 +179,84 @@ const ClassesManagementPage = () => {
                     grade: formData.grade,
                     displayName: formData.name,
                 };
-                const response = await classesService.create(classData);
-                if (response.success && response.data) {
-                    const newClass = response.data;
-                    addClass(newClass);
-
-                    // Create sections
-                    const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-                    for (let i = 0; i < numSections; i++) {
-                        const sectionData = {
-                            classId: newClass.id,
-                            name: sectionLetters[i],
-                            capacity: parseInt(formData.capacity) || 30,
-                        };
-                        const sectionResponse = await sectionsService.create(sectionData);
-                        if (sectionResponse.success && sectionResponse.data) {
-                            addSection(sectionResponse.data);
-                        }
-                    }
-
-                    toast.success(`Class created with ${numSections} section(s)!`);
-                    loadData();
-                } else {
-                    toast.error(response.error || 'Failed to create class');
+                const classResponse = await classesService.create(classData);
+                if (!classResponse.success || !classResponse.data) {
+                    toast.error(classResponse.error || 'Failed to create class');
                     return;
                 }
+
+                const newClass = classResponse.data;
+
+                // Create sections
+                const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                for (let i = 0; i < numSections; i++) {
+                    const sectionData = {
+                        classId: newClass.id,
+                        name: sectionLetters[i],
+                        capacity: parseInt(formData.capacity) || 30,
+                    };
+                    await sectionsService.create(sectionData);
+                }
+
+                toast.success(`Class created with ${numSections} section(s)!`);
+                await loadData();
+                resetForm();
             }
-
-            resetForm();
         } catch (error) {
-            // Silently handle errors - toast shows user message
-            toast.error('Failed to save class');
+            console.error('Failed to save class:', error);
+            toast.error(error.response?.data?.message || 'Failed to save class');
         }
-    };
+    }, [editingClass, formData, sections, students, loadData, resetForm]);
 
-    const resetForm = () => {
-        setFormData({
-            name: '',
-            grade: '',
-            numberOfSections: '1',
-            capacity: '30',
-        });
-        setEditingClass(null);
-        setShowModal(false);
-    };
-
-    const handleEdit = (classItem) => {
-        const classSections = sections.filter(s => s.classId === classItem.id);
-
-        setEditingClass(classItem);
-        setFormData({
-            name: classItem.name,
-            grade: classItem.grade,
-            numberOfSections: classSections.length.toString(),
-            capacity: classItem.capacity?.toString() || '30',
-        });
-        setShowModal(true);
-    };
-
-    const handleDelete = async (classId) => {
-        if (!window.confirm('Are you sure you want to delete this class? This will also delete all sections.')) {
+    const handleDeleteClick = useCallback((classItem) => {
+        const classStudents = students.filter(s => s.classId === classItem.id);
+        if (classStudents.length > 0) {
+            toast.error(`Cannot delete class "${classItem.name}" as it has ${classStudents.length} student(s). Please remove or reassign students first.`);
             return;
         }
+        setDeleteModal({ 
+            isOpen: true, 
+            classId: classItem.id, 
+            className: classItem.name 
+        });
+    }, [students]);
 
+    const handleDeleteConfirm = useCallback(async () => {
+        if (!deleteModal.classId) return;
+
+        setDeleteLoading(true);
         try {
-            const response = await classesService.delete(classId);
+            const response = await classesService.delete(deleteModal.classId);
             if (response.success) {
                 toast.success('Class deleted successfully');
-                loadData();
+                setDeleteModal({ isOpen: false, classId: null, className: null });
+                await loadData();
             } else {
                 toast.error(response.error || 'Failed to delete class');
             }
         } catch (error) {
-            // Silently handle errors - toast shows user message
-            toast.error('Failed to delete class');
+            console.error('Failed to delete class:', error);
+            toast.error(error.response?.data?.message || 'Failed to delete class');
+        } finally {
+            setDeleteLoading(false);
         }
-    };
+    }, [deleteModal, loadData]);
 
-    const getClassSections = (classId) => {
-        return sections.filter(s => s.classId === classId);
-    };
+    const getClassSections = useCallback((classId) => {
+        return sections.filter(s => s.classId === classId && !s.deletedAt);
+    }, [sections]);
 
-    const getStudentCount = (classId) => {
+    const getStudentCount = useCallback((classId) => {
         return students.filter(s => s.classId === classId).length;
-    };
+    }, [students]);
 
-    const handleExportReport = () => {
+    const handleExportReport = useCallback(() => {
         const data = classes.map(cls => ({
             name: cls.name,
             grade: cls.grade,
-            sections: sections.filter(s => s.classId === cls.id).map(s => s.name).join(', '),
+            sections: getClassSections(cls.id).map(s => s.name).join(', '),
             students: getStudentCount(cls.id),
-            capacity: (cls.capacity || 30) * sections.filter(s => s.classId === cls.id).length
+            capacity: 30 * getClassSections(cls.id).length
         }));
 
         printTable({
@@ -225,7 +270,11 @@ const ClassesManagementPage = () => {
             ],
             data: data
         });
-    };
+    }, [classes, getClassSections, getStudentCount]);
+
+    if (loading) {
+        return <Loading fullScreen />;
+    }
 
     return (
         <div className="page">
@@ -262,7 +311,7 @@ const ClassesManagementPage = () => {
                                     <button className="icon-btn" onClick={() => handleEdit(classItem)} title="Edit">
                                         <Edit size={18} />
                                     </button>
-                                    <button className="icon-btn icon-btn-danger" onClick={() => handleDelete(classItem.id)} title="Delete">
+                                    <button className="icon-btn icon-btn-danger" onClick={() => handleDeleteClick(classItem)} title="Delete">
                                         <Trash2 size={18} />
                                     </button>
                                 </div>
@@ -289,7 +338,7 @@ const ClassesManagementPage = () => {
                                         <span>{studentCount} Students</span>
                                     </div>
                                     <div className="stat-item">
-                                        <span>Capacity: {classItem.capacity}/section</span>
+                                        <span>Capacity: 30/section</span>
                                     </div>
                                 </div>
                             </div>
@@ -308,11 +357,11 @@ const ClassesManagementPage = () => {
 
             {/* Add/Edit Class Modal */}
             {showModal && (
-                <div className="modal-overlay" onClick={() => resetForm()}>
+                <div className="modal-overlay" onClick={resetForm}>
                     <div className="modal" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>{editingClass ? 'Edit Class' : 'Add New Class'}</h2>
-                            <button className="modal-close" onClick={() => resetForm()}>×</button>
+                            <button className="modal-close" onClick={resetForm}>×</button>
                         </div>
 
                         <form onSubmit={handleSubmit} className="modal-body">
@@ -357,7 +406,9 @@ const ClassesManagementPage = () => {
                                         max="26"
                                         required
                                     />
-                                    <small className="form-hint">Sections will be auto-generated (A, B, C...)</small>
+                                    <small className="form-hint">
+                                        {editingClass ? 'Reducing sections will delete excess sections (if empty)' : 'Sections will be auto-generated (A, B, C...)'}
+                                    </small>
                                 </div>
 
                                 <div className="form-group">
@@ -388,7 +439,7 @@ const ClassesManagementPage = () => {
                             </div>
 
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => resetForm()}>
+                                <button type="button" className="btn btn-secondary" onClick={resetForm}>
                                     Cancel
                                 </button>
                                 <button type="submit" className="btn btn-primary">
@@ -399,6 +450,18 @@ const ClassesManagementPage = () => {
                     </div>
                 </div>
             )}
+
+            {/* Delete Warning Modal */}
+            <DeleteWarningModal
+                isOpen={deleteModal.isOpen}
+                onClose={() => setDeleteModal({ isOpen: false, classId: null, className: null })}
+                onConfirm={handleDeleteConfirm}
+                title="Delete Class"
+                itemName={deleteModal.className}
+                message={`Are you sure you want to delete the class "${deleteModal.className}"? This will also delete all associated sections.`}
+                warningText="This action cannot be undone! All sections belonging to this class will be permanently deleted."
+                isLoading={deleteLoading}
+            />
 
             <style>{`
                 .classes-grid {
