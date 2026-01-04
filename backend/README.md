@@ -1,10 +1,10 @@
 # Backend API
 
-NestJS backend for the Multi-School Management System.
+NestJS-based backend server for the Multi-School Management System platform.
 
 ## Quick Start
 
-See the main [README.md](../README.md) and [HOW_TO_RUN.md](../HOW_TO_RUN.md) for complete setup instructions.
+Please review the main [README.md](../README.md) and [HOW_TO_RUN.md](../HOW_TO_RUN.md) files for detailed setup and installation instructions.
 
 ## Development
 
@@ -12,41 +12,41 @@ See the main [README.md](../README.md) and [HOW_TO_RUN.md](../HOW_TO_RUN.md) for
 # Install dependencies
 npm install
 
-# Setup environment
+# Configure environment
 cp .env.example .env
-# Edit .env with your configuration
+# Update .env with your settings
 
-# Setup database
+# Initialize database
 npm run prisma:generate
 npx prisma db push
 npm run prisma:seed
 
-# Start development server
+# Run development server
 npm run start:dev
 ```
 
 ## API Documentation
 
-Once running, visit: `http://localhost:3000/api/docs`
+After starting the server, documentation is accessible at: `http://localhost:3000/api/docs`
 
 ## Project Structure
 
 ```
 src/
-├── academic/      # Classes, sections, subjects, students
-├── auth/          # Authentication & authorization
-├── fees/          # Fee management
-├── schools/       # School management
-├── users/         # User management
-├── leave/         # Leave management
-├── announcements/ # Announcements
-├── messaging/     # Messaging
-├── exams/         # Exams & results
-├── expenses/      # Expenses
-├── analytics/     # Analytics
-└── files/         # File uploads
+├── academic/      # Classes, sections, subjects, and students
+├── auth/          # Authentication and authorization
+├── fees/          # Fee management system
+├── schools/       # School management module
+├── users/         # User management module
+├── leave/         # Leave management system
+├── announcements/ # Announcements module
+├── messaging/     # Messaging system
+├── exams/         # Exams and results
+├── expenses/      # Expense tracking
+├── analytics/     # Analytics module
+└── files/         # File upload functionality
 ```
 
 ## Environment Variables
 
-See [HOW_TO_RUN.md](../HOW_TO_RUN.md) for environment variable configuration.
+Please see [HOW_TO_RUN.md](../HOW_TO_RUN.md) for comprehensive environment variable configuration instructions.

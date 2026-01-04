@@ -1,82 +1,82 @@
 # Multi-School Management System
 
-A comprehensive, production-grade school management system built with React, NestJS, PostgreSQL, and Firebase. Designed for managing multiple schools with role-based access control, fee management, student tracking, and more.
+An enterprise-grade educational management system crafted with React, NestJS, PostgreSQL, and Firebase technologies. Designed for managing multiple educational institutions with extensive role-based permissions, financial management, student tracking capabilities, and more.
 
 ## 🚀 Features
 
 ### Core Features
 
-- **Multi-School Management**: Manage multiple schools from a single platform
-- **Role-Based Access Control**: Super Admin, Admin, Management, Teacher, Parent, Support Staff
-- **Student Management**: Complete student lifecycle management with admission tracking
-- **Fee Management**: Fee structures, invoices, payments, receipts, and handovers
-- **Academic Structure**: Classes, sections, subjects management
-- **User Management**: Teachers, parents, and management user accounts
-- **Leave Management**: Request and approve leave for teachers and students
-- **Announcements**: School-wide and targeted announcements
-- **Messaging**: Internal messaging system
-- **Exams & Results**: Exam creation and result management
-- **Expenses**: Track school expenses with receipt uploads
-- **Analytics Dashboard**: Comprehensive analytics for all roles
-- **File Storage**: Firebase Storage integration for receipts and logos
+- **Multi-School Management**: Handle multiple schools from one centralized platform
+- **Role-Based Access Control**: Supports Super Admin, Admin, Management, Teacher, Parent, and Support Staff roles
+- **Student Management**: Full student lifecycle management including admission tracking
+- **Fee Management**: Complete fee system with structures, invoices, payments, receipts, and handovers
+- **Academic Structure**: Manage classes, sections, and subjects
+- **User Management**: Handle user accounts for teachers, parents, and management
+- **Leave Management**: Leave request and approval system for teachers and students
+- **Announcements**: School-wide announcements and targeted messaging
+- **Messaging**: Built-in internal messaging system
+- **Exams & Results**: Create exams and manage results
+- **Expenses**: Expense tracking with receipt upload functionality
+- **Analytics Dashboard**: Detailed analytics available for all user roles
+- **File Storage**: Integrated Firebase Storage for receipts and logos
 
 ### Technical Features
 
-- **JWT Authentication**: Secure token-based authentication
-- **Soft Delete**: Logical deletion for data recovery
-- **Data Validation**: Input validation on both frontend and backend
-- **API Documentation**: Swagger/OpenAPI documentation
-- **Error Handling**: Comprehensive error handling
-- **Type Safety**: TypeScript throughout
-- **Responsive Design**: Mobile-friendly UI
+- **JWT Authentication**: Secure authentication using token-based system
+- **Soft Delete**: Implemented logical deletion for data recovery capabilities
+- **Data Validation**: Comprehensive input validation on frontend and backend
+- **API Documentation**: Complete Swagger/OpenAPI documentation
+- **Error Handling**: Robust error handling throughout the application
+- **Type Safety**: Full TypeScript implementation
+- **Responsive Design**: Mobile-responsive user interface
 
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **React 19** with Vite
-- **React Router DOM** for routing
-- **Zustand** for state management
-- **Lucide React** for icons
-- **Recharts** for charts
-- **React Hot Toast** for notifications
-- **jsPDF** for PDF generation
-- **date-fns** for date handling
+- **React 19** powered by Vite build tool
+- **React Router DOM** handles application routing
+- **Zustand** manages application state
+- **Lucide React** provides icon components
+- **Recharts** renders data visualizations
+- **React Hot Toast** displays user notifications
+- **jsPDF** enables PDF document generation
+- **date-fns** manages date formatting and operations
 
 ### Backend
-- **NestJS** (Node.js framework)
-- **TypeScript**
-- **Prisma** (ORM)
-- **PostgreSQL** (Database)
-- **JWT** (Authentication)
-- **bcrypt** (Password hashing)
-- **class-validator** (Validation)
-- **Swagger/OpenAPI** (API Documentation)
-- **Firebase Admin SDK** (File Storage)
+- **NestJS** - Progressive Node.js framework
+- **TypeScript** - Type-safe JavaScript
+- **Prisma** - Modern database ORM
+- **PostgreSQL** - Relational database system
+- **JWT** - JSON Web Token authentication
+- **bcrypt** - Secure password hashing library
+- **class-validator** - Decorator-based validation
+- **Swagger/OpenAPI** - Interactive API documentation
+- **Firebase Admin SDK** - Cloud file storage integration
 
 ## 📁 Project Structure
 
 ```
 academy/
-├── frontend/          # React frontend application
+├── frontend/          # React-based client application
 │   ├── src/
-│   │   ├── components/    # Reusable components
-│   │   ├── pages/         # Page components
-│   │   ├── services/      # API services
-│   │   ├── store/         # Zustand stores
-│   │   └── utils/         # Utility functions
+│   │   ├── components/    # Shared UI components
+│   │   ├── pages/         # Route-based page views
+│   │   ├── services/      # External API integrations
+│   │   ├── store/         # Global state management
+│   │   └── utils/         # Helper functions and utilities
 │   └── package.json
 │
-├── backend/           # NestJS backend application
+├── backend/           # NestJS server-side application
 │   ├── src/
-│   │   ├── academic/      # Academic module (classes, students, etc.)
-│   │   ├── auth/         # Authentication module
-│   │   ├── fees/         # Fees module
-│   │   ├── schools/      # Schools module
-│   │   ├── users/        # Users module
-│   │   └── ...           # Other modules
+│   │   ├── academic/      # Academic operations (classes, students, etc.)
+│   │   ├── auth/         # User authentication logic
+│   │   ├── fees/         # Financial fee operations
+│   │   ├── schools/      # School administration
+│   │   ├── users/        # User account management
+│   │   └── ...           # Additional feature modules
 │   ├── prisma/
-│   │   ├── schema.prisma # Database schema
-│   │   └── seed.ts       # Database seed script
+│   │   ├── schema.prisma # Database structure definition
+│   │   └── seed.ts       # Initial data seeding script
 │   └── package.json
 │
 └── README.md
@@ -84,9 +84,9 @@ academy/
 
 ## 🚦 Getting Started
 
-See [HOW_TO_RUN.md](./HOW_TO_RUN.md) for detailed setup instructions.
+Refer to [HOW_TO_RUN.md](./HOW_TO_RUN.md) for comprehensive setup instructions.
 
-**Note**: The frontend is partially integrated with the backend API. See [FRONTEND_BACKEND_INTEGRATION.md](./FRONTEND_BACKEND_INTEGRATION.md) for integration status and how to complete the integration.
+**Note**: The frontend has partial integration with the backend API. Check [FRONTEND_BACKEND_INTEGRATION.md](./FRONTEND_BACKEND_INTEGRATION.md) for current integration status and completion guidelines.
 
 ### Quick Start
 
@@ -114,60 +114,60 @@ cd frontend && npm run dev
 
 ## 📚 API Documentation
 
-Once the backend is running, visit:
-- **Swagger UI**: `http://localhost:3000/api/docs`
-- **API Base**: `http://localhost:3000/api`
+When the backend server is active, access the following:
+- **Swagger UI**: Available at `http://localhost:3000/api/docs`
+- **API Base URL**: `http://localhost:3000/api`
 
 ## 🔐 User Roles & Permissions
 
 ### Super Admin
-- Manage all schools
-- View system-wide analytics
-- Full access to all features
+- Complete control over all schools in the system
+- Access to system-wide analytics and reporting
+- Unlimited access to every feature and module
 
 ### Admin
-- Manage school settings
-- Manage users (teachers, parents, management)
-- Manage students, classes, fees
-- View school analytics
+- Configure school-specific settings
+- Manage all user accounts (teachers, parents, management staff)
+- Oversee students, classes, and fee operations
+- Access comprehensive school analytics
 
 ### Management
-- Manage students and parents
-- Manage teachers
-- View fees and payments
-- Approve leave requests
-- View school analytics
+- Administer student and parent records
+- Handle teacher account management
+- Monitor fee transactions and payments
+- Process leave request approvals
+- Review school performance analytics
 
 ### Teacher
-- View assigned classes and students
-- Create exams and enter results
-- Request leave
-- Send messages
+- Access assigned classes and student lists
+- Create exam schedules and record results
+- Submit leave requests
+- Communicate via messaging system
 
 ### Parent
-- View child's information
-- View fees and make payments
-- Request leave for child
-- Send messages
+- Access child's academic and personal information
+- View fee statements and process payments
+- Submit leave requests for children
+- Send and receive messages
 
 ### Support Staff
-- Limited access based on assignment
+- Restricted access permissions based on role assignments
 
 ## 📊 Database Schema
 
-The system uses PostgreSQL with Prisma ORM. Key models:
+PostgreSQL database managed through Prisma ORM. Primary data models include:
 
-- **User**: All user accounts (admin, teachers, parents, etc.)
-- **School**: School information and subscription
-- **Student**: Student records with admission tracking
-- **Class, Section, Subject**: Academic structure
-- **FeeStructure, FeeInvoice, FeePayment**: Fee management
-- **LeaveRequest**: Leave management
-- **Announcement, Message**: Communication
-- **Exam, ExamResult**: Exam management
-- **Expense**: Expense tracking
+- **User**: Complete user account system (admins, teachers, parents, etc.)
+- **School**: Institutional data and subscription details
+- **Student**: Comprehensive student records including admission history
+- **Class, Section, Subject**: Organizational academic structure
+- **FeeStructure, FeeInvoice, FeePayment**: Complete fee management system
+- **LeaveRequest**: Staff and student leave tracking
+- **Announcement, Message**: Internal communication system
+- **Exam, ExamResult**: Examination and grading management
+- **Expense**: Financial expense record keeping
 
-See `backend/prisma/schema.prisma` for complete schema.
+Complete database schema details can be found in `backend/prisma/schema.prisma`.
 
 ## 🔧 Configuration
 
@@ -187,51 +187,51 @@ See `backend/prisma/schema.prisma` for complete schema.
 
 ### Backend API Testing
 
-Use the provided curl commands or Swagger UI:
+You can test the API using curl commands or the interactive Swagger UI:
 
 ```bash
-# Login
+# User authentication
 curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@school.com","password":"admin123"}'
 
-# Get current user
+# Retrieve current user profile
 curl -X GET http://localhost:3000/api/auth/me \
   -H "Authorization: Bearer <token>"
 ```
 
 ### Frontend Testing
 
-1. Login with default credentials
-2. Create a school (Super Admin)
-3. Login as Admin/Management
-4. Add students, teachers, parents
-5. Test fee management
-6. Test other features
+1. Authenticate using default login credentials
+2. Create a new school instance (requires Super Admin role)
+3. Sign in as Admin or Management user
+4. Add test data for students, teachers, and parents
+5. Verify fee management workflows
+6. Validate additional system features
 
 ## 📝 Development Notes
 
 ### Adding New Features
 
-1. **Backend**:
-   - Create module in `backend/src/`
-   - Add routes in controller
-   - Update Prisma schema if needed
-   - Run migrations
+1. **Backend Development**:
+   - Develop new module within `backend/src/` directory
+   - Implement route handlers in the controller
+   - Modify Prisma schema when database changes are required
+   - Execute database migrations
 
-2. **Frontend**:
-   - Add API service in `frontend/src/services/api.js`
-   - Create page component
-   - Add route in `App.jsx`
-   - Update navigation if needed
+2. **Frontend Development**:
+   - Extend API service layer in `frontend/src/services/api.js`
+   - Build new page component
+   - Register route in `App.jsx` routing configuration
+   - Update navigation menus as necessary
 
 ### Database Migrations
 
 ```bash
-# Development (push schema)
+# Development environment (sync schema directly)
 npx prisma db push
 
-# Production (create migration)
+# Production environment (generate migration files)
 npm run prisma:migrate
 ```
 
@@ -239,23 +239,23 @@ npm run prisma:migrate
 
 ### Common Issues
 
-1. **Database Connection**: Check `DATABASE_URL` and database status
-2. **CORS Errors**: Verify `FRONTEND_URL` in backend `.env`
-3. **Firebase Upload**: Check service account file and permissions
-4. **Port Conflicts**: Change port in `.env` or kill existing process
+1. **Database Connection Problems**: Verify `DATABASE_URL` configuration and ensure database is running
+2. **CORS Errors**: Confirm `FRONTEND_URL` is correctly set in backend `.env` file
+3. **Firebase Upload Failures**: Validate service account credentials and file permissions
+4. **Port Conflicts**: Modify port settings in `.env` or terminate processes using the port
 
 See [HOW_TO_RUN.md](./HOW_TO_RUN.md) for detailed troubleshooting.
 
 ## 📄 License
 
-This project is proprietary software.
+This is proprietary software.
 
 ## 👥 Support
 
-For issues and questions:
-1. Check [HOW_TO_RUN.md](./HOW_TO_RUN.md)
-2. Review API documentation at `/api/docs`
-3. Check console logs for errors
+For support and inquiries:
+1. Refer to [HOW_TO_RUN.md](./HOW_TO_RUN.md)
+2. Consult API documentation available at `/api/docs`
+3. Review console logs for error messages
 
 ## 🎯 Roadmap
 
@@ -269,4 +269,4 @@ For issues and questions:
 
 ## 🙏 Acknowledgments
 
-Built with modern web technologies and best practices for scalability and maintainability.
+Developed using cutting-edge web technologies following industry best practices to ensure scalability, performance, and long-term maintainability.

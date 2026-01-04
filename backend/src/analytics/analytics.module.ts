@@ -12,3 +12,5 @@ import { AnalyticsController } from './controllers/analytics.controller';
 export class AnalyticsModule {}
 
 
+
+
