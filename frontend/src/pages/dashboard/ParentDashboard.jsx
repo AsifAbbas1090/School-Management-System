@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { User, Calendar, DollarSign, FileText, Award, TrendingUp, AlertCircle } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { useAuthStore, useStudentsStore, useClassesStore, useExamsStore, useFeesStore, useAttendanceStore, useAnnouncementsStore } from '../../store';
+import { studentsService } from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils';
 import Loading from '../../components/common/Loading';
 import Breadcrumb from '../../components/common/Breadcrumb';
@@ -9,7 +10,7 @@ import Avatar from '../../components/common/Avatar';
 
 const ParentDashboard = () => {
   const { user } = useAuthStore();
-  const { students } = useStudentsStore();
+  const { students, setStudents } = useStudentsStore();
   const { classes, sections } = useClassesStore();
   const { feePayments } = useFeesStore();
   const { results } = useExamsStore();
@@ -19,9 +20,39 @@ const ParentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selectedChildId, setSelectedChildId] = useState(null);
 
-  // Get children for this parent
+  // Load students for parent - request all students with higher pageSize
+  const loadStudents = useCallback(async () => {
+    try {
+      const response = await studentsService.getAll({ pageSize: 500, page: 1 });
+      if (response.success && response.data) {
+        const studentsData = response.data.data || response.data;
+        setStudents(Array.isArray(studentsData) ? studentsData : []);
+      }
+    } catch (error) {
+      console.error('Failed to load students:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [setStudents]);
+
+  useEffect(() => {
+    loadStudents();
+  }, [loadStudents]);
+
+  // Get children for this parent - match by parentId
   const myChildren = useMemo(() => {
-    return students.filter(s => s.parentId === user?.id);
+    if (!user?.id || !students || students.length === 0) return [];
+    
+    // Filter students where parentId matches the logged-in parent's id
+    const children = students.filter(s => {
+      // Handle both direct parentId match and parent relation
+      const parentIdMatch = s.parentId === user.id;
+      const parentRelationMatch = s.parent?.id === user.id || s.User?.id === user.id;
+      
+      return parentIdMatch || parentRelationMatch;
+    });
+    
+    return children;
   }, [students, user?.id]);
 
   useEffect(() => {
@@ -163,10 +194,12 @@ const ParentDashboard = () => {
 
       {/* Student Profile Card */}
       <div className="card mb-xl">
-        <div className="student-profile p-lg flex items-center gap-xl">
-          <Avatar name={selectedChild?.name} src={selectedChild?.avatar} size="xl" />
+        <div className="student-profile p-lg flex items-center gap-6">
+          <div className="flex-shrink-0">
+            <Avatar name={selectedChild?.name} src={selectedChild?.avatar} size="xl" />
+          </div>
           <div className="student-info flex-1">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">{selectedChild?.name}</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2" style={{ textTransform: 'capitalize' }}>{selectedChild?.name}</h2>
             <div className="flex items-center gap-md text-sm text-gray-600">
               <span><strong>Roll No:</strong> {selectedChild?.rollNumber}</span>
               <span className="text-gray-300">•</span>

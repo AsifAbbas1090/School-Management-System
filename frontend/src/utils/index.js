@@ -168,9 +168,20 @@ export const getInitials = (name) => {
  * @returns {string}
  */
 export const getAvatarColor = (str) => {
+    // Better color palette with vibrant, modern colors
     const colors = [
-        '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b',
-        '#10b981', '#06b6d4', '#6366f1', '#ef4444',
+        '#6366f1', // Indigo
+        '#8b5cf6', // Purple
+        '#ec4899', // Pink
+        '#f59e0b', // Amber
+        '#10b981', // Emerald
+        '#06b6d4', // Cyan
+        '#3b82f6', // Blue
+        '#ef4444', // Red
+        '#14b8a6', // Teal
+        '#a855f7', // Violet
+        '#f97316', // Orange
+        '#84cc16', // Lime
     ];
 
     if (!str) return colors[0];

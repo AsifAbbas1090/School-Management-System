@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Plus, Search, Edit, Trash2, Download, UserCircle, Link as LinkIcon, Upload, AlertCircle } from 'lucide-react';
-import { useParentsStore, useStudentsStore, useAuthStore, useSchoolStore } from '../../store';
+import { useParentsStore, useStudentsStore, useAuthStore, useSchoolStore, useClassesStore } from '../../store';
 import { USER_ROLES } from '../../constants';
 import { usersService, studentsService } from '../../services/api';
 import { exportToCSV, generateId } from '../../utils';
@@ -8,6 +8,7 @@ import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import Avatar from '../../components/common/Avatar';
 import CSVImport from '../../components/common/CSVImport';
+import Loading from '../../components/common/Loading';
 import toast from 'react-hot-toast';
 
 const ParentsPage = () => {
@@ -17,6 +18,7 @@ const ParentsPage = () => {
 
     const { parents, setParents, addParent, updateParent, deleteParent } = useParentsStore();
     const { students, setStudents } = useStudentsStore();
+    const { classes } = useClassesStore();
     const { currentSchool } = useSchoolStore();
 
     if (!canManageParents) {
@@ -58,80 +60,111 @@ const ParentsPage = () => {
     });
 
     const [errors, setErrors] = useState({});
+    const [loading, setLoading] = useState(true);
+    const studentSelectRef = useRef(null);
 
     const loadData = useCallback(async () => {
+        setLoading(true);
         try {
-            // Load parents from API
-            const parentsResponse = await usersService.getParents();
-            let parentsData = [];
-            if (parentsResponse.success && parentsResponse.data) {
-                parentsData = Array.isArray(parentsResponse.data) ? parentsResponse.data : [];
-            }
+            // Load parents and students in parallel for better performance
+            // Request all students with higher pageSize to avoid pagination issues
+            // Note: Backend max pageSize is 1000, but we'll use 500 to be safe
+            const promises = [
+                usersService.getParents(),
+                studentsService.getAll({ pageSize: 500, page: 1 })
+            ];
 
-            // Load management users from API (if admin)
+            // Add management users request if admin (non-blocking)
             if (canManageManagement) {
-                try {
-                    const managementResponse = await usersService.getManagement();
-                    if (managementResponse.success && managementResponse.data) {
-                        const managementData = Array.isArray(managementResponse.data) ? managementResponse.data : [];
-                        // Add management users to parents list for display
-                        const existingIds = new Set(parentsData.map(p => p.id));
-                        const newManagement = managementData
-                            .filter(m => !existingIds.has(m.id))
-                            .map(m => ({ ...m, role: 'MANAGEMENT' }));
-                        parentsData = [...parentsData, ...newManagement];
-                    }
-                } catch (mgmtError) {
-                    console.error('Failed to load management users:', mgmtError);
-                    // Continue without management users
-                }
+                promises.push(usersService.getManagement());
             }
 
-            // Load students from API first
-            const studentsResponse = await studentsService.getAll();
+            // Use Promise.allSettled to handle partial failures gracefully
+            const responses = await Promise.allSettled(promises);
+            
+            // Process parents response
+            let parentsData = [];
+            if (responses[0].status === 'fulfilled' && responses[0].value.success && responses[0].value.data) {
+                parentsData = Array.isArray(responses[0].value.data) ? responses[0].value.data : [];
+            }
+
+            // Process management response (if requested)
+            if (canManageManagement && responses[2]?.status === 'fulfilled' && responses[2].value.success && responses[2].value.data) {
+                const managementData = Array.isArray(responses[2].value.data) ? responses[2].value.data : [];
+                const existingIds = new Set(parentsData.map(p => p.id));
+                const newManagement = managementData
+                    .filter(m => !existingIds.has(m.id))
+                    .map(m => ({ ...m, role: 'MANAGEMENT' }));
+                parentsData = [...parentsData, ...newManagement];
+            }
+
+            // Process students response
             let studentsData = [];
-            if (studentsResponse.success && studentsResponse.data) {
-                studentsData = studentsResponse.data.data || studentsResponse.data;
+            if (responses[1].status === 'fulfilled' && responses[1].value.success && responses[1].value.data) {
+                studentsData = responses[1].value.data.data || responses[1].value.data;
                 setStudents(Array.isArray(studentsData) ? studentsData : []);
+            } else {
+                console.error('Failed to load students:', responses[1].reason);
+                setStudents([]);
             }
 
             // Map parent data and build studentIds from students data
-            // This ensures we have the correct parent-student relationships
-            const mappedParents = parentsData.map(parent => {
-                // Find all students linked to this parent
-                const linkedStudents = studentsData.filter(student => 
-                    student.parentId === parent.id
-                );
-                const studentIds = linkedStudents.map(s => s.id);
-                
-                return {
-                    ...parent,
-                    studentIds: Array.isArray(studentIds) ? studentIds : [],
-                };
+            // Create a map for O(1) lookup instead of O(n) filter for better performance
+            const parentStudentMap = new Map();
+            studentsData.forEach(student => {
+                if (student.parentId) {
+                    if (!parentStudentMap.has(student.parentId)) {
+                        parentStudentMap.set(student.parentId, []);
+                    }
+                    parentStudentMap.get(student.parentId).push(student.id);
+                }
             });
+
+            // Map parent data with studentIds
+            const mappedParents = parentsData.map(parent => ({
+                ...parent,
+                studentIds: parentStudentMap.get(parent.id) || [],
+            }));
+            
             setParents(mappedParents);
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error('Failed to load parents and students');
-            // Set empty arrays to prevent white screen
             setParents([]);
             setStudents([]);
+        } finally {
+            setLoading(false);
         }
     }, [canManageManagement, setParents, setStudents]);
 
     useEffect(() => {
         loadData();
-    }, [loadData, currentSchool]);
+    }, [currentSchool]); // Remove loadData from deps to prevent infinite loops
+
+    // Sync select-multiple selected state when formData.studentIds changes
+    useEffect(() => {
+        if (studentSelectRef.current && Array.isArray(formData.studentIds)) {
+            const select = studentSelectRef.current;
+            Array.from(select.options).forEach(option => {
+                option.selected = formData.studentIds.includes(option.value);
+            });
+        }
+    }, [formData.studentIds, showModal]);
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
         { label: 'Parents', path: null },
     ];
 
-    const handleOpenModal = (mode, parent = null) => {
+    const handleOpenModal = useCallback((mode, parent = null) => {
         setModalMode(mode);
         if (mode === 'edit' && parent) {
             setSelectedParent(parent);
+            // Get current linked students from students array
+            const currentLinkedStudentIds = students
+                .filter(s => s.parentId === parent.id)
+                .map(s => s.id);
+            
             setFormData({
                 name: parent.name,
                 email: parent.email,
@@ -139,14 +172,14 @@ const ParentsPage = () => {
                 phone: parent.phone,
                 address: parent.address,
                 occupation: parent.occupation,
-                studentIds: parent.studentIds || [],
+                studentIds: currentLinkedStudentIds.length > 0 ? currentLinkedStudentIds : (parent.studentIds || []),
                 status: parent.status,
             });
         } else {
             resetForm();
         }
         setShowModal(true);
-    };
+    }, [students]);
 
     const resetForm = () => {
         setFormData({
@@ -169,9 +202,10 @@ const ParentsPage = () => {
     };
 
     const handleChange = (e) => {
-        const { name, value, type, options } = e.target;
+        const { name, value, type, options, multiple } = e.target;
 
-        if (type === 'select-multiple') {
+        // Handle multi-select
+        if (multiple && options) {
             const selectedValues = Array.from(options)
                 .filter(option => option.selected)
                 .map(option => option.value);
@@ -259,9 +293,9 @@ const ParentsPage = () => {
                     });
 
                     // Link/unlink students to this parent
-                    if (formData.studentIds && Array.isArray(formData.studentIds)) {
+                    if (formData.studentIds !== undefined && Array.isArray(formData.studentIds)) {
                         try {
-                            // Get current students linked to this parent
+                            // Get current students linked to this parent (from fresh data)
                             const currentLinkedStudents = students.filter(s => s.parentId === selectedParent.id);
                             const currentLinkedIds = currentLinkedStudents.map(s => s.id);
                             
@@ -270,54 +304,71 @@ const ParentsPage = () => {
                             // Find students to unlink (removed ones)
                             const studentsToUnlink = currentLinkedIds.filter(id => !formData.studentIds.includes(id));
 
-                            // Link new students
+                            const linkToast = toast.loading(`Updating ${studentsToLink.length + studentsToUnlink.length} student link(s)...`);
+
+                            // Link new students in parallel
                             const linkPromises = studentsToLink.map(async (studentId) => {
                                 try {
                                     const response = await studentsService.update(studentId, { parentId: selectedParent.id });
                                     if (!response.success) {
                                         console.error(`Failed to link student ${studentId}:`, response.error);
-                                        throw new Error(response.error || 'Failed to link student');
+                                        return { studentId, success: false, error: response.error };
                                     }
                                     return { studentId, success: true };
                                 } catch (error) {
                                     console.error(`Failed to link student ${studentId}:`, error);
-                                    return { studentId, success: false, error };
+                                    return { studentId, success: false, error: error.message };
                                 }
                             });
 
-                            // Unlink removed students (set parentId to null)
+                            // Unlink removed students (set parentId to null) in parallel
                             const unlinkPromises = studentsToUnlink.map(async (studentId) => {
                                 try {
                                     const response = await studentsService.update(studentId, { parentId: null });
                                     if (!response.success) {
                                         console.error(`Failed to unlink student ${studentId}:`, response.error);
-                                        throw new Error(response.error || 'Failed to unlink student');
+                                        return { studentId, success: false, error: response.error };
                                     }
                                     return { studentId, success: true };
                                 } catch (error) {
                                     console.error(`Failed to unlink student ${studentId}:`, error);
-                                    return { studentId, success: false, error };
+                                    return { studentId, success: false, error: error.message };
                                 }
                             });
 
                             // Wait for all updates to complete
-                            const linkResults = await Promise.all(linkPromises);
-                            const unlinkResults = await Promise.all(unlinkPromises);
+                            const [linkResults, unlinkResults] = await Promise.all([
+                                Promise.all(linkPromises),
+                                Promise.all(unlinkPromises)
+                            ]);
 
                             // Check for failures
                             const failedLinks = linkResults.filter(r => !r.success);
                             const failedUnlinks = unlinkResults.filter(r => !r.success);
 
                             if (failedLinks.length > 0 || failedUnlinks.length > 0) {
+                                const failedCount = failedLinks.length + failedUnlinks.length;
+                                toast.error(`${failedCount} student link(s) failed to update`, { id: linkToast });
                                 console.warn('Some student links failed:', { failedLinks, failedUnlinks });
+                            } else if (studentsToLink.length > 0 || studentsToUnlink.length > 0) {
+                                toast.success(`Successfully updated ${studentsToLink.length + studentsToUnlink.length} student link(s)`, { id: linkToast });
+                            } else {
+                                toast.dismiss(linkToast);
                             }
                         } catch (linkError) {
                             console.error('Failed to link/unlink students:', linkError);
-                            toast.error('Parent updated but failed to update student links');
+                            toast.error('Parent updated but failed to update student links: ' + linkError.message);
                         }
                     }
 
-                    toast.success('Parent updated successfully');
+                    // Only show success if no linking was done (to avoid duplicate messages)
+                    if (!formData.studentIds || formData.studentIds.length === 0 || 
+                        (students.filter(s => s.parentId === selectedParent.id).length === formData.studentIds.length &&
+                         formData.studentIds.every(id => students.find(s => s.id === id && s.parentId === selectedParent.id)))) {
+                        toast.success('Parent updated successfully');
+                    }
+                    
+                    // Always reload data to ensure UI reflects database state
                     await loadData();
                 } else {
                     toast.error(response.error || 'Failed to update parent');
@@ -454,7 +505,32 @@ const ParentsPage = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredParents.length === 0 ? (
+                        {loading && parents.length === 0 ? (
+                            // Show skeleton loaders during initial load
+                            [...Array(6)].map((_, i) => (
+                                <tr key={i}>
+                                    <td>
+                                        <div className="flex items-center gap-md">
+                                            <div className="skeleton-shimmer" style={{ width: '40px', height: '40px', borderRadius: '50%' }}></div>
+                                            <div>
+                                                <div className="skeleton-shimmer" style={{ width: '120px', height: '16px', marginBottom: '4px', borderRadius: '4px' }}></div>
+                                                <div className="skeleton-shimmer" style={{ width: '100px', height: '14px', borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><div className="skeleton-shimmer" style={{ width: '100px', height: '16px', borderRadius: '4px' }}></div></td>
+                                    <td><div className="skeleton-shimmer" style={{ width: '80px', height: '16px', borderRadius: '4px' }}></div></td>
+                                    <td><div className="skeleton-shimmer" style={{ width: '120px', height: '16px', borderRadius: '4px' }}></div></td>
+                                    <td><div className="skeleton-shimmer" style={{ width: '60px', height: '20px', borderRadius: '4px' }}></div></td>
+                                    <td>
+                                        <div className="flex gap-sm">
+                                            <div className="skeleton-shimmer" style={{ width: '32px', height: '32px', borderRadius: '4px' }}></div>
+                                            <div className="skeleton-shimmer" style={{ width: '32px', height: '32px', borderRadius: '4px' }}></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))
+                        ) : filteredParents.length === 0 ? (
                             <tr>
                                 <td colSpan="6" className="text-center">
                                     <div className="empty-state">
@@ -613,19 +689,33 @@ const ParentsPage = () => {
                             <label className="form-label">Link Students</label>
                             <select
                                 name="studentIds"
-                                value={formData.studentIds}
+                                multiple
+                                value={Array.isArray(formData.studentIds) ? formData.studentIds : []}
                                 onChange={handleChange}
                                 className="select"
-                                multiple
                                 size="5"
+                                style={{ minHeight: '120px', width: '100%' }}
                             >
-                                {students.map((student) => (
-                                    <option key={student.id} value={student.id}>
-                                        {student.name} ({student.rollNumber})
-                                    </option>
-                                ))}
+                                {students.length === 0 ? (
+                                    <option disabled>No students available. Please add students first.</option>
+                                ) : (
+                                    students.map((student) => {
+                                        const className = classes.find(c => c.id === student.classId);
+                                        return (
+                                            <option 
+                                                key={student.id} 
+                                                value={student.id}
+                                            >
+                                                {student.name} ({student.rollNumber}){className ? ` - ${className.name}` : ''}
+                                            </option>
+                                        );
+                                    })
+                                )}
                             </select>
-                            <span className="text-xs text-gray-500">Hold Ctrl/Cmd to select multiple</span>
+                            <span className="text-xs text-gray-500 mt-1 block">
+                                Hold Ctrl/Cmd (Windows/Mac) or Shift (Linux) to select multiple. 
+                                Currently selected: <strong>{formData.studentIds?.length || 0}</strong> student(s)
+                            </span>
                         </div>
 
                         <div className="form-group">
@@ -902,6 +992,27 @@ const ParentsPage = () => {
           to {
             opacity: 1;
             transform: translateY(0);
+          }
+        }
+
+        /* Skeleton loader styles */
+        .skeleton-shimmer {
+          background: linear-gradient(
+            90deg,
+            var(--gray-200) 0%,
+            var(--gray-100) 50%,
+            var(--gray-200) 100%
+          );
+          background-size: 200% 100%;
+          animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+          0% {
+            background-position: -200% 0;
+          }
+          100% {
+            background-position: 200% 0;
           }
         }
       `}</style>

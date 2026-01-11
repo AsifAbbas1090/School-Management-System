@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Plus, BookOpen, Trash2, Edit, Users, Download } from 'lucide-react';
 import { useClassesStore, useStudentsStore, useAuthStore, useSchoolStore } from '../../store';
 import { USER_ROLES } from '../../constants';
@@ -6,8 +6,27 @@ import { classesService, sectionsService, studentsService } from '../../services
 import { printTable } from '../../utils/printUtils';
 import { AlertCircle } from 'lucide-react';
 import DeleteWarningModal from '../../components/common/DeleteWarningModal';
+import Modal from '../../components/common/Modal';
 import Loading from '../../components/common/Loading';
 import toast from 'react-hot-toast';
+
+// Skeleton loader component for better perceived performance
+const ClassCardSkeleton = () => (
+    <div className="class-card skeleton">
+        <div className="class-card-header">
+            <div className="class-icon skeleton-shimmer"></div>
+            <div className="class-actions">
+                <div className="skeleton-shimmer" style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-md)' }}></div>
+                <div className="skeleton-shimmer" style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-md)' }}></div>
+            </div>
+        </div>
+        <div className="class-card-body">
+            <div className="skeleton-shimmer" style={{ width: '60%', height: '24px', marginBottom: '8px', borderRadius: '4px' }}></div>
+            <div className="skeleton-shimmer" style={{ width: '40%', height: '16px', marginBottom: '16px', borderRadius: '4px' }}></div>
+            <div className="skeleton-shimmer" style={{ width: '100%', height: '80px', borderRadius: 'var(--radius-md)' }}></div>
+        </div>
+    </div>
+);
 
 const ClassesManagementPage = () => {
     const { user } = useAuthStore();
@@ -17,55 +36,160 @@ const ClassesManagementPage = () => {
     const { students, setStudents } = useStudentsStore();
     const { currentSchool } = useSchoolStore();
     
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [studentsLoading, setStudentsLoading] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [editingClass, setEditingClass] = useState(null);
     const [formData, setFormData] = useState({
-        name: '',
         grade: '',
         numberOfSections: '1',
         capacity: '30',
     });
     const [deleteModal, setDeleteModal] = useState({ isOpen: false, classId: null, className: null });
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    
+    // Track if students have been loaded
+    const studentsLoadedRef = useRef(false);
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
+    // Memoize class sections map for performance
+    const classSectionsMap = useMemo(() => {
+        const map = new Map();
+        sections.forEach(section => {
+            if (!section.deletedAt) {
+                const classId = section.classId;
+                if (!map.has(classId)) {
+                    map.set(classId, []);
+                }
+                map.get(classId).push(section);
+            }
+        });
+        return map;
+    }, [sections]);
+
+    // Memoize student count map for performance
+    const studentCountMap = useMemo(() => {
+        const map = new Map();
+        students.forEach(student => {
+            const classId = student.classId;
+            map.set(classId, (map.get(classId) || 0) + 1);
+        });
+        return map;
+    }, [students]);
+
+    // Find next available class number (fill gaps)
+    const getNextAvailableClassNumber = useCallback((existingClasses) => {
+        if (!existingClasses || existingClasses.length === 0) {
+            return 1;
+        }
+
+        // Extract numbers from class names (e.g., "Class 1" -> 1, "Class 10" -> 10)
+        const classNumbers = existingClasses
+            .map(cls => {
+                const match = cls.name?.match(/Class\s+(\d+)/i);
+                return match ? parseInt(match[1], 10) : null;
+            })
+            .filter(num => num !== null && !isNaN(num))
+            .sort((a, b) => a - b);
+
+        if (classNumbers.length === 0) {
+            return 1;
+        }
+
+        // Find the first gap or return next number
+        for (let i = 1; i <= classNumbers.length; i++) {
+            if (classNumbers[i - 1] !== i) {
+                return i;
+            }
+        }
+
+        // No gaps found, return next number
+        return classNumbers[classNumbers.length - 1] + 1;
+    }, []);
+
+    // Auto-generate class name with next available number
+    const generateClassName = useCallback((grade, existingClasses) => {
+        if (!grade) return '';
+        
+        // If editing, use the existing class name
+        if (editingClass) {
+            return editingClass.name;
+        }
+        
+        // For new classes, find next available number
+        const nextNumber = getNextAvailableClassNumber(existingClasses);
+        return `Class ${nextNumber}`;
+    }, [editingClass, getNextAvailableClassNumber]);
+
+    // Lazy load students data only when needed
+    const loadStudentsData = useCallback(async () => {
+        if (studentsLoadedRef.current) return;
+        
+        setStudentsLoading(true);
         try {
-            const [classesResponse, sectionsResponse, studentsResponse] = await Promise.all([
-                classesService.getAll(),
-                sectionsService.getAll(),
-                studentsService.getAll()
-            ]);
-
-            if (classesResponse.success && classesResponse.data) {
-                const classesData = classesResponse.data.data || classesResponse.data;
-                setClasses(Array.isArray(classesData) ? classesData : []);
-            }
-
-            if (sectionsResponse.success && sectionsResponse.data) {
-                const sectionsData = sectionsResponse.data.data || sectionsResponse.data;
-                setSections(Array.isArray(sectionsData) ? sectionsData : []);
-            }
-
+            const studentsResponse = await studentsService.getAll();
             if (studentsResponse.success && studentsResponse.data) {
                 const studentsData = studentsResponse.data.data || studentsResponse.data;
                 setStudents(Array.isArray(studentsData) ? studentsData : []);
+                studentsLoadedRef.current = true;
             }
+        } catch (error) {
+            console.error('Failed to load students:', error);
+        } finally {
+            setStudentsLoading(false);
+        }
+    }, [setStudents]);
+
+    // Optimized data loading - load classes and sections first, students later
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        try {
+            // Load classes and sections first (critical data)
+            const [classesResponse, sectionsResponse] = await Promise.allSettled([
+                classesService.getAll(),
+                sectionsService.getAll()
+            ]);
+
+            // Process classes
+            if (classesResponse.status === 'fulfilled' && classesResponse.value.success && classesResponse.value.data) {
+                const classesData = classesResponse.value.data.data || classesResponse.value.data;
+                setClasses(Array.isArray(classesData) ? classesData : []);
+            } else {
+                console.error('Failed to load classes:', classesResponse.reason);
+                setClasses([]);
+            }
+
+            // Process sections
+            if (sectionsResponse.status === 'fulfilled' && sectionsResponse.value.success && sectionsResponse.value.data) {
+                const sectionsData = sectionsResponse.value.data.data || sectionsResponse.value.data;
+                setSections(Array.isArray(sectionsData) ? sectionsData : []);
+            } else {
+                console.error('Failed to load sections:', sectionsResponse.reason);
+                setSections([]);
+            }
+
+            // Load students in background (non-blocking)
+            loadStudentsData();
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error('Failed to load classes and sections');
             setClasses([]);
             setSections([]);
-            setStudents([]);
         } finally {
             setLoading(false);
         }
-    }, [setClasses, setSections, setStudents]);
+    }, [setClasses, setSections, loadStudentsData]);
 
     useEffect(() => {
         loadData();
-    }, [loadData, currentSchool]);
+    }, [currentSchool]); // Remove loadData from deps to prevent infinite loops
+
+    // Load students when modal opens (for delete validation)
+    useEffect(() => {
+        if (deleteModal.isOpen || showModal) {
+            loadStudentsData();
+        }
+    }, [deleteModal.isOpen, showModal, loadStudentsData]);
 
     if (!canManageClasses) {
         return (
@@ -84,7 +208,6 @@ const ClassesManagementPage = () => {
 
     const resetForm = useCallback(() => {
         setFormData({
-            name: '',
             grade: '',
             numberOfSections: '1',
             capacity: '30',
@@ -94,47 +217,60 @@ const ClassesManagementPage = () => {
     }, []);
 
     const handleEdit = useCallback((classItem) => {
-        const classSections = sections.filter(s => s.classId === classItem.id && !s.deletedAt);
+        const classSections = classSectionsMap.get(classItem.id) || [];
         setEditingClass(classItem);
         setFormData({
-            name: classItem.name,
             grade: classItem.grade,
             numberOfSections: classSections.length.toString(),
-            capacity: '30',
+            capacity: classSections[0]?.capacity?.toString() || '30',
         });
         setShowModal(true);
-    }, [sections]);
+    }, [classSectionsMap]);
 
+    // Optimized submit with better error handling and optimistic updates
     const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
 
-        if (!formData.name || !formData.grade || !formData.numberOfSections) {
-            toast.error('Please fill in all required fields');
+        if (!formData.grade || !formData.numberOfSections) {
+            toast.error('Please fill in all required fields', { duration: 2000 });
             return;
         }
 
         const numSections = parseInt(formData.numberOfSections);
         if (numSections < 1 || numSections > 26) {
-            toast.error('Number of sections must be between 1 and 26');
+            toast.error('Number of sections must be between 1 and 26', { duration: 2000 });
             return;
         }
 
+        const capacity = parseInt(formData.capacity) || 30;
+        if (capacity < 10 || capacity > 100) {
+            toast.error('Capacity must be between 10 and 100', { duration: 2000 });
+            return;
+        }
+
+        setSubmitting(true);
+        const loadingToast = toast.loading(editingClass ? 'Updating class...' : 'Creating class...');
+
         try {
+            // Auto-generate class name with next available number
+            const className = generateClassName(formData.grade, classes);
+
             if (editingClass) {
                 // Update class details
                 const classData = {
-                    name: formData.name,
                     grade: formData.grade,
-                    displayName: formData.name,
+                    name: className,
+                    displayName: className,
                 };
+                
                 const classResponse = await classesService.update(editingClass.id, classData);
                 if (!classResponse.success) {
-                    toast.error(classResponse.error || 'Failed to update class');
+                    toast.error(classResponse.error || 'Failed to update class', { id: loadingToast });
                     return;
                 }
 
                 // Handle section addition/removal
-                const existingSections = sections.filter(s => s.classId === editingClass.id && !s.deletedAt);
+                const existingSections = classSectionsMap.get(editingClass.id) || [];
                 const targetSectionCount = numSections;
                 const currentSectionCount = existingSections.length;
 
@@ -142,76 +278,99 @@ const ClassesManagementPage = () => {
                     const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
                     
                     if (targetSectionCount > currentSectionCount) {
-                        // Add new sections
+                        // Add new sections in parallel
+                        const sectionPromises = [];
                         for (let i = currentSectionCount; i < targetSectionCount; i++) {
                             const sectionData = {
                                 classId: editingClass.id,
                                 name: sectionLetters[i],
-                                capacity: parseInt(formData.capacity) || 30,
+                                capacity: capacity,
                             };
-                            await sectionsService.create(sectionData);
+                            sectionPromises.push(sectionsService.create(sectionData));
                         }
+                        await Promise.all(sectionPromises);
                     } else {
                         // Delete excess sections (from the end)
-                        const sectionsToDelete = existingSections
+                        const sectionsToDelete = [...existingSections]
                             .sort((a, b) => a.name.localeCompare(b.name))
                             .slice(targetSectionCount);
                         
+                        // Ensure students are loaded for validation
+                        if (!studentsLoadedRef.current) {
+                            await loadStudentsData();
+                        }
+                        
+                        // Check for students in sections to delete
                         for (const section of sectionsToDelete) {
-                            // Check if section has students
                             const sectionStudents = students.filter(s => s.sectionId === section.id);
                             if (sectionStudents.length > 0) {
-                                toast.error(`Cannot delete section ${section.name} as it has ${sectionStudents.length} student(s). Please reassign students first.`);
-                                continue;
+                                toast.error(`Cannot delete section ${section.name} as it has ${sectionStudents.length} student(s). Please reassign students first.`, { id: loadingToast });
+                                setSubmitting(false);
+                                return;
                             }
-                            await sectionsService.delete(section.id);
                         }
+
+                        // Delete sections in parallel
+                        const deletePromises = sectionsToDelete.map(section => 
+                            sectionsService.delete(section.id)
+                        );
+                        await Promise.all(deletePromises);
                     }
                 }
 
-                toast.success('Class updated successfully!');
+                toast.success('Class updated successfully!', { id: loadingToast, duration: 2000 });
                 await loadData();
                 resetForm();
             } else {
                 // Create class
                 const classData = {
-                    name: formData.name,
                     grade: formData.grade,
-                    displayName: formData.name,
+                    name: className,
+                    displayName: className,
                 };
+                
                 const classResponse = await classesService.create(classData);
                 if (!classResponse.success || !classResponse.data) {
-                    toast.error(classResponse.error || 'Failed to create class');
+                    toast.error(classResponse.error || 'Failed to create class', { id: loadingToast });
                     return;
                 }
 
                 const newClass = classResponse.data;
 
-                // Create sections
+                // Create sections in parallel for better performance
                 const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                const sectionPromises = [];
                 for (let i = 0; i < numSections; i++) {
                     const sectionData = {
                         classId: newClass.id,
                         name: sectionLetters[i],
-                        capacity: parseInt(formData.capacity) || 30,
+                        capacity: capacity,
                     };
-                    await sectionsService.create(sectionData);
+                    sectionPromises.push(sectionsService.create(sectionData));
                 }
+                await Promise.all(sectionPromises);
 
-                toast.success(`Class created with ${numSections} section(s)!`);
+                toast.success(`Class created with ${numSections} section(s)!`, { id: loadingToast, duration: 2000 });
                 await loadData();
                 resetForm();
             }
         } catch (error) {
             console.error('Failed to save class:', error);
-            toast.error(error.response?.data?.message || 'Failed to save class');
+            toast.error(error.response?.data?.message || 'Failed to save class', { id: loadingToast });
+        } finally {
+            setSubmitting(false);
         }
-    }, [editingClass, formData, sections, students, loadData, resetForm]);
+    }, [editingClass, formData, classSectionsMap, students, loadData, resetForm, generateClassName, classes, loadStudentsData]);
 
     const handleDeleteClick = useCallback((classItem) => {
-        const classStudents = students.filter(s => s.classId === classItem.id);
-        if (classStudents.length > 0) {
-            toast.error(`Cannot delete class "${classItem.name}" as it has ${classStudents.length} student(s). Please remove or reassign students first.`);
+        // Ensure students are loaded for validation
+        if (!studentsLoadedRef.current) {
+            loadStudentsData();
+        }
+        
+        const studentCount = studentCountMap.get(classItem.id) || 0;
+        if (studentCount > 0) {
+            toast.error(`Cannot delete class "${classItem.name}" as it has ${studentCount} student(s). Please remove or reassign students first.`, { duration: 3000 });
             return;
         }
         setDeleteModal({ 
@@ -219,36 +378,38 @@ const ClassesManagementPage = () => {
             classId: classItem.id, 
             className: classItem.name 
         });
-    }, [students]);
+    }, [studentCountMap, loadStudentsData]);
 
     const handleDeleteConfirm = useCallback(async () => {
         if (!deleteModal.classId) return;
 
         setDeleteLoading(true);
+        const loadingToast = toast.loading('Deleting class...');
+        
         try {
             const response = await classesService.delete(deleteModal.classId);
             if (response.success) {
-                toast.success('Class deleted successfully');
+                toast.success('Class deleted successfully', { id: loadingToast, duration: 2000 });
                 setDeleteModal({ isOpen: false, classId: null, className: null });
                 await loadData();
             } else {
-                toast.error(response.error || 'Failed to delete class');
+                toast.error(response.error || 'Failed to delete class', { id: loadingToast });
             }
         } catch (error) {
             console.error('Failed to delete class:', error);
-            toast.error(error.response?.data?.message || 'Failed to delete class');
+            toast.error(error.response?.data?.message || 'Failed to delete class', { id: loadingToast });
         } finally {
             setDeleteLoading(false);
         }
     }, [deleteModal, loadData]);
 
     const getClassSections = useCallback((classId) => {
-        return sections.filter(s => s.classId === classId && !s.deletedAt);
-    }, [sections]);
+        return classSectionsMap.get(classId) || [];
+    }, [classSectionsMap]);
 
     const getStudentCount = useCallback((classId) => {
-        return students.filter(s => s.classId === classId).length;
-    }, [students]);
+        return studentCountMap.get(classId) || 0;
+    }, [studentCountMap]);
 
     const handleExportReport = useCallback(() => {
         const data = classes.map(cls => ({
@@ -256,7 +417,7 @@ const ClassesManagementPage = () => {
             grade: cls.grade,
             sections: getClassSections(cls.id).map(s => s.name).join(', '),
             students: getStudentCount(cls.id),
-            capacity: 30 * getClassSections(cls.id).length
+            capacity: (getClassSections(cls.id)[0]?.capacity || 30) * getClassSections(cls.id).length
         }));
 
         printTable({
@@ -272,8 +433,96 @@ const ClassesManagementPage = () => {
         });
     }, [classes, getClassSections, getStudentCount]);
 
-    if (loading) {
-        return <Loading fullScreen />;
+    // Memoize class cards to prevent unnecessary re-renders
+    const classCards = useMemo(() => {
+        return classes.map((classItem) => {
+            const classSections = getClassSections(classItem.id);
+            const studentCount = getStudentCount(classItem.id);
+
+            return (
+                <div key={classItem.id} className="class-card">
+                    <div className="class-card-header">
+                        <div className="class-icon">
+                            <BookOpen size={32} />
+                        </div>
+                        <div className="class-actions">
+                            <button className="icon-btn" onClick={() => handleEdit(classItem)} title="Edit">
+                                <Edit size={18} />
+                            </button>
+                            <button className="icon-btn icon-btn-danger" onClick={() => handleDeleteClick(classItem)} title="Delete">
+                                <Trash2 size={18} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="class-card-body">
+                        <h3 className="class-name">{classItem.name}</h3>
+                        <p className="class-grade">Grade: {classItem.grade}</p>
+
+                        <div className="class-sections">
+                            <p className="sections-title">Sections ({classSections.length}):</p>
+                            <div className="sections-list">
+                                {classSections.map(section => (
+                                    <span key={section.id} className="section-badge">
+                                        {section.name}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="class-stats">
+                            <div className="stat-item">
+                                <Users size={16} />
+                                <span>{studentCount} Students</span>
+                            </div>
+                            <div className="stat-item">
+                                <span>Capacity: {classSections[0]?.capacity || 30}/section</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        });
+    }, [classes, getClassSections, getStudentCount, handleEdit, handleDeleteClick]);
+
+    // Auto-generated class name preview
+    const previewClassName = useMemo(() => {
+        return generateClassName(formData.grade, classes);
+    }, [formData.grade, classes, generateClassName]);
+    
+    const previewSections = useMemo(() => {
+        return Array.from({ length: parseInt(formData.numberOfSections) || 0 }, (_, i) =>
+            String.fromCharCode(65 + i)
+        ).join(', ');
+    }, [formData.numberOfSections]);
+
+    // Show skeleton loaders during initial load
+    if (loading && classes.length === 0) {
+        return (
+            <div className="page">
+                <div className="page-header">
+                    <div>
+                        <h1 className="page-title">Classes Management</h1>
+                        <p className="page-subtitle">Manage classes and auto-generate sections</p>
+                    </div>
+                    <div className="flex gap-md">
+                        <button className="btn btn-outline" disabled>
+                            <Download size={20} />
+                            Download PDF
+                        </button>
+                        <button className="btn btn-primary" disabled>
+                            <Plus size={20} />
+                            Add Class
+                        </button>
+                    </div>
+                </div>
+                <div className="classes-grid">
+                    {[...Array(6)].map((_, i) => (
+                        <ClassCardSkeleton key={i} />
+                    ))}
+                </div>
+            </div>
+        );
     }
 
     return (
@@ -297,56 +546,9 @@ const ClassesManagementPage = () => {
 
             {/* Classes Grid */}
             <div className="classes-grid">
-                {classes.map((classItem) => {
-                    const classSections = getClassSections(classItem.id);
-                    const studentCount = getStudentCount(classItem.id);
+                {classCards}
 
-                    return (
-                        <div key={classItem.id} className="class-card">
-                            <div className="class-card-header">
-                                <div className="class-icon">
-                                    <BookOpen size={32} />
-                                </div>
-                                <div className="class-actions">
-                                    <button className="icon-btn" onClick={() => handleEdit(classItem)} title="Edit">
-                                        <Edit size={18} />
-                                    </button>
-                                    <button className="icon-btn icon-btn-danger" onClick={() => handleDeleteClick(classItem)} title="Delete">
-                                        <Trash2 size={18} />
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="class-card-body">
-                                <h3 className="class-name">{classItem.name}</h3>
-                                <p className="class-grade">Grade: {classItem.grade}</p>
-
-                                <div className="class-sections">
-                                    <p className="sections-title">Sections ({classSections.length}):</p>
-                                    <div className="sections-list">
-                                        {classSections.map(section => (
-                                            <span key={section.id} className="section-badge">
-                                                {section.name}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="class-stats">
-                                    <div className="stat-item">
-                                        <Users size={16} />
-                                        <span>{studentCount} Students</span>
-                                    </div>
-                                    <div className="stat-item">
-                                        <span>Capacity: 30/section</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
-
-                {classes.length === 0 && (
+                {classes.length === 0 && !loading && (
                     <div className="empty-state">
                         <BookOpen size={64} />
                         <h3>No Classes Added</h3>
@@ -355,101 +557,111 @@ const ClassesManagementPage = () => {
                 )}
             </div>
 
-            {/* Add/Edit Class Modal */}
-            {showModal && (
-                <div className="modal-overlay" onClick={resetForm}>
-                    <div className="modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>{editingClass ? 'Edit Class' : 'Add New Class'}</h2>
-                            <button className="modal-close" onClick={resetForm}>×</button>
+            {/* Add/Edit Class Modal - Using Modal Component */}
+            <Modal
+                isOpen={showModal}
+                onClose={resetForm}
+                title={editingClass ? 'Edit Class' : 'Add New Class'}
+                size="md"
+                footer={
+                    <div className="flex gap-md justify-end">
+                        <button 
+                            type="button" 
+                            className="btn btn-secondary" 
+                            onClick={resetForm}
+                            disabled={submitting}
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="submit" 
+                            form="class-form"
+                            className="btn btn-primary" 
+                            disabled={submitting}
+                        >
+                            {submitting ? 'Saving...' : (editingClass ? 'Update Class' : 'Create Class')}
+                        </button>
+                    </div>
+                }
+            >
+                <form id="class-form" onSubmit={handleSubmit} className="class-form">
+                    <div className="form-grid">
+                        <div className="form-group">
+                            <label className="form-label required">Grade/Level</label>
+                            <input
+                                type="text"
+                                name="grade"
+                                value={formData.grade}
+                                onChange={handleChange}
+                                className="input"
+                                placeholder="e.g., 1, 9, 11"
+                                required
+                                disabled={submitting}
+                            />
+                            <small className="form-hint">Enter the numeric grade level</small>
                         </div>
 
-                        <form onSubmit={handleSubmit} className="modal-body">
-                            <div className="form-grid">
-                                <div className="form-group">
-                                    <label className="form-label required">Class Name</label>
-                                    <input
-                                        type="text"
-                                        name="name"
-                                        value={formData.name}
-                                        onChange={handleChange}
-                                        className="input"
-                                        placeholder="e.g., Class 1, IX-A, FSc Part 1"
-                                        required
-                                    />
-                                    <small className="form-hint">Enter the full class name as displayed</small>
-                                </div>
+                        <div className="form-group">
+                            <label className="form-label required">Number of Sections</label>
+                            <input
+                                type="number"
+                                name="numberOfSections"
+                                value={formData.numberOfSections}
+                                onChange={handleChange}
+                                className="input"
+                                min="1"
+                                max="26"
+                                required
+                                disabled={submitting}
+                            />
+                            <small className="form-hint">
+                                {editingClass ? 'Reducing sections will delete excess sections (if empty)' : 'Sections will be auto-generated (A, B, C...)'}
+                            </small>
+                        </div>
 
-                                <div className="form-group">
-                                    <label className="form-label required">Grade/Level</label>
-                                    <input
-                                        type="text"
-                                        name="grade"
-                                        value={formData.grade}
-                                        onChange={handleChange}
-                                        className="input"
-                                        placeholder="e.g., 1, 9, 11"
-                                        required
-                                    />
-                                    <small className="form-hint">Numeric grade level</small>
-                                </div>
+                        <div className="form-group">
+                            <label className="form-label">Capacity per Section</label>
+                            <input
+                                type="number"
+                                name="capacity"
+                                value={formData.capacity}
+                                onChange={handleChange}
+                                className="input"
+                                min="10"
+                                max="100"
+                                placeholder="30"
+                                disabled={submitting}
+                            />
+                            <small className="form-hint">Maximum students per section</small>
+                        </div>
 
-                                <div className="form-group">
-                                    <label className="form-label required">Number of Sections</label>
-                                    <input
-                                        type="number"
-                                        name="numberOfSections"
-                                        value={formData.numberOfSections}
-                                        onChange={handleChange}
-                                        className="input"
-                                        min="1"
-                                        max="26"
-                                        required
-                                    />
-                                    <small className="form-hint">
-                                        {editingClass ? 'Reducing sections will delete excess sections (if empty)' : 'Sections will be auto-generated (A, B, C...)'}
-                                    </small>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Capacity per Section</label>
-                                    <input
-                                        type="number"
-                                        name="capacity"
-                                        value={formData.capacity}
-                                        onChange={handleChange}
-                                        className="input"
-                                        min="10"
-                                        max="100"
-                                        placeholder="30"
-                                    />
-                                    <small className="form-hint">Maximum students per section</small>
-                                </div>
-                            </div>
-
-                            <div className="preview-section">
-                                <p className="preview-title">Preview:</p>
-                                <p className="preview-text">
-                                    <strong>{formData.name || 'Class Name'}</strong> will have{' '}
-                                    <strong>{formData.numberOfSections || '0'}</strong> section(s):{' '}
-                                    {Array.from({ length: parseInt(formData.numberOfSections) || 0 }, (_, i) =>
-                                        String.fromCharCode(65 + i)
-                                    ).join(', ')}
-                                </p>
-                            </div>
-
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={resetForm}>
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary">
-                                    {editingClass ? 'Update Class' : 'Create Class'}
-                                </button>
-                            </div>
-                        </form>
+                        <div className="form-group">
+                            <label className="form-label">Class Name (Auto-generated)</label>
+                            <input
+                                type="text"
+                                value={previewClassName}
+                                className="input"
+                                disabled
+                                style={{ backgroundColor: 'var(--gray-50)', cursor: 'not-allowed' }}
+                            />
+                            <small className="form-hint">
+                                {editingClass 
+                                    ? 'Class name will remain the same when editing'
+                                    : 'Class name is automatically generated with the next available number'}
+                            </small>
+                        </div>
                     </div>
-                </div>
-            )}
+
+                    <div className="preview-section">
+                        <p className="preview-title">Preview:</p>
+                        <p className="preview-text">
+                            <strong>{previewClassName || 'Class Name'}</strong> will have{' '}
+                            <strong>{formData.numberOfSections || '0'}</strong> section(s):{' '}
+                            {previewSections || 'None'}
+                        </p>
+                    </div>
+                </form>
+            </Modal>
 
             {/* Delete Warning Modal */}
             <DeleteWarningModal
@@ -573,10 +785,20 @@ const ClassesManagementPage = () => {
                     font-size: 0.875rem;
                 }
 
+                .class-form {
+                    width: 100%;
+                }
+
                 .form-grid {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
                     gap: var(--spacing-lg);
+                }
+
+                @media (max-width: 768px) {
+                    .form-grid {
+                        grid-template-columns: 1fr;
+                    }
                 }
 
                 .form-hint {
@@ -609,6 +831,31 @@ const ClassesManagementPage = () => {
                 .required::after {
                     content: ' *';
                     color: var(--danger-600);
+                }
+
+                /* Skeleton loader styles */
+                .skeleton {
+                    opacity: 0.7;
+                }
+
+                .skeleton-shimmer {
+                    background: linear-gradient(
+                        90deg,
+                        var(--gray-200) 0%,
+                        var(--gray-100) 50%,
+                        var(--gray-200) 100%
+                    );
+                    background-size: 200% 100%;
+                    animation: shimmer 1.5s infinite;
+                }
+
+                @keyframes shimmer {
+                    0% {
+                        background-position: -200% 0;
+                    }
+                    100% {
+                        background-position: 200% 0;
+                    }
                 }
             `}</style>
         </div>

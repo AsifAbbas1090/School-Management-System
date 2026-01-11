@@ -25,14 +25,16 @@ export class AcademicQueryDto {
   @IsOptional()
   page?: number = 1;
 
-  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 100 })
+  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 1000 })
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(1000)
   @IsOptional()
   pageSize?: number = 10;
 }
+
+
 
 
 

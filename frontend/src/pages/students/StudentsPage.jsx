@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Plus, Search, Edit, Trash2, Download, Upload, AlertCircle } from 'lucide-react';
 import { useStudentsStore, useClassesStore, useParentsStore, useFeesStore, useAuthStore, useSchoolStore } from '../../store';
 import { studentsService, classesService, sectionsService } from '../../services/api';
@@ -12,6 +12,32 @@ import Avatar from '../../components/common/Avatar';
 import Loading from '../../components/common/Loading';
 import CSVImport from '../../components/common/CSVImport';
 import toast from 'react-hot-toast';
+
+// Skeleton loader for table rows
+const StudentRowSkeleton = () => (
+    <tr>
+        <td>
+            <div className="flex items-center gap-md">
+                <div className="skeleton-shimmer" style={{ width: '40px', height: '40px', borderRadius: '50%' }}></div>
+                <div>
+                    <div className="skeleton-shimmer" style={{ width: '120px', height: '16px', marginBottom: '4px', borderRadius: '4px' }}></div>
+                    <div className="skeleton-shimmer" style={{ width: '100px', height: '14px', borderRadius: '4px' }}></div>
+                </div>
+            </div>
+        </td>
+        <td><div className="skeleton-shimmer" style={{ width: '80px', height: '16px', borderRadius: '4px' }}></div></td>
+        <td><div className="skeleton-shimmer" style={{ width: '100px', height: '16px', borderRadius: '4px' }}></div></td>
+        <td><div className="skeleton-shimmer" style={{ width: '70px', height: '16px', borderRadius: '4px' }}></div></td>
+        <td><div className="skeleton-shimmer" style={{ width: '80px', height: '16px', borderRadius: '4px' }}></div></td>
+        <td><div className="skeleton-shimmer" style={{ width: '60px', height: '20px', borderRadius: '4px' }}></div></td>
+        <td>
+            <div className="flex gap-sm">
+                <div className="skeleton-shimmer" style={{ width: '32px', height: '32px', borderRadius: '4px' }}></div>
+                <div className="skeleton-shimmer" style={{ width: '32px', height: '32px', borderRadius: '4px' }}></div>
+            </div>
+        </td>
+    </tr>
+);
 
 const StudentsPage = () => {
     const { user } = useAuthStore();
@@ -45,6 +71,7 @@ const StudentsPage = () => {
         }, 300);
         return () => clearTimeout(timer);
     }, [searchTerm]);
+    
     const [filterClass, setFilterClass] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
     const [showModal, setShowModal] = useState(false);
@@ -78,34 +105,51 @@ const StudentsPage = () => {
 
     const [errors, setErrors] = useState({});
 
+    // Track if initial data is loaded
+    const initialDataLoaded = useRef(false);
+
+    // Optimized data loading - load critical data first, fee payments later
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            // Load data in parallel for better performance
-            const [studentsResponse, classesResponse, sectionsResponse] = await Promise.all([
+            // Load critical data in parallel (students, classes, sections)
+            const [studentsResponse, classesResponse, sectionsResponse] = await Promise.allSettled([
                 studentsService.getAll(),
                 classesService.getAll(),
                 sectionsService.getAll()
             ]);
 
-            if (studentsResponse.success && studentsResponse.data) {
-                const studentsData = studentsResponse.data.data || studentsResponse.data;
+            // Process students
+            if (studentsResponse.status === 'fulfilled' && studentsResponse.value.success && studentsResponse.value.data) {
+                const studentsData = studentsResponse.value.data.data || studentsResponse.value.data;
                 setStudents(Array.isArray(studentsData) ? studentsData : []);
+            } else {
+                console.error('Failed to load students:', studentsResponse.reason);
+                setStudents([]);
             }
             
-            if (classesResponse.success && classesResponse.data) {
-                const classesData = classesResponse.data.data || classesResponse.data;
+            // Process classes
+            if (classesResponse.status === 'fulfilled' && classesResponse.value.success && classesResponse.value.data) {
+                const classesData = classesResponse.value.data.data || classesResponse.value.data;
                 setClasses(Array.isArray(classesData) ? classesData : []);
+            } else {
+                console.error('Failed to load classes:', classesResponse.reason);
+                setClasses([]);
             }
             
-            if (sectionsResponse.success && sectionsResponse.data) {
-                const sectionsData = sectionsResponse.data.data || sectionsResponse.data;
+            // Process sections
+            if (sectionsResponse.status === 'fulfilled' && sectionsResponse.value.success && sectionsResponse.value.data) {
+                const sectionsData = sectionsResponse.value.data.data || sectionsResponse.value.data;
                 setSections(Array.isArray(sectionsData) ? sectionsData : []);
+            } else {
+                console.error('Failed to load sections:', sectionsResponse.reason);
+                setSections([]);
             }
+
+            initialDataLoaded.current = true;
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error('Failed to load students. Please check your connection.');
-            // Set empty arrays to prevent errors
             setStudents([]);
             setClasses([]);
             setSections([]);
@@ -116,14 +160,14 @@ const StudentsPage = () => {
 
     useEffect(() => {
         loadData();
-    }, [loadData, currentSchool]);
+    }, [currentSchool]); // Remove loadData from deps to prevent infinite loops
 
-    const breadcrumbItems = [
+    const breadcrumbItems = useMemo(() => [
         { label: 'Dashboard', path: '/dashboard' },
         { label: 'Students', path: null },
-    ];
+    ], []);
 
-    const handleOpenModal = (mode, student = null) => {
+    const handleOpenModal = useCallback((mode, student = null) => {
         setModalMode(mode);
         if (mode === 'edit' && student) {
             setSelectedStudent(student);
@@ -152,9 +196,9 @@ const StudentsPage = () => {
             resetForm();
         }
         setShowModal(true);
-    };
+    }, []);
 
-    const resetForm = () => {
+    const resetForm = useCallback(() => {
         setFormData({
             name: '',
             rollNumber: '',
@@ -176,22 +220,22 @@ const StudentsPage = () => {
         });
         setErrors({});
         setSelectedStudent(null);
-    };
+    }, []);
 
-    const handleCloseModal = () => {
+    const handleCloseModal = useCallback(() => {
         setShowModal(false);
         resetForm();
-    };
+    }, [resetForm]);
 
-    const handleChange = (e) => {
+    const handleChange = useCallback((e) => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
         if (errors[name]) {
             setErrors((prev) => ({ ...prev, [name]: '' }));
         }
-    };
+    }, [errors]);
 
-    const validate = () => {
+    const validate = useCallback(() => {
         const newErrors = {};
 
         if (!formData.name.trim()) newErrors.name = 'Name is required';
@@ -218,9 +262,9 @@ const StudentsPage = () => {
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
-    };
+    }, [formData, modalMode]);
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
 
         if (!validate()) return;
@@ -324,7 +368,7 @@ const StudentsPage = () => {
             // Silently handle errors - toast shows user message
             toast.error(error.response?.data?.message || 'Operation failed');
         }
-    };
+    }, [formData, modalMode, selectedStudent, validate, addStudent, addParent, currentSchool, loadData, handleCloseModal]);
 
     const handleDeleteClick = useCallback((student) => {
         setStudentToDelete(student);
@@ -349,7 +393,7 @@ const StudentsPage = () => {
         }
     }, [studentToDelete, deleteStudent, loadData]);
 
-    const handleImport = (importedData) => {
+    const handleImport = useCallback((importedData) => {
         // Process imported data and add students
         importedData.forEach((row) => {
             const classData = classes.find(c => c.name === row.class);
@@ -390,20 +434,17 @@ const StudentsPage = () => {
 
             addStudent(studentData);
         });
-    };
+    }, [classes, sections, addParent, addStudent]);
 
-
-    // Calculate Pending Fees
-    const getFeeStatus = (student) => {
+    // Memoize fee status calculation
+    const getFeeStatus = useCallback((student) => {
+        if (!feePayments || feePayments.length === 0) {
+            return { pending: 0, isAlert: false };
+        }
+        
         const studentPayments = feePayments.filter(p => p.studentId === student.id);
         const totalPaid = studentPayments.reduce((sum, p) => sum + p.paidAmount, 0);
-        // Simplified Logic: Assuming fee starts from admission, but for now let's just use a fixed "Total Due" logic or check current month
-        // For the "Pending Alert > 2x monthly" requirement:
-        // We'll simulate 'pending amount' as (random or derived) for demo if not strictly tracked month-by-month in store
-        // Let's assume 'dueAmount' comes from store or is calculated.
-        // For demo: verify against a mock "totalFeesDue" or similar.
-        // For accurate tracking: Pending = (Months * MonthlyFee) - Paid.
-
+        
         // Mock calculation for alert demo:
         const monthsJoined = 3; // Mock
         const totalExpected = (student.monthlyFee || 0) * monthsJoined;
@@ -413,9 +454,9 @@ const StudentsPage = () => {
             pending,
             isAlert: pending > ((student.monthlyFee || 0) * 2)
         };
-    };
+    }, [feePayments]);
 
-    // Helper functions to get class and section names
+    // Memoize helper functions
     const getClassName = useCallback((classId) => {
         if (!classId) return 'N/A';
         const classData = classes.find(c => c.id === classId);
@@ -478,9 +519,66 @@ const StudentsPage = () => {
         });
     }, [filteredStudents, getClassName, getSectionName]);
 
-    if (loading) {
-        return <Loading fullScreen />;
-    }
+    // Memoize table rows to prevent unnecessary re-renders
+    const tableRows = useMemo(() => {
+        return filteredStudents.map((student) => {
+            const { pending, isAlert } = getFeeStatus(student);
+            return (
+                <tr key={student.id}>
+                    <td>
+                        <div className="flex items-center gap-md">
+                            <Avatar name={student.name} src={student.avatar} />
+                            <div>
+                                <div className="font-medium">{student.name}</div>
+                                <div className="text-sm text-gray-500">{student.email}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>{student.rollNumber}</td>
+                    <td>
+                        {getClassName(student.classId)} - {getSectionName(student.sectionId)}
+                    </td>
+                    <td>{formatCurrency(student.monthlyFee || 0)}</td>
+                    <td>
+                        {isAlert ? (
+                            <div className="flex items-center gap-xs text-error-600 font-medium" title={`Pending: ${formatCurrency(pending)}`}>
+                                <AlertCircle size={16} />
+                                <span>Overdue</span>
+                            </div>
+                        ) : (
+                            <span className="text-success-600 text-sm">On Track</span>
+                        )}
+                    </td>
+                    <td>
+                        <span className={`badge badge-${student.status === 'ACTIVE' || student.status === 'active' ? 'success' : 'gray'}`}>
+                            {student.status || 'ACTIVE'}
+                        </span>
+                    </td>
+                    <td>
+                        <div className="flex gap-sm">
+                            <button
+                                className="btn btn-sm btn-outline"
+                                onClick={() => handleOpenModal('edit', student)}
+                                aria-label="Edit student"
+                            >
+                                <Edit size={16} />
+                            </button>
+                            <button
+                                className="btn btn-sm btn-danger"
+                                onClick={() => handleDeleteClick(student)}
+                                aria-label="Delete student"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            );
+        });
+    }, [filteredStudents, getFeeStatus, getClassName, getSectionName, handleOpenModal, handleDeleteClick]);
+
+    // Show skeleton loaders during initial load instead of full screen loading
+    const showSkeleton = loading && students.length === 0 && classes.length === 0;
 
     return (
         <div className="students-page">
@@ -492,15 +590,15 @@ const StudentsPage = () => {
                     <p className="text-gray-600">Manage all student records and parents</p>
                 </div>
                 <div className="flex gap-md">
-                    <button className="btn btn-outline" onClick={() => setShowImportModal(true)}>
+                    <button className="btn btn-outline" onClick={() => setShowImportModal(true)} disabled={showSkeleton}>
                         <Upload size={18} />
                         <span>Import CSV</span>
                     </button>
-                    <button className="btn btn-outline" onClick={handleExport}>
+                    <button className="btn btn-outline" onClick={handleExport} disabled={showSkeleton || filteredStudents.length === 0}>
                         <Download size={18} />
                         <span>PDF Report</span>
                     </button>
-                    <button className="btn btn-primary" onClick={() => handleOpenModal('add')}>
+                    <button className="btn btn-primary" onClick={() => handleOpenModal('add')} disabled={showSkeleton}>
                         <Plus size={18} />
                         <span>Add Student</span>
                     </button>
@@ -518,6 +616,7 @@ const StudentsPage = () => {
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="input"
+                            disabled={showSkeleton}
                         />
                     </div>
 
@@ -525,6 +624,7 @@ const StudentsPage = () => {
                         value={filterClass}
                         onChange={(e) => setFilterClass(e.target.value)}
                         className="select"
+                        disabled={showSkeleton}
                     >
                         <option value="">All Classes</option>
                         {classes.map((cls) => (
@@ -536,6 +636,7 @@ const StudentsPage = () => {
                         value={filterStatus}
                         onChange={(e) => setFilterStatus(e.target.value)}
                         className="select"
+                        disabled={showSkeleton}
                     >
                         <option value="">All Status</option>
                         <option value="ACTIVE">Active</option>
@@ -561,7 +662,12 @@ const StudentsPage = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredStudents.length === 0 ? (
+                        {showSkeleton ? (
+                            // Show skeleton loaders
+                            [...Array(8)].map((_, i) => (
+                                <StudentRowSkeleton key={i} />
+                            ))
+                        ) : filteredStudents.length === 0 ? (
                             <tr>
                                 <td colSpan="7" className="text-center">
                                     <div className="empty-state">
@@ -576,60 +682,7 @@ const StudentsPage = () => {
                                 </td>
                             </tr>
                         ) : (
-                            filteredStudents.map((student) => {
-                                const { pending, isAlert } = getFeeStatus(student);
-                                return (
-                                    <tr key={student.id}>
-                                        <td>
-                                            <div className="flex items-center gap-md">
-                                                <Avatar name={student.name} src={student.avatar} />
-                                                <div>
-                                                    <div className="font-medium">{student.name}</div>
-                                                    <div className="text-sm text-gray-500">{student.email}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>{student.rollNumber}</td>
-                                        <td>
-                                            {getClassName(student.classId)} - {getSectionName(student.sectionId)}
-                                        </td>
-                                        <td>{formatCurrency(student.monthlyFee || 0)}</td>
-                                        <td>
-                                            {isAlert ? (
-                                                <div className="flex items-center gap-xs text-error-600 font-medium" title={`Pending: ${formatCurrency(pending)}`}>
-                                                    <AlertCircle size={16} />
-                                                    <span>Overdue</span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-success-600 text-sm">On Track</span>
-                                            )}
-                                        </td>
-                                        <td>
-                                            <span className={`badge badge-${student.status === 'ACTIVE' || student.status === 'active' ? 'success' : 'gray'}`}>
-                                                {student.status || 'ACTIVE'}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div className="flex gap-sm">
-                                                <button
-                                                    className="btn btn-sm btn-outline"
-                                                    onClick={() => handleOpenModal('edit', student)}
-                                                    aria-label="Edit student"
-                                                >
-                                                    <Edit size={16} />
-                                                </button>
-                                                <button
-                                                    className="btn btn-sm btn-danger"
-                                                    onClick={() => handleDeleteClick(student)}
-                                                    aria-label="Delete student"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )
-                            })
+                            tableRows
                         )}
                     </tbody>
                 </table>
@@ -949,6 +1002,27 @@ const StudentsPage = () => {
         .student-form {
           max-height: 70vh;
           overflow-y: auto;
+        }
+
+        /* Skeleton loader styles */
+        .skeleton-shimmer {
+          background: linear-gradient(
+            90deg,
+            var(--gray-200) 0%,
+            var(--gray-100) 50%,
+            var(--gray-200) 100%
+          );
+          background-size: 200% 100%;
+          animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+          0% {
+            background-position: -200% 0;
+          }
+          100% {
+            background-position: 200% 0;
+          }
         }
 
         @keyframes fadeIn {

@@ -3,13 +3,14 @@ import { Plus, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { useLeaveStore, useAuthStore, useStudentsStore } from '../../store';
 import { leaveService, studentsService } from '../../services/api';
 import { formatDate, getRelativeTime } from '../../utils';
+import { USER_ROLES } from '../../constants';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
 
 const LeavePage = () => {
     const { user } = useAuthStore();
-    const { leaves, addLeave, updateLeave } = useLeaveStore();
+    const { leaves, addLeave, updateLeave, setLeaves } = useLeaveStore();
     const { students } = useStudentsStore();
     const [showModal, setShowModal] = useState(false);
     const [filterStatus, setFilterStatus] = useState('');
@@ -26,9 +27,45 @@ const LeavePage = () => {
         { label: 'Leave Management', path: null },
     ];
 
-    const canApprove = ['admin', 'management', 'super_admin'].includes(user?.role);
-    const isParent = user?.role === 'parent';
-    const isTeacher = user?.role === 'teacher';
+    // Normalize role to uppercase for comparison
+    const userRole = user?.role?.toUpperCase();
+    
+    // Admin and SUPER_ADMIN can only approve/reject (no request)
+    const canApprove = [
+        USER_ROLES.ADMIN, 
+        USER_ROLES.SUPER_ADMIN, 
+        USER_ROLES.MANAGEMENT
+    ].includes(userRole);
+    
+    // Only Admin and SUPER_ADMIN cannot request leave (they are top authority)
+    const isAdminOrSuperAdmin = [
+        USER_ROLES.ADMIN, 
+        USER_ROLES.SUPER_ADMIN
+    ].includes(userRole);
+    
+    // Management, Teachers, Parents, and Support Staff can request leave
+    const canRequestLeave = !isAdminOrSuperAdmin;
+    
+    const isParent = userRole === USER_ROLES.PARENT;
+    const isTeacher = userRole === USER_ROLES.TEACHER;
+
+    const loadData = async () => {
+        try {
+            const response = await leaveService.getAll();
+            if (response.success && response.data) {
+                const leavesData = response.data.data || response.data;
+                if (Array.isArray(leavesData)) {
+                    setLeaves(leavesData);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load leaves:', error);
+        }
+    };
+
+    useEffect(() => {
+        loadData();
+    }, []);
 
     const handleApprove = async (leaveId) => {
         try {
@@ -111,17 +148,17 @@ const LeavePage = () => {
         }
     };
 
-    // Filter logic: Admins see all, users see their own
+    // Filter logic: Admins/Management see all, users see their own
     const visibleLeaves = leaves.filter(leave => {
-        const matchesStatus = !filterStatus || leave.status === filterStatus;
+        const matchesStatus = !filterStatus || leave.status?.toLowerCase() === filterStatus.toLowerCase();
         const matchesUser = canApprove || leave.userId === user?.id;
         return matchesStatus && matchesUser;
     });
 
     const stats = {
-        pending: visibleLeaves.filter(l => l.status === 'pending').length,
-        approved: visibleLeaves.filter(l => l.status === 'approved').length,
-        rejected: visibleLeaves.filter(l => l.status === 'rejected').length,
+        pending: visibleLeaves.filter(l => l.status?.toLowerCase() === 'pending').length,
+        approved: visibleLeaves.filter(l => l.status?.toLowerCase() === 'approved').length,
+        rejected: visibleLeaves.filter(l => l.status?.toLowerCase() === 'rejected').length,
     };
 
     // For parent: find their children from students store
@@ -135,10 +172,15 @@ const LeavePage = () => {
                 <div>
                     <h1>Leave Management</h1>
                     <p className="text-gray-600">
-                        {canApprove ? 'Manage and approve leave applications' : 'View and track your leave requests'}
+                        {isAdminOrSuperAdmin 
+                            ? 'Approve and manage leave applications' 
+                            : canApprove 
+                                ? 'Manage and approve leave applications. You can also request leave for yourself.'
+                                : 'View and track your leave requests'
+                        }
                     </p>
                 </div>
-                {!canApprove && (
+                {canRequestLeave && (
                     <button className="btn btn-primary" onClick={() => setShowModal(true)}>
                         <Plus size={18} />
                         <span>Request Leave</span>
@@ -224,145 +266,152 @@ const LeavePage = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                visibleLeaves.map((leave) => (
-                                    <tr key={leave.id}>
-                                        <td className="font-medium">{leave.userName}</td>
-                                        <td className="capitalize">{leave.userRole}</td>
-                                        <td className="capitalize">{leave.leaveType}</td>
-                                        <td>
-                                            {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
-                                        </td>
-                                        <td className="text-sm">{leave.reason}</td>
-                                        <td>
-                                            <span className={`badge badge-${leave.status === 'approved' ? 'success' :
-                                                leave.status === 'rejected' ? 'error' :
-                                                    'warning'
-                                                }`}>
-                                                {leave.status}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            {leave.status === 'pending' && canApprove ? (
-                                                <div className="flex gap-sm">
-                                                    <button
-                                                        className="btn btn-sm btn-success"
-                                                        onClick={() => handleApprove(leave.id)}
-                                                    >
-                                                        <CheckCircle size={16} />
-                                                        <span>Approve</span>
-                                                    </button>
-                                                    <button
-                                                        className="btn btn-sm btn-danger"
-                                                        onClick={() => handleReject(leave.id)}
-                                                    >
-                                                        <XCircle size={16} />
-                                                        <span>Reject</span>
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <span className="text-sm text-gray-400">
-                                                    {leave.status !== 'pending' ? 'Processed' : 'Waiting'}
+                                visibleLeaves.map((leave) => {
+                                    const leaveStatus = leave.status?.toLowerCase() || 'pending';
+                                    const isPending = leaveStatus === 'pending';
+                                    
+                                    return (
+                                        <tr key={leave.id}>
+                                            <td className="font-medium">{leave.userName}</td>
+                                            <td className="capitalize">{leave.userRole}</td>
+                                            <td className="capitalize">{leave.leaveType || leave.type}</td>
+                                            <td>
+                                                {formatDate(leave.startDate || leave.fromDate)} - {formatDate(leave.endDate || leave.toDate)}
+                                            </td>
+                                            <td className="text-sm">{leave.reason}</td>
+                                            <td>
+                                                <span className={`badge badge-${leaveStatus === 'approved' ? 'success' :
+                                                    leaveStatus === 'rejected' ? 'error' :
+                                                        'warning'
+                                                    }`}>
+                                                    {leave.status || 'Pending'}
                                                 </span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))
+                                            </td>
+                                            <td>
+                                                {isPending && canApprove ? (
+                                                    <div className="flex gap-sm">
+                                                        <button
+                                                            className="btn btn-sm btn-success"
+                                                            onClick={() => handleApprove(leave.id)}
+                                                        >
+                                                            <CheckCircle size={16} />
+                                                            <span>Approve</span>
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-sm btn-danger"
+                                                            onClick={() => handleReject(leave.id)}
+                                                        >
+                                                            <XCircle size={16} />
+                                                            <span>Reject</span>
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-sm text-gray-400">
+                                                        {!isPending ? 'Processed' : 'Waiting'}
+                                                    </span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {/* Apply Leave Modal */}
-            <Modal
-                isOpen={showModal}
-                onClose={() => setShowModal(false)}
-                title={isParent ? "Apply for Child's Leave" : "Apply for Leave"}
-                footer={
-                    <>
-                        <button className="btn btn-outline" onClick={() => setShowModal(false)}>
-                            Cancel
-                        </button>
-                        <button className="btn btn-primary" onClick={handleSubmitLeave}>
-                            Submit Application
-                        </button>
-                    </>
-                }
-            >
-                <form>
-                    {isParent && (
+            {/* Apply Leave Modal - Only show if user can request leave */}
+            {canRequestLeave && (
+                <Modal
+                    isOpen={showModal}
+                    onClose={() => setShowModal(false)}
+                    title={isParent ? "Apply for Child's Leave" : "Apply for Leave"}
+                    footer={
+                        <>
+                            <button className="btn btn-outline" onClick={() => setShowModal(false)}>
+                                Cancel
+                            </button>
+                            <button className="btn btn-primary" onClick={handleSubmitLeave}>
+                                Submit Application
+                            </button>
+                        </>
+                    }
+                >
+                    <form>
+                        {isParent && (
+                            <div className="form-group">
+                                <label className="form-label">Select Child *</label>
+                                <select
+                                    name="studentId"
+                                    className="select"
+                                    value={formData.studentId}
+                                    onChange={handleFormChange}
+                                    required
+                                >
+                                    <option value="">Select Child</option>
+                                    {myChildren.map(child => (
+                                        <option key={child.id} value={child.id}>{child.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
                         <div className="form-group">
-                            <label className="form-label">Select Child *</label>
+                            <label className="form-label">Leave Type *</label>
                             <select
-                                name="studentId"
+                                name="leaveType"
                                 className="select"
-                                value={formData.studentId}
+                                value={formData.leaveType}
                                 onChange={handleFormChange}
-                                required
                             >
-                                <option value="">Select Child</option>
-                                {myChildren.map(child => (
-                                    <option key={child.id} value={child.id}>{child.name}</option>
-                                ))}
+                                <option value="sick">Sick Leave</option>
+                                <option value="casual">Casual Leave</option>
+                                <option value="emergency">Emergency Leave</option>
+                                <option value="other">Other</option>
                             </select>
                         </div>
-                    )}
 
-                    <div className="form-group">
-                        <label className="form-label">Leave Type *</label>
-                        <select
-                            name="leaveType"
-                            className="select"
-                            value={formData.leaveType}
-                            onChange={handleFormChange}
-                        >
-                            <option value="sick">Sick Leave</option>
-                            <option value="casual">Casual Leave</option>
-                            <option value="emergency">Emergency Leave</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </div>
+                        <div className="grid grid-cols-2">
+                            <div className="form-group">
+                                <label className="form-label">Start Date *</label>
+                                <input
+                                    type="date"
+                                    name="startDate"
+                                    className="input"
+                                    value={formData.startDate}
+                                    onChange={handleFormChange}
+                                    required
+                                />
+                            </div>
 
-                    <div className="grid grid-cols-2">
+                            <div className="form-group">
+                                <label className="form-label">End Date *</label>
+                                <input
+                                    type="date"
+                                    name="endDate"
+                                    className="input"
+                                    value={formData.endDate}
+                                    onChange={handleFormChange}
+                                    required
+                                />
+                            </div>
+                        </div>
+
                         <div className="form-group">
-                            <label className="form-label">Start Date *</label>
-                            <input
-                                type="date"
-                                name="startDate"
-                                className="input"
-                                value={formData.startDate}
+                            <label className="form-label">Reason *</label>
+                            <textarea
+                                name="reason"
+                                className="textarea"
+                                placeholder="Explain the reason for leave"
+                                rows="4"
+                                value={formData.reason}
                                 onChange={handleFormChange}
                                 required
                             />
                         </div>
-
-                        <div className="form-group">
-                            <label className="form-label">End Date *</label>
-                            <input
-                                type="date"
-                                name="endDate"
-                                className="input"
-                                value={formData.endDate}
-                                onChange={handleFormChange}
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Reason *</label>
-                        <textarea
-                            name="reason"
-                            className="textarea"
-                            placeholder="Explain the reason for leave"
-                            rows="4"
-                            value={formData.reason}
-                            onChange={handleFormChange}
-                            required
-                        />
-                    </div>
-                </form>
-            </Modal>
+                    </form>
+                </Modal>
+            )}
 
             <style>{`
         .leave-page {

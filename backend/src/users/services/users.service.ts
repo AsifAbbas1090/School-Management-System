@@ -222,7 +222,7 @@ export class UsersService {
   }
 
   /**
-   * Get users by role
+   * Get users by role - optimized query
    */
   async getUsersByRole(schoolId: string, role: UserRole) {
     return this.prisma.user.findMany({
@@ -238,11 +238,15 @@ export class UsersService {
         role: true,
         status: true,
         phone: true,
+        schoolId: true,
         createdAt: true,
+        updatedAt: true,
       },
       orderBy: {
         createdAt: 'desc',
       },
+      // Add index hint for better performance if needed
+      take: 1000, // Limit results to prevent large queries
     });
   }
 }

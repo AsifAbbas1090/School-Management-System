@@ -126,7 +126,23 @@ export class StudentsService {
         ...studentData,
         updatedAt: new Date(),
       } as any,
-      include: {
+      select: {
+        id: true,
+        name: true,
+        rollNumber: true,
+        gender: true,
+        dateOfBirth: true,
+        status: true,
+        address: true,
+        phone: true,
+        email: true,
+        admissionDate: true,
+        classId: true,
+        sectionId: true,
+        schoolId: true,
+        parentId: true, // Explicitly include parentId
+        createdAt: true,
+        updatedAt: true,
         Class: true,
         Section: true,
         User: {
@@ -184,26 +200,36 @@ export class StudentsService {
       ];
     }
 
-    const [students, total] = await Promise.all([
-      this.prisma.student.findMany({
-        where,
-        skip,
-        take: pageSize,
-        orderBy: [{ Class: { grade: 'asc' } }, { rollNumber: 'asc' }] as any,
-        include: {
-          Class: true,
-          Section: true,
-          User: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
+    // First, get students with relations using include (for ordering)
+    const studentsWithRelations = await this.prisma.student.findMany({
+      where,
+      skip,
+      take: pageSize,
+      orderBy: [
+        { Class: { grade: 'asc' } },
+        { rollNumber: 'asc' }
+      ] as any,
+      include: {
+        Class: true,
+        Section: true,
+        User: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
           },
-        } as any,
-      }),
-      this.prisma.student.count({ where }),
-    ]);
+        },
+      } as any,
+    });
+
+    // Map to ensure parentId is explicitly included
+    const students = studentsWithRelations.map(student => ({
+      ...student,
+      parentId: student.parentId || null,
+    }));
+
+    const total = await this.prisma.student.count({ where });
 
     return {
       data: students,
@@ -222,7 +248,23 @@ export class StudentsService {
         id,
         schoolId,
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        rollNumber: true,
+        gender: true,
+        dateOfBirth: true,
+        status: true,
+        address: true,
+        phone: true,
+        email: true,
+        admissionDate: true,
+        classId: true,
+        sectionId: true,
+        schoolId: true,
+        parentId: true, // Explicitly include parentId
+        createdAt: true,
+        updatedAt: true,
         Class: true,
         Section: {
           include: {
@@ -353,10 +395,26 @@ export class StudentsService {
       updateData.admissionDate = new Date(updateStudentDto.admissionDate);
     }
 
-    return this.prisma.student.update({
+    const updated = await this.prisma.student.update({
       where: { id },
       data: updateData,
-      include: {
+      select: {
+        id: true,
+        name: true,
+        rollNumber: true,
+        gender: true,
+        dateOfBirth: true,
+        status: true,
+        address: true,
+        phone: true,
+        email: true,
+        admissionDate: true,
+        classId: true,
+        sectionId: true,
+        schoolId: true,
+        parentId: true, // Explicitly include parentId
+        createdAt: true,
+        updatedAt: true,
         Class: true,
         Section: true,
         User: {
@@ -369,6 +427,8 @@ export class StudentsService {
         },
       } as any,
     });
+    
+    return updated;
   }
 
   async remove(schoolId: string, id: string) {

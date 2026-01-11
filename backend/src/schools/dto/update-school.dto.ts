@@ -22,3 +22,5 @@ export class UpdateSchoolDto extends PartialType(CreateSchoolDto) {
 
 
 
+
+
