@@ -51,6 +51,22 @@ export class PaymentQueryDto {
   @IsOptional()
   paymentMethod?: PaymentMethod;
 
+  @ApiPropertyOptional({ example: 11, description: 'Month (1-12) for filtering', minimum: 1, maximum: 12 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  @IsOptional()
+  month?: number;
+
+  @ApiPropertyOptional({ example: 2024, description: 'Year for filtering', minimum: 2000, maximum: 2100 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  @IsOptional()
+  year?: number;
+
   @ApiPropertyOptional({ example: 1, minimum: 1 })
   @Type(() => Number)
   @IsInt()
@@ -58,11 +74,11 @@ export class PaymentQueryDto {
   @IsOptional()
   page?: number = 1;
 
-  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 100 })
+  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 500 })
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(500)
   @IsOptional()
   pageSize?: number = 10;
 }

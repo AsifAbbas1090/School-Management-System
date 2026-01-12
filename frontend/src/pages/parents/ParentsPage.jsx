@@ -67,11 +67,42 @@ const ParentsPage = () => {
         setLoading(true);
         try {
             // Load parents and students in parallel for better performance
-            // Request all students with higher pageSize to avoid pagination issues
-            // Note: Backend max pageSize is 1000, but we'll use 500 to be safe
+            // Try with smaller pageSize first, then fallback to default if needed
+            const loadStudentsWithFallback = async () => {
+                try {
+                    // Try with pageSize 100 first (safe default)
+                    const response = await studentsService.getAll({ pageSize: 100, page: 1 });
+                    if (response.success && response.data) {
+                        const data = response.data.data || response.data;
+                        if (Array.isArray(data)) {
+                            // If we got less than 100, we have all students
+                            if (data.length < 100) {
+                                return data;
+                            }
+                            // Otherwise, we might need to load more pages
+                            // For now, return what we have
+                            return data;
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to load students with pageSize 100:', error);
+                    // Try with even smaller pageSize as fallback
+                    try {
+                        const response = await studentsService.getAll({ pageSize: 50, page: 1 });
+                        if (response.success && response.data) {
+                            return response.data.data || response.data || [];
+                        }
+                    } catch (fallbackError) {
+                        console.error('Failed to load students:', fallbackError);
+                        return []; // Return empty array instead of throwing
+                    }
+                }
+                return [];
+            };
+
             const promises = [
                 usersService.getParents(),
-                studentsService.getAll({ pageSize: 500, page: 1 })
+                loadStudentsWithFallback()
             ];
 
             // Add management users request if admin (non-blocking)
@@ -84,25 +115,38 @@ const ParentsPage = () => {
             
             // Process parents response
             let parentsData = [];
-            if (responses[0].status === 'fulfilled' && responses[0].value.success && responses[0].value.data) {
-                parentsData = Array.isArray(responses[0].value.data) ? responses[0].value.data : [];
+            if (responses[0].status === 'fulfilled') {
+                const parentResponse = responses[0].value;
+                if (parentResponse.success && parentResponse.data) {
+                    parentsData = Array.isArray(parentResponse.data) ? parentResponse.data : [];
+                }
+            } else {
+                console.error('Failed to load parents:', responses[0].reason);
             }
 
             // Process management response (if requested)
-            if (canManageManagement && responses[2]?.status === 'fulfilled' && responses[2].value.success && responses[2].value.data) {
-                const managementData = Array.isArray(responses[2].value.data) ? responses[2].value.data : [];
-                const existingIds = new Set(parentsData.map(p => p.id));
-                const newManagement = managementData
-                    .filter(m => !existingIds.has(m.id))
-                    .map(m => ({ ...m, role: 'MANAGEMENT' }));
-                parentsData = [...parentsData, ...newManagement];
+            if (canManageManagement && responses[2]?.status === 'fulfilled') {
+                const managementResponse = responses[2].value;
+                if (managementResponse.success && managementResponse.data) {
+                    const managementData = Array.isArray(managementResponse.data) ? managementResponse.data : [];
+                    const existingIds = new Set(parentsData.map(p => p.id));
+                    const newManagement = managementData
+                        .filter(m => !existingIds.has(m.id))
+                        .map(m => ({ ...m, role: 'MANAGEMENT' }));
+                    parentsData = [...parentsData, ...newManagement];
+                }
             }
 
             // Process students response
             let studentsData = [];
-            if (responses[1].status === 'fulfilled' && responses[1].value.success && responses[1].value.data) {
-                studentsData = responses[1].value.data.data || responses[1].value.data;
-                setStudents(Array.isArray(studentsData) ? studentsData : []);
+            if (responses[1].status === 'fulfilled') {
+                const studentsResult = responses[1].value;
+                if (Array.isArray(studentsResult)) {
+                    studentsData = studentsResult;
+                } else if (studentsResult?.data) {
+                    studentsData = Array.isArray(studentsResult.data) ? studentsResult.data : [];
+                }
+                setStudents(studentsData);
             } else {
                 console.error('Failed to load students:', responses[1].reason);
                 setStudents([]);

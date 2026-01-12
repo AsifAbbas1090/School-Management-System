@@ -20,20 +20,42 @@ const ParentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selectedChildId, setSelectedChildId] = useState(null);
 
-  // Load students for parent - request all students with higher pageSize
+  // Load students for parent - request all students with safe pageSize
   const loadStudents = useCallback(async () => {
     try {
-      const response = await studentsService.getAll({ pageSize: 500, page: 1 });
+      // Try with pageSize 100 first (safe default that works before backend restart)
+      let response = await studentsService.getAll({ pageSize: 100, page: 1 });
+      
+      if (!response.success) {
+        // Fallback to smaller pageSize if needed
+        console.warn('Failed with pageSize 100, trying pageSize 50');
+        response = await studentsService.getAll({ pageSize: 50, page: 1 });
+      }
+      
       if (response.success && response.data) {
         const studentsData = response.data.data || response.data;
-        setStudents(Array.isArray(studentsData) ? studentsData : []);
+        const studentsArray = Array.isArray(studentsData) ? studentsData : [];
+        setStudents(studentsArray);
+        
+        // Debug logging to help troubleshoot parent-student linking
+        if (user?.id) {
+          const linkedStudents = studentsArray.filter(s => s.parentId === user.id);
+          console.log('Parent ID:', user.id);
+          console.log('Total students loaded:', studentsArray.length);
+          console.log('Students linked to this parent:', linkedStudents.length);
+          console.log('Linked students:', linkedStudents.map(s => ({ id: s.id, name: s.name, parentId: s.parentId })));
+        }
+      } else {
+        console.error('Failed to load students - invalid response:', response);
+        setStudents([]);
       }
     } catch (error) {
       console.error('Failed to load students:', error);
+      setStudents([]);
     } finally {
       setLoading(false);
     }
-  }, [setStudents]);
+  }, [setStudents, user?.id]);
 
   useEffect(() => {
     loadStudents();
@@ -41,17 +63,37 @@ const ParentDashboard = () => {
 
   // Get children for this parent - match by parentId
   const myChildren = useMemo(() => {
-    if (!user?.id || !students || students.length === 0) return [];
+    if (!user?.id || !students || students.length === 0) {
+      console.log('No children found - user ID:', user?.id, 'students count:', students?.length);
+      return [];
+    }
     
     // Filter students where parentId matches the logged-in parent's id
     const children = students.filter(s => {
-      // Handle both direct parentId match and parent relation
+      // Primary match: direct parentId field
       const parentIdMatch = s.parentId === user.id;
-      const parentRelationMatch = s.parent?.id === user.id || s.User?.id === user.id;
       
-      return parentIdMatch || parentRelationMatch;
+      // Secondary match: check parent relation objects
+      const parentRelationMatch = 
+        (s.parent && s.parent.id === user.id) || 
+        (s.User && s.User.id === user.id);
+      
+      const isMatch = parentIdMatch || parentRelationMatch;
+      
+      if (isMatch) {
+        console.log('Found linked child:', { 
+          studentId: s.id, 
+          studentName: s.name, 
+          parentId: s.parentId,
+          parentObj: s.parent,
+          userObj: s.User
+        });
+      }
+      
+      return isMatch;
     });
     
+    console.log(`Found ${children.length} children for parent ${user.id}`);
     return children;
   }, [students, user?.id]);
 

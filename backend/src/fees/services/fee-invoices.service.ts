@@ -85,22 +85,44 @@ export class FeeInvoicesService {
       where.studentId = studentId;
     }
 
-    if (classId) {
-      where.Student = {
-        classId,
-      };
-    }
+    // Build conditions array for AND clause (to combine status, classId, and search)
+    const conditions: any[] = [];
 
     if (status) {
-      where.status = status;
+      conditions.push({ status });
     }
 
-    if (search) {
-      where.OR = [
-        { Student: { name: { contains: search, mode: 'insensitive' } } },
-        { Student: { rollNumber: { contains: search, mode: 'insensitive' } } },
-        { FeeStructure: { name: { contains: search, mode: 'insensitive' } } },
-      ];
+    // Handle classId and search
+    if (classId && search) {
+      // When both classId and search exist, combine them in OR clause
+      conditions.push({
+        OR: [
+          { Student: { classId, name: { contains: search, mode: 'insensitive' } } },
+          { Student: { classId, rollNumber: { contains: search, mode: 'insensitive' } } },
+          { FeeStructure: { name: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
+    } else if (classId) {
+      // Only classId filter
+      conditions.push({
+        Student: {
+          classId,
+        },
+      });
+    } else if (search) {
+      // Only search filter
+      conditions.push({
+        OR: [
+          { Student: { name: { contains: search, mode: 'insensitive' } } },
+          { Student: { rollNumber: { contains: search, mode: 'insensitive' } } },
+          { FeeStructure: { name: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
+    // If we have conditions beyond studentId, use AND to combine them
+    if (conditions.length > 0) {
+      where.AND = conditions;
     }
 
     const [invoices, total] = await Promise.all([

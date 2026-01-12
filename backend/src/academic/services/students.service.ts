@@ -110,6 +110,7 @@ export class StudentsService {
       address: createStudentDto.address,
       phone: createStudentDto.phone,
       email: createStudentDto.email,
+      monthlyFee: createStudentDto.monthlyFee || 0, // Individual monthly fee amount
       schoolId,
       admissionDate: createStudentDto.admissionDate
         ? new Date(createStudentDto.admissionDate)
@@ -223,11 +224,21 @@ export class StudentsService {
       } as any,
     });
 
-    // Map to ensure parentId is explicitly included
-    const students = studentsWithRelations.map(student => ({
-      ...student,
-      parentId: student.parentId || null,
-    }));
+    // Map to ensure parentId is explicitly included and properly formatted
+    const students = studentsWithRelations.map(student => {
+      // Ensure parentId is always included, even if null
+      const mappedStudent = {
+        ...student,
+        parentId: student.parentId || null,
+      };
+      
+      // Debug logging (remove in production if needed)
+      if (process.env.NODE_ENV === 'development' && mappedStudent.parentId) {
+        console.log(`Student ${mappedStudent.name} has parentId: ${mappedStudent.parentId}`);
+      }
+      
+      return mappedStudent;
+    });
 
     const total = await this.prisma.student.count({ where });
 

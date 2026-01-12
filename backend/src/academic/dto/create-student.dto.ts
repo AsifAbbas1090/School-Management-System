@@ -61,6 +61,10 @@ export class CreateStudentDto {
   @IsOptional()
   admissionDate?: string;
 
+  @ApiPropertyOptional({ example: 5000, description: 'Monthly fee amount for this student' })
+  @IsOptional()
+  monthlyFee?: number;
+
   // Parent creation fields (when creating parent along with student)
   @ApiPropertyOptional({ example: 'John Parent', description: 'Parent name (required if creating parent)' })
   @IsString()

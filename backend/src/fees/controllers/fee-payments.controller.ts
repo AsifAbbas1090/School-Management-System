@@ -47,6 +47,18 @@ export class FeePaymentsController {
     return this.feePaymentsService.findAll(schoolId, query);
   }
 
+  @Get('revenue/stats')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
+  @ApiOperation({ summary: 'Get revenue statistics (expected, collected, pending)' })
+  @ApiResponse({ status: 200, description: 'Revenue statistics retrieved successfully' })
+  async getRevenueStats(
+    @SchoolContext() schoolId: string,
+    @Query('month') month?: number,
+    @Query('year') year?: number,
+  ) {
+    return this.feePaymentsService.getRevenueStats(schoolId, month, year);
+  }
+
   @Get('student/:studentId/summary')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.PARENT)
   @ApiOperation({ summary: 'Get fee summary for a student' })

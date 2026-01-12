@@ -197,27 +197,35 @@ model FeeInvoice {
 }
 
 model FeePayment {
-  id            String        @id
-  schoolId      String
-  studentId     String
-  invoiceId     String?
-  amountPaid    Float
-  paymentMethod PaymentMethod
-  paidAt        DateTime      @default(now())
-  receiptNumber String        @unique
-  transactionId String?
-  remarks       String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime
-  FeeInvoice    FeeInvoice?   @relation(fields: [invoiceId], references: [id])
-  School        School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  Student       Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  id                 String        @id
+  schoolId           String
+  studentId          String
+  invoiceId          String? // Optional - kept for backward compatibility
+  month              Int // Month (1-12) for monthly tracking
+  year               Int // Year for monthly tracking
+  originalAmount     Float // Original fee amount (from student.monthlyFee)
+  discountPercentage Float         @default(0) // Discount percentage (0-100)
+  discountAmount     Float         @default(0) // Calculated discount amount
+  amountPaid         Float // Final amount paid after discount
+  paymentMethod      PaymentMethod
+  paidAt             DateTime      @default(now())
+  receiptNumber      String        @unique
+  transactionId      String?
+  remarks            String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime
+  FeeInvoice         FeeInvoice?   @relation(fields: [invoiceId], references: [id])
+  School             School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  Student            Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
+  @@unique([studentId, month, year]) // One payment per student per month
   @@index([invoiceId])
+  @@index([month])
   @@index([paidAt])
   @@index([receiptNumber])
   @@index([schoolId])
   @@index([studentId])
+  @@index([year])
 }
 
 model FeeStructure {
@@ -294,13 +302,13 @@ model Message {
 }
 
 model School {
-  id                    String             @id
+  id                    String              @id
   name                  String
-  slug                  String             @unique
+  slug                  String              @unique
   principalName         String?
   ownerName             String?
-  subscriptionAmount    Float              @default(0)
-  subscriptionStatus    SubscriptionStatus @default(PENDING)
+  subscriptionAmount    Float               @default(0)
+  subscriptionStatus    SubscriptionStatus  @default(PENDING)
   subscriptionStartDate DateTime?
   nextBillingDate       DateTime?
   address               String?
@@ -309,7 +317,7 @@ model School {
   website               String?
   logoUrl               String?
   deletedAt             DateTime?
-  createdAt             DateTime           @default(now())
+  createdAt             DateTime            @default(now())
   updatedAt             DateTime
   Announcement          Announcement[]
   Campus                Campus[]
@@ -325,7 +333,7 @@ model School {
   Section               Section[]
   Student               Student[]
   Subject               Subject[]
-  TeacherAttendance    TeacherAttendance[]
+  TeacherAttendance     TeacherAttendance[]
   User                  User[]
 
   @@index([deletedAt])
@@ -368,6 +376,7 @@ model Student {
   address       String?
   phone         String?
   email         String?
+  monthlyFee    Float?         @default(0) // Individual monthly fee amount for this student
   admissionDate DateTime       @default(now())
   createdAt     DateTime       @default(now())
   updatedAt     DateTime
@@ -420,30 +429,30 @@ model SubjectClass {
 }
 
 model User {
-  id                                                String         @id
-  email                                             String         @unique
+  id                                                String              @id
+  email                                             String              @unique
   password                                          String
   name                                              String
   role                                              UserRole
-  status                                            UserStatus     @default(ACTIVE)
+  status                                            UserStatus          @default(ACTIVE)
   phone                                             String?
   avatarUrl                                         String?
   schoolId                                          String?
   deletedAt                                         DateTime?
-  createdAt                                         DateTime       @default(now())
+  createdAt                                         DateTime            @default(now())
   updatedAt                                         DateTime
   Announcement                                      Announcement[]
   Expense                                           Expense[]
   FeeHandover                                       FeeHandover[]
-  LeaveRequest_LeaveRequest_decisionByUserIdToUser  LeaveRequest[] @relation("LeaveRequest_decisionByUserIdToUser")
-  LeaveRequest_LeaveRequest_requestedByUserIdToUser LeaveRequest[] @relation("LeaveRequest_requestedByUserIdToUser")
-  Message_Message_receiverIdToUser                  Message[]      @relation("Message_receiverIdToUser")
-  Message_Message_senderIdToUser                    Message[]      @relation("Message_senderIdToUser")
+  LeaveRequest_LeaveRequest_decisionByUserIdToUser  LeaveRequest[]      @relation("LeaveRequest_decisionByUserIdToUser")
+  LeaveRequest_LeaveRequest_requestedByUserIdToUser LeaveRequest[]      @relation("LeaveRequest_requestedByUserIdToUser")
+  Message_Message_receiverIdToUser                  Message[]           @relation("Message_receiverIdToUser")
+  Message_Message_senderIdToUser                    Message[]           @relation("Message_senderIdToUser")
   Section                                           Section[]
   Student                                           Student[]
   TeacherAttendance_Teacher                         TeacherAttendance[] @relation("TeacherAttendance_Teacher")
   TeacherAttendance_RecordedBy                      TeacherAttendance[] @relation("TeacherAttendance_RecordedBy")
-  School                                            School?        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  School                                            School?             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([deletedAt])
   @@index([email])
@@ -543,20 +552,20 @@ enum TeacherAttendanceStatus {
 }
 
 model TeacherAttendance {
-  id            String                  @id
-  schoolId      String
-  teacherId     String
-  date          DateTime
-  status        TeacherAttendanceStatus
-  entryTime     DateTime?
-  exitTime      DateTime?
-  notes         String?
-  recordedById  String
-  createdAt     DateTime                @default(now())
-  updatedAt     DateTime
-  Teacher       User                    @relation("TeacherAttendance_Teacher", fields: [teacherId], references: [id], onDelete: Cascade)
-  RecordedBy    User                    @relation("TeacherAttendance_RecordedBy", fields: [recordedById], references: [id])
-  School        School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  id           String                  @id
+  schoolId     String
+  teacherId    String
+  date         DateTime
+  status       TeacherAttendanceStatus
+  entryTime    DateTime?
+  exitTime     DateTime?
+  notes        String?
+  recordedById String
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime
+  Teacher      User                    @relation("TeacherAttendance_Teacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  RecordedBy   User                    @relation("TeacherAttendance_RecordedBy", fields: [recordedById], references: [id])
+  School       School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@unique([teacherId, date])
   @@index([teacherId])

@@ -471,6 +471,19 @@ export const feesService = {
     });
   },
 
+  // Get revenue statistics (expected, collected, pending)
+  getRevenueStats: async (month, year) => {
+    const params = new URLSearchParams();
+    if (month) params.append('month', month);
+    if (year) params.append('year', year);
+    return apiRequest(`/school/fees/payments/revenue/stats?${params}`);
+  },
+
+  // Get student fee summary
+  getStudentFeeSummary: async (studentId) => {
+    return apiRequest(`/school/fees/payments/student/${studentId}/summary`);
+  },
+
   // Fee Handovers
   getFeeHandovers: async (query = {}) => {
     const params = new URLSearchParams(query);
