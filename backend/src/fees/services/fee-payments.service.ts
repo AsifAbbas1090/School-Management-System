@@ -17,82 +17,107 @@ export class FeePaymentsService {
    * Simplified model: Each student has monthlyFee, payments are tracked monthly
    */
   async create(schoolId: string, createFeePaymentDto: CreateFeePaymentDto) {
-    // Verify student belongs to school
-    const student = await this.prisma.student.findFirst({
-      where: {
-        id: createFeePaymentDto.studentId,
-        schoolId,
-      },
-      include: {
-        Class: true,
-        Section: true,
-        User: true,
-      },
-    });
+    try {
+      // Verify student belongs to school
+      const student = await this.prisma.student.findFirst({
+        where: {
+          id: createFeePaymentDto.studentId,
+          schoolId,
+        },
+        include: {
+          Class: true,
+          Section: true,
+          User: true,
+        },
+      });
 
-    if (!student) {
-      throw new NotFoundException(`Student with ID ${createFeePaymentDto.studentId} not found`);
-    }
+      if (!student) {
+        throw new NotFoundException(`Student with ID ${createFeePaymentDto.studentId} not found`);
+      }
 
-    // Check if payment already exists for this student/month/year
-    const existingPayment = await this.prisma.feePayment.findFirst({
-      where: {
-        schoolId,
-        studentId: createFeePaymentDto.studentId,
-        month: createFeePaymentDto.month,
-        year: createFeePaymentDto.year,
-      },
-    });
+      // Check if payment already exists for this student/month/year
+      const existingPayment = await this.prisma.feePayment.findFirst({
+        where: {
+          schoolId,
+          studentId: createFeePaymentDto.studentId,
+          month: createFeePaymentDto.month,
+          year: createFeePaymentDto.year,
+        },
+      });
 
-    if (existingPayment) {
-      throw new BadRequestException(
-        `Payment already exists for ${student.name} for ${createFeePaymentDto.month}/${createFeePaymentDto.year}`
-      );
-    }
+      if (existingPayment) {
+        throw new BadRequestException(
+          `Payment already exists for ${student.name} for ${createFeePaymentDto.month}/${createFeePaymentDto.year}`
+        );
+      }
 
-    // Calculate discount
-    const discountPercentage = createFeePaymentDto.discountPercentage || 0;
-    const discountAmount = (createFeePaymentDto.originalAmount * discountPercentage) / 100;
-    
-    // Use the actual amount paid (provided by frontend - can be different from calculated amount)
-    // This allows for partial payments (remaining balance) or overpayments (surplus)
-    const finalAmount = createFeePaymentDto.amountPaid;
+      // Calculate discount
+      const discountPercentage = createFeePaymentDto.discountPercentage || 0;
+      const discountAmount = (createFeePaymentDto.originalAmount * discountPercentage) / 100;
+      
+      // Use the actual amount paid (provided by frontend - can be different from calculated amount)
+      // This allows for partial payments (remaining balance) or overpayments (surplus)
+      const finalAmount = createFeePaymentDto.amountPaid;
 
-    // Generate unique receipt number
-    let receiptNumber = this.receiptService.generateReceiptNumber();
-    receiptNumber = await this.receiptService.ensureUniqueReceiptNumber(
-      this.prisma,
-      receiptNumber,
-    );
+      // Validate payment method - ensure it's a valid enum value
+      let paymentMethod = createFeePaymentDto.paymentMethod;
+      if (typeof paymentMethod === 'string') {
+        // Convert string to enum if needed
+        paymentMethod = paymentMethod.toUpperCase() as any;
+      }
 
-    // Create payment
-    const payment = await this.prisma.feePayment.create({
-      data: {
-        schoolId,
-        studentId: createFeePaymentDto.studentId,
-        month: createFeePaymentDto.month,
-        year: createFeePaymentDto.year,
-        originalAmount: createFeePaymentDto.originalAmount,
-        discountPercentage,
-        discountAmount,
-        amountPaid: finalAmount,
-        paymentMethod: createFeePaymentDto.paymentMethod,
-        transactionId: createFeePaymentDto.transactionId || null,
-        remarks: createFeePaymentDto.remarks || null,
+      // Generate unique receipt number
+      let receiptNumber = this.receiptService.generateReceiptNumber();
+      receiptNumber = await this.receiptService.ensureUniqueReceiptNumber(
+        this.prisma,
         receiptNumber,
-      } as Prisma.FeePaymentUncheckedCreateInput,
-      include: {
-        Student: {
-          include: {
-            Class: true,
-            Section: true,
-            User: true,
+      );
+
+      // Create payment
+      const payment = await this.prisma.feePayment.create({
+        data: {
+          schoolId,
+          studentId: createFeePaymentDto.studentId,
+          month: createFeePaymentDto.month,
+          year: createFeePaymentDto.year,
+          originalAmount: createFeePaymentDto.originalAmount,
+          discountPercentage,
+          discountAmount,
+          amountPaid: finalAmount,
+          paymentMethod: paymentMethod as any,
+          transactionId: createFeePaymentDto.transactionId || null,
+          remarks: createFeePaymentDto.remarks || null,
+          receiptNumber,
+        } as Prisma.FeePaymentUncheckedCreateInput,
+        include: {
+          Student: {
+            include: {
+              Class: true,
+              Section: true,
+              User: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    return payment;
+      return payment;
+    } catch (error) {
+      // Log the full error for debugging
+      console.error('Error creating fee payment:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        code: error?.code,
+        meta: error?.meta,
+        stack: error?.stack,
+      });
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      // Re-throw with more context
+      throw new BadRequestException(
+        `Failed to create payment: ${error?.message || error?.code || 'Unknown error'}. Please check backend logs for details.`
+      );
+    }
   }
 
   /**
@@ -323,6 +348,68 @@ export class FeePaymentsService {
     }
 
     return payment;
+  }
+
+  /**
+   * Update a fee payment (admin only)
+   */
+  async update(schoolId: string, id: string, updateFeePaymentDto: UpdateFeePaymentDto) {
+    const existing = await this.findOne(schoolId, id);
+
+    // Calculate discount if discountPercentage or originalAmount changed
+    let discountAmount = existing.discountAmount;
+    let finalAmount = existing.amountPaid;
+
+    if (updateFeePaymentDto.originalAmount !== undefined || updateFeePaymentDto.discountPercentage !== undefined) {
+      const originalAmount = updateFeePaymentDto.originalAmount ?? existing.originalAmount;
+      const discountPercentage = updateFeePaymentDto.discountPercentage ?? existing.discountPercentage;
+      discountAmount = (originalAmount * discountPercentage) / 100;
+    }
+
+    // Use provided amountPaid or calculate from original - discount
+    if (updateFeePaymentDto.amountPaid !== undefined) {
+      finalAmount = updateFeePaymentDto.amountPaid;
+    } else if (updateFeePaymentDto.originalAmount !== undefined || updateFeePaymentDto.discountPercentage !== undefined) {
+      const originalAmount = updateFeePaymentDto.originalAmount ?? existing.originalAmount;
+      finalAmount = originalAmount - discountAmount;
+    }
+
+    const updateData: any = {};
+    if (updateFeePaymentDto.originalAmount !== undefined) {
+      updateData.originalAmount = updateFeePaymentDto.originalAmount;
+    }
+    if (updateFeePaymentDto.discountPercentage !== undefined) {
+      updateData.discountPercentage = updateFeePaymentDto.discountPercentage;
+      updateData.discountAmount = discountAmount;
+    }
+    if (updateFeePaymentDto.amountPaid !== undefined) {
+      updateData.amountPaid = updateFeePaymentDto.amountPaid;
+    }
+    if (updateFeePaymentDto.paymentMethod !== undefined) {
+      updateData.paymentMethod = updateFeePaymentDto.paymentMethod;
+    }
+    if (updateFeePaymentDto.transactionId !== undefined) {
+      updateData.transactionId = updateFeePaymentDto.transactionId;
+    }
+    if (updateFeePaymentDto.remarks !== undefined) {
+      updateData.remarks = updateFeePaymentDto.remarks;
+    }
+
+    const updated = await this.prisma.feePayment.update({
+      where: { id },
+      data: updateData,
+      include: {
+        Student: {
+          include: {
+            Class: true,
+            Section: true,
+            User: true,
+          },
+        },
+      },
+    });
+
+    return updated;
   }
 
   /**

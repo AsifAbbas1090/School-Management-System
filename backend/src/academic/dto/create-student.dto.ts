@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsDateString, IsEmail } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsDateString, IsEmail, IsNumber, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Gender, StudentStatus } from '@prisma/client';
 
@@ -62,6 +62,8 @@ export class CreateStudentDto {
   admissionDate?: string;
 
   @ApiPropertyOptional({ example: 5000, description: 'Monthly fee amount for this student' })
+  @IsNumber()
+  @Min(0)
   @IsOptional()
   monthlyFee?: number;
 

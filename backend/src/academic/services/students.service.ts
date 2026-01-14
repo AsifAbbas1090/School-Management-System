@@ -137,6 +137,7 @@ export class StudentsService {
         address: true,
         phone: true,
         email: true,
+        monthlyFee: true, // Include monthlyFee
         admissionDate: true,
         classId: true,
         sectionId: true,
@@ -269,6 +270,7 @@ export class StudentsService {
         address: true,
         phone: true,
         email: true,
+        monthlyFee: true, // Include monthlyFee
         admissionDate: true,
         classId: true,
         sectionId: true,
@@ -365,12 +367,14 @@ export class StudentsService {
       }
     }
 
-    // Handle parentId - can be string (to link) or null/undefined (to unlink)
-    let parentIdValue: string | null = null;
+    // Handle parentId - preserve existing if not provided, only unlink if explicitly set to null/empty
+    let parentIdValue: string | null | undefined = undefined; // undefined means don't change
     
-    if (updateStudentDto.parentId !== undefined && updateStudentDto.parentId !== null) {
-      // If it's a string, check if it's empty
-      if (typeof updateStudentDto.parentId === 'string') {
+    if (updateStudentDto.parentId !== undefined) {
+      // parentId was explicitly provided in the update
+      if (updateStudentDto.parentId === null || updateStudentDto.parentId === '') {
+        parentIdValue = null; // Explicitly unlink
+      } else if (typeof updateStudentDto.parentId === 'string') {
         const trimmed = updateStudentDto.parentId.trim();
         if (trimmed !== '') {
           // Verify parent exists
@@ -386,19 +390,21 @@ export class StudentsService {
           if (!parent) {
             throw new NotFoundException('Parent not found or invalid');
           }
-          parentIdValue = trimmed;
+          parentIdValue = trimmed; // Link to new parent
         } else {
           parentIdValue = null; // Empty string means unlink
         }
-      } else {
-        parentIdValue = null; // Non-string means unlink
       }
     } else {
-      parentIdValue = null; // null/undefined means unlink
+      // parentId was NOT provided - preserve existing value
+      parentIdValue = existing.parentId; // Keep the existing parentId
     }
 
     const updateData: any = { ...updateStudentDto };
-    updateData.parentId = parentIdValue;
+    // Only set parentId if we have a value (undefined means don't include it in update)
+    if (parentIdValue !== undefined) {
+      updateData.parentId = parentIdValue;
+    }
     if (updateStudentDto.dateOfBirth) {
       updateData.dateOfBirth = new Date(updateStudentDto.dateOfBirth);
     }
@@ -419,6 +425,7 @@ export class StudentsService {
         address: true,
         phone: true,
         email: true,
+        monthlyFee: true, // Include monthlyFee
         admissionDate: true,
         classId: true,
         sectionId: true,

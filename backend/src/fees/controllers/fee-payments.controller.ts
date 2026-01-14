@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Param,
   Query,
@@ -15,6 +16,7 @@ import {
 } from '@nestjs/swagger';
 import { FeePaymentsService } from '../services/fee-payments.service';
 import { CreateFeePaymentDto } from '../dto/create-fee-payment.dto';
+import { UpdateFeePaymentDto } from '../dto/update-fee-payment.dto';
 import { PaymentQueryDto } from '../dto/fee-query.dto';
 import { ReceiptPayloadDto } from '../dto/receipt-payload.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -84,6 +86,18 @@ export class FeePaymentsController {
   @ApiResponse({ status: 200, description: 'Receipt payload retrieved successfully', type: ReceiptPayloadDto })
   async getReceiptPayload(@SchoolContext() schoolId: string, @Param('id') id: string) {
     return this.feePaymentsService.getReceiptPayload(schoolId, id);
+  }
+
+  @Put(':id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
+  @ApiOperation({ summary: 'Update a fee payment (admin only)' })
+  @ApiResponse({ status: 200, description: 'Payment updated successfully' })
+  async update(
+    @SchoolContext() schoolId: string,
+    @Param('id') id: string,
+    @Body() updateFeePaymentDto: UpdateFeePaymentDto,
+  ) {
+    return this.feePaymentsService.update(schoolId, id, updateFeePaymentDto);
   }
 }
 
