@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DollarSign, Download, Receipt, Search, CheckCircle, AlertCircle, TrendingUp, Plus, Printer } from 'lucide-react';
-import { feesService, studentsService } from '../../services/api';
+import { feesService, studentsService, classesService } from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
@@ -28,6 +28,8 @@ const FeesPage = () => {
     const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
     const [filterYear, setFilterYear] = useState(new Date().getFullYear());
     const [filterPaid, setFilterPaid] = useState('all'); // 'all', 'paid', 'unpaid'
+    const [filterClass, setFilterClass] = useState('');
+    const [classes, setClasses] = useState([]);
     
     // Payment modal
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -57,6 +59,10 @@ const FeesPage = () => {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
+            // Load classes for filter
+            const classesRes = await classesService.getAll();
+            if (classesRes.success) setClasses(classesRes.data.data || classesRes.data || []);
+
             // Load students
             const studentsRes = await studentsService.getAll({ pageSize: 500, page: 1 });
             if (studentsRes.success) {
@@ -143,6 +149,11 @@ const FeesPage = () => {
             );
         }
 
+        // Class filter
+        if (filterClass) {
+            filtered = filtered.filter(s => s.classId === filterClass);
+        }
+
         // Paid/unpaid filter
         if (filterPaid !== 'all') {
             filtered = filtered.filter(s => {
@@ -152,7 +163,7 @@ const FeesPage = () => {
         }
 
         return filtered;
-    }, [students, searchTerm, filterPaid, isParent, selectedChildId, getStudentFeeStatus]);
+    }, [students, searchTerm, filterPaid, filterClass, isParent, selectedChildId, getStudentFeeStatus]);
 
     // Handle payment submission
     const handlePaymentSubmit = async () => {
@@ -338,15 +349,13 @@ const FeesPage = () => {
         return { original, discount, calculated };
     }, [selectedStudent, discountPercentage]);
 
-    if (loading) {
-        return (
-            <div className="container">
-                <div className="flex items-center justify-center" style={{ minHeight: '400px' }}>
-                    <div className="loading-spinner"></div>
-                </div>
-            </div>
-        );
-    }
+    const FeeRowSkeleton = () => (
+        <tr>
+            {[...Array(6)].map((_, i) => (
+                <td key={i}><div className="skeleton-line" style={{ height: 14, borderRadius: 4, background: 'var(--gray-100)', animation: 'pulse 1.5s ease-in-out infinite', width: i === 0 ? '140px' : i === 5 ? '80px' : '80px' }} /></td>
+            ))}
+        </tr>
+    );
 
     return (
         <div className="container">
@@ -465,7 +474,7 @@ const FeesPage = () => {
 
             {/* Filters */}
             <div className="card mb-md">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-md">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-md">
                     <div>
                         <label className="form-label">Search</label>
                         <div className="input-group">
@@ -514,6 +523,16 @@ const FeesPage = () => {
                         </>
                     )}
 
+                    {isAdmin && (
+                        <div>
+                            <label className="form-label">Class</label>
+                            <select className="select" value={filterClass} onChange={e => setFilterClass(e.target.value)}>
+                                <option value="">All Classes</option>
+                                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                    )}
+
                     <div>
                         <label className="form-label">Status</label>
                         <select
@@ -559,7 +578,9 @@ const FeesPage = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredStudents.length === 0 ? (
+                            {loading ? (
+                                [...Array(8)].map((_, i) => <FeeRowSkeleton key={i} />)
+                            ) : filteredStudents.length === 0 ? (
                                 <tr>
                                     <td colSpan={isAdmin ? 7 : 6} className="text-center text-gray-500 py-lg">
                                         No students found

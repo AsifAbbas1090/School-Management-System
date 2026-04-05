@@ -63,6 +63,8 @@ const StudentsPage = () => {
 
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const PAGE_SIZE = 20;
     
     // Debounce search input
     useEffect(() => {
@@ -483,6 +485,9 @@ const StudentsPage = () => {
         });
     }, [sections, formData.classId, currentSchool]);
 
+    // Reset page when filters change
+    useEffect(() => { setCurrentPage(1); }, [debouncedSearchTerm, filterClass, filterStatus]);
+
     // Memoize filtered students for performance
     const filteredStudents = useMemo(() => {
         return students.filter((student) => {
@@ -501,6 +506,9 @@ const StudentsPage = () => {
             return matchesSearch && matchesClass && matchesStatus;
         });
     }, [students, currentSchool, filterClass, filterStatus, debouncedSearchTerm]);
+
+    const totalPages = Math.ceil(filteredStudents.length / PAGE_SIZE);
+    const paginatedStudents = filteredStudents.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
     const handleExport = useCallback(() => {
         const data = filteredStudents.map(student => ({
@@ -526,7 +534,7 @@ const StudentsPage = () => {
 
     // Memoize table rows to prevent unnecessary re-renders
     const tableRows = useMemo(() => {
-        return filteredStudents.map((student) => {
+        return paginatedStudents.map((student) => {
             const { pending, isAlert } = getFeeStatus(student);
             return (
                 <tr key={student.id}>
@@ -580,7 +588,7 @@ const StudentsPage = () => {
                 </tr>
             );
         });
-    }, [filteredStudents, getFeeStatus, getClassName, getSectionName, handleOpenModal, handleDeleteClick]);
+    }, [paginatedStudents, getFeeStatus, getClassName, getSectionName, handleOpenModal, handleDeleteClick]);
 
     // Show skeleton loaders during initial load instead of full screen loading
     const showSkeleton = loading && students.length === 0 && classes.length === 0;
@@ -692,6 +700,28 @@ const StudentsPage = () => {
                     </tbody>
                 </table>
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <div className="pagination-bar">
+                    <span className="pagination-info">
+                        Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredStudents.length)} of {filteredStudents.length} students
+                    </span>
+                    <div className="pagination-controls">
+                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>«</button>
+                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>‹</button>
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+                            const page = start + i;
+                            return (
+                                <button key={page} className={`btn btn-sm ${page === currentPage ? 'btn-primary' : 'btn-outline'}`} onClick={() => setCurrentPage(page)}>{page}</button>
+                            );
+                        })}
+                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages}>›</button>
+                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>»</button>
+                    </div>
+                </div>
+            )}
 
             {/* Add/Edit Modal */}
             <Modal
@@ -963,6 +993,17 @@ const StudentsPage = () => {
         .students-page {
           animation: fadeIn 0.3s ease-in-out;
         }
+        .pagination-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.75rem 1rem;
+          border-top: 1px solid var(--border-color);
+          background: var(--bg-card);
+          border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+        }
+        .pagination-info { font-size: 0.875rem; color: var(--text-secondary); }
+        .pagination-controls { display: flex; gap: 4px; align-items: center; }
 
         .page-header {
           display: flex;

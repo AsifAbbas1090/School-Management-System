@@ -92,26 +92,29 @@ export class UsersController {
   async updateUser(
     @SchoolContext() schoolId: string,
     @Param('id') userId: string,
-    @Body() updateData: { name?: string; email?: string; phone?: string; password?: string; status?: string },
+    @Body() updateData: { name?: string; email?: string; phone?: string; password?: string; status?: string; employeeId?: string; salary?: number },
   ) {
-    // Convert status string to UserStatus enum if provided
     const processedData: {
       name?: string;
       email?: string;
       phone?: string;
       password?: string;
       status?: UserStatus;
+      employeeId?: string;
+      salary?: number;
     } = {
       name: updateData.name,
       email: updateData.email,
       phone: updateData.phone,
       password: updateData.password,
+      employeeId: updateData.employeeId,
+      salary: updateData.salary,
     };
-    
+
     if (updateData.status) {
       processedData.status = updateData.status as UserStatus;
     }
-    
+
     return this.usersService.updateUser(userId, schoolId, processedData);
   }
 }

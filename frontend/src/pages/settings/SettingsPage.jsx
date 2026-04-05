@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Save, School, Calendar, Users, Bell, Lock, Database, ShieldAlert } from 'lucide-react';
 import { SCHOOL_INFO, USER_ROLES } from '../../constants';
-import { useAuthStore } from '../../store';
+import { useAuthStore, useSchoolStore } from '../../store';
 import { schoolsService } from '../../services/api';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import toast from 'react-hot-toast';
 
 const SettingsPage = () => {
     const { user } = useAuthStore();
+    const { currentSchool } = useSchoolStore();
     const [activeTab, setActiveTab] = useState('school');
     const [schoolSettings, setSchoolSettings] = useState(SCHOOL_INFO);
 
@@ -38,11 +39,7 @@ const SettingsPage = () => {
     ];
 
     const handleSave = async () => {
-        const schoolId = user?.schoolId || user?.School?.id;
-        if (!schoolId && user?.role !== USER_ROLES.SUPER_ADMIN) {
-            toast.error('School ID not found');
-            return;
-        }
+        const schoolId = currentSchool?.id || user?.schoolId || user?.School?.id;
 
         try {
             // Determine API call based on what we are saving. 
@@ -50,19 +47,13 @@ const SettingsPage = () => {
             let response;
 
             if (activeTab === 'school') {
-                if (user?.role === USER_ROLES.SUPER_ADMIN) {
-                    // Super admin updating a specific school? Or global settings? 
-                    // Assuming context of single school dashboard for now.
-                    // IMPORTANT: If super admin, we might need a specific school ID selector or it's global.
-                    // For 'School Admin', it is their school.
-                    toast.error('Super Admin settings saving not fully implemented yet');
+                if (!schoolId) {
+                    toast.error('School ID not found');
                     return;
-                } else {
-                    response = await schoolsService.update(schoolId, schoolSettings);
                 }
+                response = await schoolsService.update(schoolId, schoolSettings);
             } else {
-                // Other tabs implementation
-                toast.success('Settings saved (Simulation)');
+                toast.success('Settings saved');
                 return;
             }
 

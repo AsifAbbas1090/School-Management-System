@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsEmail, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsEmail, IsOptional, IsEnum, IsNumber } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 
@@ -49,6 +49,16 @@ export class CreateTeacherDto {
   @IsString()
   @IsOptional()
   phone?: string;
+
+  @ApiPropertyOptional({ example: 'EMP-001' })
+  @IsString()
+  @IsOptional()
+  employeeId?: string;
+
+  @ApiPropertyOptional({ example: 50000 })
+  @IsNumber()
+  @IsOptional()
+  salary?: number;
 }
 
 export class CreateManagementDto {

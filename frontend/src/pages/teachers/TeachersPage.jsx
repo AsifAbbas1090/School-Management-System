@@ -33,6 +33,8 @@ const TeachersPage = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterSubject, setFilterSubject] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const PAGE_SIZE = 20;
     const [showModal, setShowModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [modalMode, setModalMode] = useState('add');
@@ -290,18 +292,18 @@ const TeachersPage = () => {
     };
 
     const filteredTeachers = teachers.filter((teacher) => {
-        // Filter by school
         const matchesSchool = !currentSchool || teacher.schoolId === currentSchool.id;
         if (!matchesSchool) return false;
-        
         const matchesSearch = teacher.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             teacher.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            teacher.employeeId.toLowerCase().includes(searchTerm.toLowerCase());
+            (teacher.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase());
         const matchesSubject = !filterSubject || (teacher.subjectIds && teacher.subjectIds.includes(filterSubject));
         const matchesStatus = !filterStatus || teacher.status === filterStatus;
-
         return matchesSearch && matchesSubject && matchesStatus;
     });
+
+    const totalPages = Math.ceil(filteredTeachers.length / PAGE_SIZE);
+    const paginatedTeachers = filteredTeachers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
     return (
         <div className="teachers-page">
@@ -395,7 +397,7 @@ const TeachersPage = () => {
                                 </td>
                             </tr>
                         ) : (
-                            filteredTeachers.map((teacher) => (
+                            paginatedTeachers.map((teacher) => (
                                 <tr key={teacher.id}>
                                     <td>
                                         <div className="flex items-center gap-md">
@@ -447,6 +449,26 @@ const TeachersPage = () => {
                     </tbody>
                 </table>
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <div className="pagination-bar">
+                    <span className="pagination-info">
+                        Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredTeachers.length)} of {filteredTeachers.length} teachers
+                    </span>
+                    <div className="pagination-controls">
+                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>«</button>
+                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>‹</button>
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+                            const page = start + i;
+                            return <button key={page} className={`btn btn-sm ${page === currentPage ? 'btn-primary' : 'btn-outline'}`} onClick={() => setCurrentPage(page)}>{page}</button>;
+                        })}
+                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages}>›</button>
+                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>»</button>
+                    </div>
+                </div>
+            )}
 
             {/* Add/Edit Modal */}
             <Modal
@@ -787,6 +809,17 @@ const TeachersPage = () => {
             transform: translateY(0);
           }
         }
+        .pagination-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.75rem 1rem;
+          border-top: 1px solid var(--border-color);
+          background: var(--bg-card);
+          border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+        }
+        .pagination-info { font-size: 0.875rem; color: var(--text-secondary); }
+        .pagination-controls { display: flex; gap: 4px; align-items: center; }
       `}</style>
         </div>
     );

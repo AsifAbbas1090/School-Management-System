@@ -11,6 +11,8 @@ export interface CreateUserDto {
   schoolId?: string;
   phone?: string;
   status?: UserStatus;
+  employeeId?: string;
+  salary?: number;
 }
 
 @Injectable()
@@ -44,6 +46,8 @@ export class UsersService {
         schoolId: data.schoolId || null,
         phone: data.phone || null,
         status: data.status || UserStatus.ACTIVE,
+        employeeId: data.employeeId || null,
+        salary: data.salary || null,
         updatedAt: new Date(),
       } as Prisma.UserUncheckedCreateInput,
       select: {
@@ -53,6 +57,8 @@ export class UsersService {
         role: true,
         status: true,
         phone: true,
+        employeeId: true,
+        salary: true,
         schoolId: true,
         createdAt: true,
       },
@@ -94,6 +100,8 @@ export class UsersService {
       password: string;
       name: string;
       phone?: string;
+      employeeId?: string;
+      salary?: number;
     },
   ) {
     return this.createUser({
@@ -103,6 +111,8 @@ export class UsersService {
       role: UserRole.TEACHER,
       schoolId,
       phone: data.phone,
+      employeeId: data.employeeId,
+      salary: data.salary,
     });
   }
 
@@ -118,6 +128,8 @@ export class UsersService {
       phone?: string;
       password?: string;
       status?: UserStatus;
+      employeeId?: string;
+      salary?: number;
     },
   ) {
     // Verify user belongs to school
@@ -149,6 +161,8 @@ export class UsersService {
     if (data.email !== undefined) updateData.email = data.email;
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.status !== undefined) updateData.status = data.status;
+    if (data.employeeId !== undefined) updateData.employeeId = data.employeeId;
+    if (data.salary !== undefined) updateData.salary = data.salary;
     if (data.password) {
       updateData.password = await bcrypt.hash(data.password, 10);
     }
@@ -164,6 +178,8 @@ export class UsersService {
         role: true,
         status: true,
         phone: true,
+        employeeId: true,
+        salary: true,
         schoolId: true,
         createdAt: true,
         updatedAt: true,
@@ -238,6 +254,8 @@ export class UsersService {
         role: true,
         status: true,
         phone: true,
+        employeeId: true,
+        salary: true,
         schoolId: true,
         createdAt: true,
         updatedAt: true,

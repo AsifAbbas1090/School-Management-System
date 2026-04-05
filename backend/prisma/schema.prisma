@@ -446,6 +446,8 @@ model User {
   status                                            UserStatus          @default(ACTIVE)
   phone                                             String?
   avatarUrl                                         String?
+  employeeId                                        String?
+  salary                                            Float?
   schoolId                                          String?
   deletedAt                                         DateTime?
   createdAt                                         DateTime            @default(now())

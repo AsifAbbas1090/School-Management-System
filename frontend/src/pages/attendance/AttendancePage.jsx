@@ -36,6 +36,7 @@ const AttendancePage = () => {
 
     // After submit
     const [submissionSummary, setSubmissionSummary] = useState(null);
+    const [showConfirm, setShowConfirm] = useState(false);
 
     // Report state
     const [reportStudentId, setReportStudentId] = useState('');
@@ -290,7 +291,7 @@ const AttendancePage = () => {
                                 <div className="flex gap-sm">
                                     <button className="btn btn-sm btn-outline" onClick={() => handleMarkAll('PRESENT')}>All Present</button>
                                     <button className="btn btn-sm btn-outline" onClick={() => handleMarkAll('ABSENT')}>All Absent</button>
-                                    <button className="btn btn-sm btn-primary" onClick={handleSubmit} disabled={submitting || loadingStudents}>
+                                    <button className="btn btn-sm btn-primary" onClick={() => setShowConfirm(true)} disabled={submitting || loadingStudents || filteredStudents.length === 0}>
                                         {submitting ? 'Saving...' : 'Submit'}
                                     </button>
                                 </div>
@@ -448,6 +449,26 @@ const AttendancePage = () => {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+            {/* Confirm Submit Dialog */}
+            {showConfirm && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div className="card" style={{ maxWidth: 420, width: '100%', padding: '1.5rem', margin: '1rem' }}>
+                        <h3 className="text-lg font-bold mb-sm">Confirm Submission</h3>
+                        <p className="text-gray-600 mb-md">
+                            Submit attendance for <strong>{filteredStudents.length} students</strong> on <strong>{selectedDate}</strong>?
+                        </p>
+                        <p className="text-sm text-warning-600 mb-lg">
+                            Students without a status selected will be marked as <strong>ABSENT</strong>.
+                        </p>
+                        <div className="flex gap-sm justify-end">
+                            <button className="btn btn-outline" onClick={() => setShowConfirm(false)}>Cancel</button>
+                            <button className="btn btn-primary" disabled={submitting} onClick={async () => { setShowConfirm(false); await handleSubmit(); }}>
+                                {submitting ? 'Saving...' : 'Confirm & Submit'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
