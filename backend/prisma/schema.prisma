@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Announcement {
@@ -85,6 +86,8 @@ model Class {
   Section           Section[]
   Student           Student[]
   SubjectClass      SubjectClass[]
+  StudentAttendance StudentAttendance[]
+  TimetableSlot     TimetableSlot[]
 
   @@index([deletedAt])
   @@index([grade])
@@ -334,6 +337,8 @@ model School {
   Student               Student[]
   Subject               Subject[]
   TeacherAttendance     TeacherAttendance[]
+  StudentAttendance     StudentAttendance[]
+  TimetableSlot         TimetableSlot[]
   User                  User[]
 
   @@index([deletedAt])
@@ -350,11 +355,13 @@ model Section {
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime
-  Exam           Exam[]
-  Class          Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
-  User           User?     @relation(fields: [classTeacherId], references: [id])
-  School         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  Student        Student[]
+  Exam              Exam[]
+  Class             Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  User              User?               @relation(fields: [classTeacherId], references: [id])
+  School            School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  Student           Student[]
+  StudentAttendance StudentAttendance[]
+  TimetableSlot     TimetableSlot[]
 
   @@index([classId])
   @@index([classTeacherId])
@@ -380,14 +387,15 @@ model Student {
   admissionDate DateTime       @default(now())
   createdAt     DateTime       @default(now())
   updatedAt     DateTime
-  ExamResult    ExamResult[]
-  FeeInvoice    FeeInvoice[]
-  FeePayment    FeePayment[]
-  LeaveRequest  LeaveRequest[]
-  Class         Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
-  User          User?          @relation(fields: [parentId], references: [id])
-  School        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  Section       Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  ExamResult        ExamResult[]
+  FeeInvoice        FeeInvoice[]
+  FeePayment        FeePayment[]
+  LeaveRequest      LeaveRequest[]
+  StudentAttendance StudentAttendance[]
+  Class             Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  User              User?               @relation(fields: [parentId], references: [id])
+  School            School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  Section           Section             @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   @@unique([schoolId, rollNumber])
   @@index([classId])
@@ -407,8 +415,9 @@ model Subject {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime
   Exam         Exam[]
-  School       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  SubjectClass SubjectClass[]
+  School        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  SubjectClass  SubjectClass[]
+  TimetableSlot TimetableSlot[]
 
   @@index([code])
   @@index([deletedAt])
@@ -450,9 +459,11 @@ model User {
   Message_Message_senderIdToUser                    Message[]           @relation("Message_senderIdToUser")
   Section                                           Section[]
   Student                                           Student[]
-  TeacherAttendance_Teacher                         TeacherAttendance[] @relation("TeacherAttendance_Teacher")
-  TeacherAttendance_RecordedBy                      TeacherAttendance[] @relation("TeacherAttendance_RecordedBy")
-  School                                            School?             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  TeacherAttendance_Teacher                         TeacherAttendance[]  @relation("TeacherAttendance_Teacher")
+  TeacherAttendance_RecordedBy                      TeacherAttendance[]  @relation("TeacherAttendance_RecordedBy")
+  StudentAttendance_RecordedBy                      StudentAttendance[]  @relation("StudentAttendance_RecordedBy")
+  TimetableSlot_Teacher                             TimetableSlot[]      @relation("TimetableSlot_Teacher")
+  School                                            School?              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([deletedAt])
   @@index([email])
@@ -571,6 +582,66 @@ model TeacherAttendance {
   @@index([teacherId])
   @@index([date])
   @@index([schoolId])
+  @@index([status])
+  @@index([recordedById])
+}
+
+model TimetableSlot {
+  id        String   @id @default(uuid())
+  schoolId  String
+  classId   String
+  sectionId String
+  day       String   // Monday, Tuesday, etc.
+  periodId  String   // period slot id (1, 2, break1, etc.)
+  subjectId String?
+  teacherId String?
+  room      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  School    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  Class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  Section   Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  Subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  Teacher   User?    @relation("TimetableSlot_Teacher", fields: [teacherId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, classId, sectionId, day, periodId])
+  @@index([schoolId])
+  @@index([classId])
+  @@index([sectionId])
+  @@index([teacherId])
+}
+
+enum StudentAttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEAVE
+}
+
+model StudentAttendance {
+  id           String                  @id @default(uuid())
+  schoolId     String
+  studentId    String
+  classId      String
+  sectionId    String
+  date         DateTime                @db.Date
+  status       StudentAttendanceStatus
+  remarks      String?
+  recordedById String
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  School       School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  Student      Student                 @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  Class        Class                   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  Section      Section                 @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  RecordedBy   User                    @relation("StudentAttendance_RecordedBy", fields: [recordedById], references: [id])
+
+  @@unique([studentId, date])
+  @@index([schoolId])
+  @@index([studentId])
+  @@index([classId])
+  @@index([sectionId])
+  @@index([date])
   @@index([status])
   @@index([recordedById])
 }

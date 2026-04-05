@@ -484,6 +484,11 @@ export const feesService = {
     return apiRequest(`/school/fees/payments/student/${studentId}/summary`);
   },
 
+  // Receipt payload for PDF generation
+  getReceiptPayload: async (paymentId) => {
+    return apiRequest(`/school/fees/payments/${paymentId}/receipt-payload`);
+  },
+
   // Fee Handovers
   getFeeHandovers: async (query = {}) => {
     const params = new URLSearchParams(query);
@@ -495,6 +500,10 @@ export const feesService = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  getHandoverSummary: async () => {
+    return apiRequest('/school/fees/handovers/summary');
   },
 };
 
@@ -623,6 +632,35 @@ export const messagesService = {
 };
 
 /**
+ * Student Attendance Service
+ */
+export const studentAttendanceService = {
+  // Bulk submit attendance for a class/section on a date
+  bulkSubmit: async (data) => {
+    return apiRequest('/school/student-attendance/bulk', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Get records with filters (classId, sectionId, date, studentId, etc.)
+  getAll: async (query = {}) => {
+    const params = new URLSearchParams(query);
+    return apiRequest(`/school/student-attendance?${params}`);
+  },
+
+  // Get summary for a class/section on a date
+  getSummary: async (classId, sectionId, date) => {
+    return apiRequest(`/school/student-attendance/summary?classId=${classId}&sectionId=${sectionId}&date=${date}`);
+  },
+
+  // Get monthly report for a student
+  getStudentReport: async (studentId, month, year) => {
+    return apiRequest(`/school/student-attendance/student/${studentId}/report?month=${month}&year=${year}`);
+  },
+};
+
+/**
  * Teacher Attendance Service
  */
 export const teacherAttendanceService = {
@@ -663,6 +701,28 @@ export const teacherAttendanceService = {
   getTeacherStats: async (teacherId, query = {}) => {
     const params = new URLSearchParams(query);
     return apiRequest(`/school/teacher-attendance/teacher/${teacherId}/stats?${params}`);
+  },
+};
+
+/**
+ * Timetable Service
+ */
+export const timetableService = {
+  get: async (classId, sectionId) => {
+    return apiRequest(`/school/timetable?classId=${classId}&sectionId=${sectionId}`);
+  },
+
+  save: async (data) => {
+    return apiRequest('/school/timetable', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  clearSlot: async (classId, sectionId, day, periodId) => {
+    return apiRequest(`/school/timetable/slot?classId=${classId}&sectionId=${sectionId}&day=${day}&periodId=${periodId}`, {
+      method: 'DELETE',
+    });
   },
 };
 

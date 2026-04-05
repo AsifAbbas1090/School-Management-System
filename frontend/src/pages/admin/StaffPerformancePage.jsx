@@ -1,13 +1,30 @@
-import React from 'react';
-import { TrendingUp, CheckCircle, AlertTriangle, Users, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { TrendingUp, CheckCircle, Users, ShieldAlert, ArrowDownCircle, Clock, DollarSign } from 'lucide-react';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import { formatCurrency } from '../../utils';
 import { useAuthStore } from '../../store';
 import { USER_ROLES } from '../../constants';
+import { analyticsService } from '../../services/api';
 
 const StaffPerformancePage = () => {
     const { user } = useAuthStore();
     const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+
+    const [stats, setStats] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!isAuthorized) return;
+        const load = async () => {
+            try {
+                const res = await analyticsService.getDashboardStats();
+                if (res.success) setStats(res.data);
+            } finally {
+                setLoading(false);
+            }
+        };
+        load();
+    }, [isAuthorized]);
 
     if (!isAuthorized) {
         return (
@@ -17,33 +34,21 @@ const StaffPerformancePage = () => {
                 <p className="text-gray-600 max-w-md">
                     You do not have permission to view staff performance metrics.
                 </p>
-                <button
-                    className="btn btn-primary mt-lg"
-                    onClick={() => window.history.back()}
-                >
+                <button className="btn btn-primary mt-lg" onClick={() => window.history.back()}>
                     Go Back
                 </button>
             </div>
         );
     }
-    // Mock Data for Performance
-    const performanceStats = {
-        feeCollectionEfficiency: 85, // percentage
-        attendanceCompletion: 98, // percentage
-        studentSatisfaction: 4.5, // out of 5
-        tasksCompleted: 120,
-    };
-
-    const recentActivities = [
-        { id: 1, action: 'Fee Submission', user: 'Management Staff A', time: '2 hours ago', details: 'Submitted collected fees of 50,000' },
-        { id: 2, action: 'Attendance Check', user: 'Management Staff B', time: '4 hours ago', details: 'Verified Class 10 attendance' },
-        { id: 3, action: 'Exam Schedule', user: 'Admin User', time: '1 day ago', details: 'Published Midterm Schedule' },
-    ];
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
         { label: 'Staff Performance', path: null },
     ];
+
+    const totalFee = (stats?.feeCollected || 0) + (stats?.feePending || 0);
+    const feeEfficiency = totalFee > 0 ? Math.round((stats?.feeCollected / totalFee) * 100) : 0;
+    const teacherAttendanceRate = stats?.teacherAttendanceRate || 0;
 
     return (
         <div className="performance-page">
@@ -56,110 +61,156 @@ const StaffPerformancePage = () => {
                 </div>
             </div>
 
-            {/* efficiency Metrics */}
-            <div className="grid grid-cols-4 gap-md mb-xl">
-                <div className="card p-lg flex items-center gap-md">
-                    <div className="p-md rounded-full bg-primary-50 text-primary-600">
-                        <TrendingUp size={24} />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-bold text-gray-900">{performanceStats.feeCollectionEfficiency}%</div>
-                        <div className="text-sm text-gray-600">Fee Collection</div>
-                    </div>
-                </div>
+            {loading ? (
+                <div className="text-center py-xl text-gray-500">Loading metrics...</div>
+            ) : (
+                <>
+                    {/* Key Metric Cards */}
+                    <div className="grid grid-cols-4 gap-md mb-xl">
+                        <div className="card p-lg flex items-center gap-md">
+                            <div className="p-md rounded-full bg-primary-50 text-primary-600">
+                                <TrendingUp size={24} />
+                            </div>
+                            <div>
+                                <div className="text-2xl font-bold text-gray-900">{feeEfficiency}%</div>
+                                <div className="text-sm text-gray-600">Fee Collection Rate</div>
+                            </div>
+                        </div>
 
-                <div className="card p-lg flex items-center gap-md">
-                    <div className="p-md rounded-full bg-success-50 text-success-600">
-                        <CheckCircle size={24} />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-bold text-gray-900">{performanceStats.attendanceCompletion}%</div>
-                        <div className="text-sm text-gray-600">Attendance Completion</div>
-                    </div>
-                </div>
+                        <div className="card p-lg flex items-center gap-md">
+                            <div className="p-md rounded-full bg-success-50 text-success-600">
+                                <CheckCircle size={24} />
+                            </div>
+                            <div>
+                                <div className="text-2xl font-bold text-gray-900">{teacherAttendanceRate}%</div>
+                                <div className="text-sm text-gray-600">Teacher Attendance</div>
+                            </div>
+                        </div>
 
-                <div className="card p-lg flex items-center gap-md">
-                    <div className="p-md rounded-full bg-warning-50 text-warning-600">
-                        <Users size={24} />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-bold text-gray-900">{performanceStats.studentSatisfaction}/5</div>
-                        <div className="text-sm text-gray-600">Satisfaction Score</div>
-                    </div>
-                </div>
+                        <div className="card p-lg flex items-center gap-md">
+                            <div className="p-md rounded-full bg-warning-50 text-warning-600">
+                                <Clock size={24} />
+                            </div>
+                            <div>
+                                <div className="text-2xl font-bold text-gray-900">{stats?.pendingLeaves || 0}</div>
+                                <div className="text-sm text-gray-600">Pending Leave Requests</div>
+                            </div>
+                        </div>
 
-                <div className="card p-lg flex items-center gap-md">
-                    <div className="p-md rounded-full bg-purple-50 text-purple-600">
-                        <AlertTriangle size={24} />
+                        <div className="card p-lg flex items-center gap-md">
+                            <div className="p-md rounded-full bg-purple-50 text-purple-600">
+                                <Users size={24} />
+                            </div>
+                            <div>
+                                <div className="text-2xl font-bold text-gray-900">{stats?.totalTeachers || 0}</div>
+                                <div className="text-sm text-gray-600">Active Teachers</div>
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <div className="text-2xl font-bold text-gray-900">{performanceStats.tasksCompleted}</div>
-                        <div className="text-sm text-gray-600">Tasks Completed</div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Performance Details */}
-            <div className="grid grid-cols-2 gap-lg">
-                <div className="card">
-                    <div className="card-header border-b border-gray-100 p-md">
-                        <h3 className="card-title font-semibold text-gray-900">Recent Management Activities</h3>
-                    </div>
-                    <div className="p-md">
-                        <div className="space-y-md">
-                            {recentActivities.map(activity => (
-                                <div key={activity.id} className="flex gap-md items-start pb-md border-b border-gray-50 last:border-0 last:pb-0">
-                                    <div className="w-2 h-2 mt-2 rounded-full bg-primary-500 shrink-0" />
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-900">{activity.action}</p>
-                                        <p className="text-xs text-gray-500 mb-1">{activity.user} • {activity.time}</p>
-                                        <p className="text-sm text-gray-600">{activity.details}</p>
+                    {/* Details Grid */}
+                    <div className="grid grid-cols-2 gap-lg mb-lg">
+                        {/* Fee Handover Summary */}
+                        <div className="card">
+                            <div className="card-header border-b border-gray-100 p-md">
+                                <h3 className="card-title font-semibold text-gray-900">Fee Handover Summary</h3>
+                            </div>
+                            <div className="p-md">
+                                <div className="grid grid-cols-2 gap-md mb-md">
+                                    <div className="p-md rounded-lg bg-primary-50 text-center">
+                                        <div className="text-xl font-bold text-primary-700">{formatCurrency(stats?.totalHandedOver || 0)}</div>
+                                        <div className="text-xs text-primary-600 mt-1">Total Handed Over</div>
+                                    </div>
+                                    <div className="p-md rounded-lg bg-success-50 text-center">
+                                        <div className="text-xl font-bold text-success-700">{stats?.handoverCount || 0}</div>
+                                        <div className="text-xs text-success-600 mt-1">Total Handovers</div>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="card">
-                    <div className="card-header border-b border-gray-100 p-md">
-                        <h3 className="card-title font-semibold text-gray-900">Efficiency Targets</h3>
-                    </div>
-                    <div className="p-md">
-                        <div className="space-y-lg">
-                            <div>
-                                <div className="flex justify-between mb-2">
-                                    <span className="text-sm font-medium text-gray-700">Fee Collection Target</span>
-                                    <span className="text-sm text-gray-600">85% / 90%</span>
-                                </div>
-                                <div className="w-full bg-gray-100 rounded-full h-2">
-                                    <div className="bg-primary-500 h-2 rounded-full" style={{ width: '85%' }}></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="flex justify-between mb-2">
-                                    <span className="text-sm font-medium text-gray-700">Attendance Marking</span>
-                                    <span className="text-sm text-gray-600">98% / 100%</span>
-                                </div>
-                                <div className="w-full bg-gray-100 rounded-full h-2">
-                                    <div className="bg-success-500 h-2 rounded-full" style={{ width: '98%' }}></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="flex justify-between mb-2">
-                                    <span className="text-sm font-medium text-gray-700">Syllabus Completion</span>
-                                    <span className="text-sm text-gray-600">65% / 70%</span>
-                                </div>
-                                <div className="w-full bg-gray-100 rounded-full h-2">
-                                    <div className="bg-warning-500 h-2 rounded-full" style={{ width: '65%' }}></div>
+                                <div className="space-y-sm">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">Total Fees Collected</span>
+                                        <span className="font-medium">{formatCurrency(stats?.feeCollected || 0)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">Pending Fees</span>
+                                        <span className="font-medium text-warning-600">{formatCurrency(stats?.feePending || 0)}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+
+                        {/* Teacher Attendance Breakdown */}
+                        <div className="card">
+                            <div className="card-header border-b border-gray-100 p-md">
+                                <h3 className="card-title font-semibold text-gray-900">Teacher Attendance (This Month)</h3>
+                            </div>
+                            <div className="p-md">
+                                <div className="space-y-lg">
+                                    <div>
+                                        <div className="flex justify-between mb-2">
+                                            <span className="text-sm font-medium text-gray-700">Present</span>
+                                            <span className="text-sm text-gray-600">{stats?.teacherAttendancePresent || 0} days</span>
+                                        </div>
+                                        <div className="w-full bg-gray-100 rounded-full h-2">
+                                            <div className="bg-success-500 h-2 rounded-full" style={{ width: `${teacherAttendanceRate}%` }}></div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between mb-2">
+                                            <span className="text-sm font-medium text-gray-700">Absent</span>
+                                            <span className="text-sm text-gray-600">{stats?.teacherAttendanceAbsent || 0} days</span>
+                                        </div>
+                                        <div className="w-full bg-gray-100 rounded-full h-2">
+                                            <div className="bg-error-500 h-2 rounded-full" style={{ width: `${100 - teacherAttendanceRate}%` }}></div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between mb-2">
+                                            <span className="text-sm font-medium text-gray-700">Fee Collection Rate</span>
+                                            <span className="text-sm text-gray-600">{feeEfficiency}%</span>
+                                        </div>
+                                        <div className="w-full bg-gray-100 rounded-full h-2">
+                                            <div className="bg-primary-500 h-2 rounded-full" style={{ width: `${feeEfficiency}%` }}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
+
+                    {/* Recent Handovers */}
+                    <div className="card">
+                        <div className="card-header border-b border-gray-100 p-md">
+                            <h3 className="card-title font-semibold text-gray-900">Recent Fee Handovers</h3>
+                        </div>
+                        <div className="p-md">
+                            {stats?.recentHandovers?.length > 0 ? (
+                                <div className="space-y-sm">
+                                    {stats.recentHandovers.map(h => (
+                                        <div key={h.id} className="flex items-center gap-md p-sm rounded-lg bg-gray-50">
+                                            <div className="p-sm rounded-full bg-primary-100 text-primary-600">
+                                                <ArrowDownCircle size={16} />
+                                            </div>
+                                            <div className="flex-1">
+                                                <p className="text-sm font-medium text-gray-900">
+                                                    {h.User?.name || 'Staff'} submitted {formatCurrency(h.amountSubmitted)}
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    {new Date(h.submittedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                    {h.notes && ` • ${h.notes}`}
+                                                </p>
+                                            </div>
+                                            <div className="text-sm font-semibold text-success-600">{formatCurrency(h.amountSubmitted)}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-gray-500 text-center py-md">No handovers recorded yet.</p>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
 
             <style>{`
                 .performance-page {

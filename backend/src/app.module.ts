@@ -13,6 +13,8 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { FilesModule } from './files/files.module';
 import { TeacherAttendanceModule } from './teacher-attendance/teacher-attendance.module';
+import { StudentAttendanceModule } from './student-attendance/student-attendance.module';
+import { TimetableModule } from './timetable/timetable.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { initializeFirebase } from './config/firebase.config';
 
@@ -36,6 +38,8 @@ import { initializeFirebase } from './config/firebase.config';
     AnalyticsModule,
     FilesModule,
     TeacherAttendanceModule,
+    StudentAttendanceModule,
+    TimetableModule,
   ],
 })
 export class AppModule {

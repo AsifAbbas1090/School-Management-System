@@ -67,15 +67,54 @@ export class AnalyticsService {
       },
     });
 
+    // Teacher attendance stats for current month
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const teacherAttendanceStats = await this.prisma.teacherAttendance.groupBy({
+      by: ['status'],
+      where: { schoolId, date: { gte: monthStart } },
+      _count: { status: true },
+    });
+    const taPresent = teacherAttendanceStats.find(s => s.status === 'PRESENT')?._count?.status || 0;
+    const taAbsent = teacherAttendanceStats.find(s => s.status === 'ABSENT')?._count?.status || 0;
+    const taTotal = taPresent + taAbsent;
+    const teacherAttendanceRate = taTotal > 0 ? Math.round((taPresent / taTotal) * 100) : 0;
+
+    // Handover summary
+    const handoverStats = await this.prisma.feeHandover.aggregate({
+      where: { schoolId },
+      _sum: { amountSubmitted: true },
+      _count: { id: true },
+    });
+
+    // Recent handovers (last 5)
+    const recentHandovers = await this.prisma.feeHandover.findMany({
+      where: { schoolId },
+      take: 5,
+      orderBy: { submittedAt: 'desc' },
+      include: { User: { select: { id: true, name: true, role: true } } },
+    });
+
+    // Teacher count
+    const teacherCount = await this.prisma.user.count({
+      where: { schoolId, role: 'TEACHER', status: 'ACTIVE', deletedAt: null },
+    });
+
     return {
       totalStudents,
-      totalTeachers,
+      totalTeachers: teacherCount,
       totalParents,
       totalExpenses,
       feeCollected: totalFeePaid,
       feePending: totalFeePending,
       pendingLeaves,
       recentExpenses,
+      teacherAttendanceRate,
+      teacherAttendancePresent: taPresent,
+      teacherAttendanceAbsent: taAbsent,
+      totalHandedOver: handoverStats._sum.amountSubmitted || 0,
+      handoverCount: handoverStats._count.id || 0,
+      recentHandovers,
     };
   }
 

@@ -291,8 +291,10 @@ const StudentsPage = () => {
                 }),
             };
 
-            // Remove monthlyFee as it's not part of student model (fees are managed separately)
-            delete studentData.monthlyFee;
+            // Include monthlyFee if provided
+            if (formData.monthlyFee !== '' && formData.monthlyFee !== undefined) {
+                studentData.monthlyFee = parseFloat(formData.monthlyFee) || 0;
+            }
 
             if (modalMode === 'add') {
                 const response = await studentsService.create(studentData);
@@ -346,8 +348,11 @@ const StudentsPage = () => {
                     admissionDate: formData.admissionDate,
                     phone: formData.phone,
                     address: formData.address,
+                    ...(formData.monthlyFee !== '' && formData.monthlyFee !== undefined && {
+                        monthlyFee: parseFloat(formData.monthlyFee) || 0,
+                    }),
                 };
-                
+
                 const response = await studentsService.update(selectedStudent.id, updateData);
                 if (response.success && response.data) {
                     updateStudent(selectedStudent.id, response.data);

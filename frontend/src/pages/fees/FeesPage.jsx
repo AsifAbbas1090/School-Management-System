@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { DollarSign, Download, Receipt, Search, Calendar, CheckCircle, AlertCircle, TrendingUp, Users, Filter, Plus } from 'lucide-react';
+import { DollarSign, Download, Receipt, Search, CheckCircle, AlertCircle, TrendingUp, Plus, Printer } from 'lucide-react';
 import { feesService, studentsService } from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import { useAuthStore, useSchoolStore } from '../../store';
 import { USER_ROLES } from '../../constants';
+import { generatePaymentReceipt } from '../../utils/pdfGenerator';
 import toast from 'react-hot-toast';
 
 const FeesPage = () => {
@@ -39,6 +40,19 @@ const FeesPage = () => {
     // For parents: selected child
     const [selectedChildId, setSelectedChildId] = useState(null);
 
+    // Receipt modal
+    const [showReceiptModal, setShowReceiptModal] = useState(false);
+    const [receiptPayload, setReceiptPayload] = useState(null);
+    const [loadingReceipt, setLoadingReceipt] = useState(false);
+
+    // Handover state
+    const [activeTab, setActiveTab] = useState('payments'); // 'payments' | 'handovers'
+    const [handovers, setHandovers] = useState([]);
+    const [handoverSummary, setHandoverSummary] = useState(null);
+    const [showHandoverModal, setShowHandoverModal] = useState(false);
+    const [handoverAmount, setHandoverAmount] = useState('');
+    const [submittingHandover, setSubmittingHandover] = useState(false);
+
     // Load data
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -69,12 +83,16 @@ const FeesPage = () => {
                 setFeePayments(paymentsRes.data.data || paymentsRes.data || []);
             }
 
-            // Load revenue stats (admin only)
+            // Load revenue stats + handover summary (admin only)
             if (isAdmin) {
-                const statsRes = await feesService.getRevenueStats(filterMonth, filterYear);
-                if (statsRes.success) {
-                    setRevenueStats(statsRes.data);
-                }
+                const [statsRes, handoverSummaryRes, handoversRes] = await Promise.all([
+                    feesService.getRevenueStats(filterMonth, filterYear),
+                    feesService.getHandoverSummary(),
+                    feesService.getFeeHandovers({ pageSize: 50 }),
+                ]);
+                if (statsRes.success) setRevenueStats(statsRes.data);
+                if (handoverSummaryRes.success) setHandoverSummary(handoverSummaryRes.data);
+                if (handoversRes.success) setHandovers(handoversRes.data?.data || []);
             }
         } catch (error) {
             console.error('Failed to load data:', error);
@@ -210,6 +228,73 @@ const FeesPage = () => {
         }
     };
 
+    // Submit fee handover
+    const handleHandoverSubmit = async () => {
+        const amount = parseFloat(handoverAmount);
+        if (isNaN(amount) || amount <= 0) { toast.error('Enter a valid amount'); return; }
+        if (handoverSummary && amount > handoverSummary.availableAmount) {
+            toast.error(`Cannot exceed available amount: ${formatCurrency(handoverSummary.availableAmount)}`);
+            return;
+        }
+        setSubmittingHandover(true);
+        try {
+            const res = await feesService.createFeeHandover({ amountSubmitted: amount });
+            if (res.success) {
+                toast.success('Handover recorded successfully');
+                setShowHandoverModal(false);
+                setHandoverAmount('');
+                await loadData();
+            } else {
+                toast.error(res.error || 'Failed to record handover');
+            }
+        } finally { setSubmittingHandover(false); }
+    };
+
+    // View receipt modal
+    const handleViewReceipt = async (payment) => {
+        setLoadingReceipt(true);
+        setShowReceiptModal(true);
+        try {
+            const res = await feesService.getReceiptPayload(payment.id);
+            if (res.success) {
+                setReceiptPayload(res.data);
+            } else {
+                toast.error(res.error || 'Failed to load receipt');
+                setShowReceiptModal(false);
+            }
+        } finally {
+            setLoadingReceipt(false);
+        }
+    };
+
+    // Download PDF receipt
+    const handleDownloadPDF = async () => {
+        if (!receiptPayload) return;
+        const { payment, student, school } = receiptPayload;
+        const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const result = await generatePaymentReceipt(
+            {
+                receiptNumber: payment.receiptNumber,
+                amount: payment.amount,
+                originalAmount: payment.originalAmount,
+                discountPercentage: payment.discountPercentage,
+                discountAmount: payment.discountAmount,
+                paidDate: payment.paidDate,
+                paymentMethod: payment.paymentMethod,
+                feeType: `Tuition Fee — ${months[(payment.month || 1) - 1]} ${payment.year}`,
+                transactionId: payment.transactionId,
+                remarks: payment.remarks,
+            },
+            student,
+            school
+        );
+        if (result.success) {
+            toast.success('Receipt downloaded');
+        } else {
+            toast.error('Failed to generate PDF');
+        }
+    };
+
     // Open payment modal
     const handleOpenPaymentModal = (student) => {
         const status = getStudentFeeStatus(student.id);
@@ -269,20 +354,44 @@ const FeesPage = () => {
 
             <div className="page-header">
                 <h1 className="page-title">Fees Management</h1>
-                {isAdmin && (
-                    <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                            // Refresh data
-                            loadData();
-                        }}
-                    >
-                        <TrendingUp size={18} />
-                        <span>Refresh</span>
+                <div className="flex gap-sm">
+                    {isAdmin && user?.role === USER_ROLES.MANAGEMENT && activeTab === 'handovers' && (
+                        <button className="btn btn-primary" onClick={() => setShowHandoverModal(true)}>
+                            <Plus size={18} /> <span>New Handover</span>
+                        </button>
+                    )}
+                    <button className="btn btn-outline" onClick={loadData}>
+                        <TrendingUp size={18} /> <span>Refresh</span>
                     </button>
-                )}
+                </div>
             </div>
 
+            {/* Tabs */}
+            {isAdmin && (
+                <div className="flex gap-sm mb-md" style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: 0 }}>
+                    {['payments', 'handovers'].map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            style={{
+                                padding: '0.5rem 1.25rem',
+                                fontWeight: 600,
+                                fontSize: '0.875rem',
+                                border: 'none',
+                                background: 'none',
+                                cursor: 'pointer',
+                                borderBottom: activeTab === tab ? '2px solid var(--primary-600)' : '2px solid transparent',
+                                color: activeTab === tab ? 'var(--primary-600)' : 'var(--text-secondary)',
+                                marginBottom: -2,
+                            }}
+                        >
+                            {tab === 'payments' ? 'Fee Collections' : 'Fee Handovers'}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {activeTab === 'payments' && (<>
             {/* Revenue Dashboard (Admin/Management only) */}
             {isAdmin && revenueStats && (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-md mb-lg">
@@ -514,13 +623,10 @@ const FeesPage = () => {
                                                     ) : (
                                                         <button
                                                             className="btn btn-sm btn-secondary"
-                                                            onClick={() => {
-                                                                // View payment details
-                                                                toast.info(`Payment recorded on ${formatDate(status.payment?.paidAt)}`);
-                                                            }}
+                                                            onClick={() => handleViewReceipt(status.payment)}
                                                         >
                                                             <Receipt size={14} />
-                                                            <span>View</span>
+                                                            <span>Receipt</span>
                                                         </button>
                                                     )}
                                                 </td>
@@ -533,6 +639,87 @@ const FeesPage = () => {
                     </table>
                 </div>
             </div>
+            </>)}
+
+            {/* Fee Handovers Tab */}
+            {activeTab === 'handovers' && isAdmin && (
+                <>
+                    {/* Handover Summary Cards */}
+                    {handoverSummary && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-md mb-lg">
+                            <div className="card" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+                                <p className="text-sm opacity-90">Total Collected</p>
+                                <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalCollected)}</h3>
+                                <p className="text-xs opacity-75 mt-xs">All time fee payments</p>
+                            </div>
+                            <div className="card" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', color: 'white' }}>
+                                <p className="text-sm opacity-90">Total Handed Over</p>
+                                <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalHandedOver)}</h3>
+                                <p className="text-xs opacity-75 mt-xs">Submitted to admin</p>
+                            </div>
+                            <div className="card" style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: 'white' }}>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-sm opacity-90">Available for Handover</p>
+                                        <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.availableAmount)}</h3>
+                                        <p className="text-xs opacity-75 mt-xs">Ready to submit</p>
+                                    </div>
+                                    {user?.role === USER_ROLES.MANAGEMENT && handoverSummary.availableAmount > 0 && (
+                                        <button
+                                            className="btn btn-sm"
+                                            style={{ background: 'rgba(255,255,255,0.25)', color: 'white', border: '1px solid rgba(255,255,255,0.5)' }}
+                                            onClick={() => { setHandoverAmount(handoverSummary.availableAmount.toFixed(2)); setShowHandoverModal(true); }}
+                                        >
+                                            Submit
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Handover History Table */}
+                    <div className="card">
+                        <div className="card-header">
+                            <h3 className="card-title">Handover History</h3>
+                            {user?.role === USER_ROLES.MANAGEMENT && (
+                                <button className="btn btn-sm btn-primary" onClick={() => setShowHandoverModal(true)}>
+                                    <Plus size={14} /> <span>New Handover</span>
+                                </button>
+                            )}
+                        </div>
+                        <div className="table-container">
+                            <table className="table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Submitted By</th>
+                                        <th>Amount Submitted</th>
+                                        <th>Total Collected at Time</th>
+                                        <th>Backup Remaining</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {handovers.length === 0 ? (
+                                        <tr><td colSpan={5} className="text-center text-gray-500 py-lg">No handovers recorded yet</td></tr>
+                                    ) : handovers.map(h => (
+                                        <tr key={h.id}>
+                                            <td>{formatDate(h.submittedAt)}</td>
+                                            <td>
+                                                <div className="font-medium">{h.User?.name || '—'}</div>
+                                                <div className="text-sm text-gray-500">{h.User?.role}</div>
+                                            </td>
+                                            <td><span className="font-bold text-success-700">{formatCurrency(h.amountSubmitted)}</span></td>
+                                            <td>{formatCurrency(h.totalCollectedAtTime)}</td>
+                                            <td>{formatCurrency(h.backupAmount)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </>
+            )}
 
             {/* Payment Modal */}
             <Modal
@@ -693,6 +880,123 @@ const FeesPage = () => {
                         </div>
                     </div>
                 )}
+            </Modal>
+
+            {/* Handover Modal */}
+            <Modal
+                isOpen={showHandoverModal}
+                onClose={() => { setShowHandoverModal(false); setHandoverAmount(''); }}
+                title="Record Fee Handover"
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => { setShowHandoverModal(false); setHandoverAmount(''); }}>Cancel</button>
+                        <button className="btn btn-primary" onClick={handleHandoverSubmit} disabled={submittingHandover}>
+                            {submittingHandover ? 'Submitting...' : 'Submit Handover'}
+                        </button>
+                    </>
+                }
+            >
+                {handoverSummary && (
+                    <div>
+                        <div className="mb-md p-md bg-gray-50 rounded-lg">
+                            <div className="grid grid-cols-2 gap-sm text-sm">
+                                <div><span className="text-gray-500">Total Collected:</span> <strong>{formatCurrency(handoverSummary.totalCollected)}</strong></div>
+                                <div><span className="text-gray-500">Already Handed Over:</span> <strong>{formatCurrency(handoverSummary.totalHandedOver)}</strong></div>
+                                <div className="col-span-2"><span className="text-gray-500">Available to Submit:</span> <strong className="text-success-700 text-lg">{formatCurrency(handoverSummary.availableAmount)}</strong></div>
+                            </div>
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Amount to Submit *</label>
+                            <input
+                                type="number"
+                                className="input"
+                                min="0"
+                                max={handoverSummary.availableAmount}
+                                step="0.01"
+                                value={handoverAmount}
+                                onChange={e => setHandoverAmount(e.target.value)}
+                                placeholder="Enter amount to hand over"
+                            />
+                            <p className="text-xs text-gray-500 mt-xs">Maximum: {formatCurrency(handoverSummary.availableAmount)}</p>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
+            {/* Receipt Modal */}
+            <Modal
+                isOpen={showReceiptModal}
+                onClose={() => { setShowReceiptModal(false); setReceiptPayload(null); }}
+                title="Fee Payment Receipt"
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => { setShowReceiptModal(false); setReceiptPayload(null); }}>
+                            Close
+                        </button>
+                        <button className="btn btn-primary" onClick={handleDownloadPDF} disabled={!receiptPayload || loadingReceipt}>
+                            <Download size={16} />
+                            <span>Download PDF</span>
+                        </button>
+                    </>
+                }
+            >
+                {loadingReceipt ? (
+                    <div className="flex items-center justify-center py-xl">
+                        <div className="loading-spinner" />
+                    </div>
+                ) : receiptPayload ? (
+                    <div>
+                        {/* School Info */}
+                        <div className="text-center mb-md pb-md" style={{ borderBottom: '2px solid var(--border-color)' }}>
+                            <h3 className="font-bold text-lg">{receiptPayload.school?.name}</h3>
+                            {receiptPayload.school?.address && <p className="text-sm text-gray-500">{receiptPayload.school.address}</p>}
+                            {receiptPayload.school?.phone && <p className="text-sm text-gray-500">{receiptPayload.school.phone}</p>}
+                        </div>
+
+                        <div className="text-center mb-md">
+                            <span className="badge badge-success" style={{ fontSize: '0.9rem', padding: '0.4rem 1rem' }}>
+                                Receipt #{receiptPayload.payment?.receiptNumber}
+                            </span>
+                        </div>
+
+                        {/* Student Info */}
+                        <div className="mb-md p-md bg-gray-50 rounded-lg">
+                            <h4 className="font-semibold mb-sm text-sm text-gray-600 uppercase">Student</h4>
+                            <div className="grid grid-cols-2 gap-sm text-sm">
+                                <div><span className="text-gray-500">Name:</span> <strong>{receiptPayload.student?.name}</strong></div>
+                                <div><span className="text-gray-500">Roll No:</span> <strong>{receiptPayload.student?.rollNumber}</strong></div>
+                                <div><span className="text-gray-500">Class:</span> <strong>{receiptPayload.student?.className}</strong></div>
+                                <div><span className="text-gray-500">Father:</span> <strong>{receiptPayload.student?.fatherName}</strong></div>
+                            </div>
+                        </div>
+
+                        {/* Payment Info */}
+                        <div className="mb-md p-md bg-gray-50 rounded-lg">
+                            <h4 className="font-semibold mb-sm text-sm text-gray-600 uppercase">Payment</h4>
+                            <div className="grid grid-cols-2 gap-sm text-sm">
+                                <div><span className="text-gray-500">Month/Year:</span> <strong>{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][(receiptPayload.payment?.month||1)-1]} {receiptPayload.payment?.year}</strong></div>
+                                <div><span className="text-gray-500">Method:</span> <strong>{receiptPayload.payment?.paymentMethod}</strong></div>
+                                <div><span className="text-gray-500">Original Fee:</span> <strong>{formatCurrency(receiptPayload.payment?.originalAmount || 0)}</strong></div>
+                                {receiptPayload.payment?.discountPercentage > 0 && (
+                                    <div><span className="text-gray-500">Discount ({receiptPayload.payment.discountPercentage}%):</span> <strong className="text-success-600">-{formatCurrency(receiptPayload.payment.discountAmount)}</strong></div>
+                                )}
+                                <div><span className="text-gray-500">Paid On:</span> <strong>{formatDate(receiptPayload.payment?.paidDate)}</strong></div>
+                                {receiptPayload.payment?.transactionId && (
+                                    <div><span className="text-gray-500">Txn ID:</span> <strong>{receiptPayload.payment.transactionId}</strong></div>
+                                )}
+                            </div>
+                            {receiptPayload.payment?.remarks && (
+                                <div className="mt-sm text-sm"><span className="text-gray-500">Remarks:</span> {receiptPayload.payment.remarks}</div>
+                            )}
+                        </div>
+
+                        {/* Total */}
+                        <div className="flex items-center justify-between p-md rounded-lg" style={{ background: 'linear-gradient(135deg, var(--primary-50), var(--primary-100))' }}>
+                            <span className="font-bold text-lg">Amount Paid</span>
+                            <span className="font-bold text-2xl" style={{ color: 'var(--primary-700)' }}>{formatCurrency(receiptPayload.payment?.amount || 0)}</span>
+                        </div>
+                    </div>
+                ) : null}
             </Modal>
         </div>
     );
