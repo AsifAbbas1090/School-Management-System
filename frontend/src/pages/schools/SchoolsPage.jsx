@@ -4,6 +4,7 @@ import { useSchoolStore, useAuthStore, useStudentsStore, useTeachersStore, usePa
 import { SUBSCRIPTION_STATUS, USER_ROLES } from '../../constants';
 import { formatCurrency, formatDate } from '../../utils';
 import { schoolsService } from '../../services/api';
+import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
 
 const SchoolsPage = () => {
@@ -410,15 +411,21 @@ const SchoolsPage = () => {
             </div>
 
             {/* Add/Edit School Modal */}
-            {showModal && (
-                <div className="modal-overlay" onClick={() => resetForm()}>
-                    <div className="modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>{editingSchool ? 'Edit School' : 'Add New School'}</h2>
-                            <button className="modal-close" onClick={() => resetForm()}>×</button>
-                        </div>
-
-                        <form onSubmit={handleSubmit} className="modal-body">
+            <Modal
+                isOpen={showModal}
+                onClose={resetForm}
+                title={editingSchool ? 'Edit School' : 'Add New School'}
+                size="lg"
+                footer={
+                    <>
+                        <button type="button" className="btn btn-outline" onClick={resetForm}>Cancel</button>
+                        <button type="button" className="btn btn-primary" onClick={handleSubmit}>
+                            {editingSchool ? 'Update School' : 'Add School'}
+                        </button>
+                    </>
+                }
+            >
+                        <form onSubmit={handleSubmit}>
                             <div className="form-grid">
                                 <div className="form-group col-span-2">
                                     <label className="form-label required">School Name</label>
@@ -591,19 +598,8 @@ const SchoolsPage = () => {
                                     </div>
                                 </div>
                             </div>
-
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => resetForm()}>
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary">
-                                    {editingSchool ? 'Update School' : 'Add School'}
-                                </button>
-                            </div>
                         </form>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             <style>{`
                 .stats-grid {

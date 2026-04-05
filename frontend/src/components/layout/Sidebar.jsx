@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { PanelLeftClose } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { useAuthStore, useSchoolStore } from '../../store';
 import { NAVIGATION_ITEMS, SCHOOL_INFO } from '../../constants';
@@ -42,8 +43,8 @@ const Sidebar = ({ isOpen, onClose }) => {
               <p className="logo-tagline">{schoolTagline}</p>
             </div>
           </div>
-          <button className="close-btn" onClick={onClose} aria-label="Close sidebar">
-            <Icons.X size={18} />
+          <button className="close-btn" onClick={onClose} aria-label="Collapse sidebar" title="Collapse sidebar">
+            <PanelLeftClose size={18} />
           </button>
         </div>
 
