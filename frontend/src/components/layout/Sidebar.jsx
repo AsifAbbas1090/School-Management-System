@@ -11,7 +11,6 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   const navigationItems = NAVIGATION_ITEMS[user?.role] || [];
 
-  // Display School Name or Fallback
   const schoolName = currentSchool?.name || SCHOOL_INFO.name;
   const schoolTagline = currentSchool?.tagline || SCHOOL_INFO.tagline;
 
@@ -21,30 +20,30 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   return (
     <>
-      {/* Mobile Overlay */}
+      {/* Overlay — shown when sidebar is open on any screen size where it overlays */}
       <div
         className={`sidebar-overlay ${isOpen ? 'show' : ''}`}
         onClick={onClose}
       />
 
-      <aside className={`sidebar ${isOpen ? 'show' : ''}`}>
-        {/* Logo Section */}
+      <aside className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
+        {/* Header */}
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <div className="logo-icon">
               {currentSchool?.logo ? (
                 <img src={currentSchool.logo} alt="Logo" className="w-full h-full object-cover rounded-lg" />
               ) : (
-                <Icons.GraduationCap size={32} className="text-primary-600" />
+                <Icons.GraduationCap size={28} className="text-primary-600" />
               )}
             </div>
             <div className="logo-text">
-              <h1 className="text-xl font-bold text-gray-900">{schoolName}</h1>
-              <p className="text-xs text-gray-500">{schoolTagline}</p>
+              <h1 className="logo-name">{schoolName}</h1>
+              <p className="logo-tagline">{schoolTagline}</p>
             </div>
           </div>
-          <button className="close-btn md:hidden" onClick={onClose}>
-            <Icons.X size={20} />
+          <button className="close-btn" onClick={onClose} aria-label="Close sidebar">
+            <Icons.X size={18} />
           </button>
         </div>
 
@@ -53,13 +52,15 @@ const Sidebar = ({ isOpen, onClose }) => {
           {navigationItems.map((item) => {
             const Icon = Icons[item.icon];
             const active = isActive(item.path);
-
             return (
               <Link
                 key={item.id}
                 to={item.path}
                 className={`sidebar-nav-item ${active ? 'active' : ''}`}
-                onClick={() => window.innerWidth < 768 && onClose()}
+                onClick={() => {
+                  // On mobile, close sidebar on nav click
+                  if (window.innerWidth < 1024) onClose();
+                }}
               >
                 <Icon size={20} />
                 <span>{item.label}</span>
@@ -70,139 +71,162 @@ const Sidebar = ({ isOpen, onClose }) => {
 
         {/* Footer */}
         <div className="sidebar-footer">
-          <p className="text-xs text-gray-500 text-center">
-            © 2024 {SCHOOL_INFO.name}
-          </p>
+          <p className="footer-copy">© 2024 {SCHOOL_INFO.name}</p>
         </div>
 
         <style>{`
-        .sidebar {
-          width: 280px;
-          height: 100vh;
-          background: var(--bg-card);
-          border-right: 1px solid var(--border-color);
-          display: flex;
-          flex-direction: column;
-          position: fixed;
-          left: 0;
-          top: 0;
-          z-index: var(--z-sticky);
-          transition: transform var(--transition-base);
-        }
-
-        .sidebar-overlay {
+          .sidebar {
+            width: 280px;
+            height: 100vh;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
             position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: var(--z-dropdown);
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity var(--transition-base);
-        }
-        
-        .sidebar-overlay.show {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .sidebar-header {
-          padding: var(--spacing-lg);
-          border-bottom: 1px solid var(--border-color);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .sidebar-logo {
-          display: flex;
-          align-items: center;
-          gap: var(--spacing-md);
-        }
-
-        .logo-icon {
-          width: 48px;
-          height: 48px;
-          background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-          border-radius: var(--radius-lg);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .logo-text h1 { color: var(--text-primary); }
-        .logo-text p { color: var(--text-secondary); }
-
-        .sidebar-nav {
-          flex: 1;
-          padding: var(--spacing-lg);
-          overflow-y: auto;
-        }
-
-        .sidebar-nav-item {
-          display: flex;
-          align-items: center;
-          gap: var(--spacing-md);
-          padding: 0.75rem var(--spacing-md);
-          margin-bottom: var(--spacing-xs);
-          border-radius: var(--radius-md);
-          color: var(--text-secondary);
-          font-size: 0.875rem;
-          font-weight: 500;
-          transition: all var(--transition-base);
-          text-decoration: none;
-        }
-
-        .sidebar-nav-item:hover {
-          background: var(--bg-body);
-          color: var(--primary-600);
-        }
-
-        .sidebar-nav-item.active {
-          background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-          color: var(--primary-700);
-          box-shadow: var(--shadow-sm);
-        }
-
-        .sidebar-footer {
-          padding: var(--spacing-md);
-          border-top: 1px solid var(--border-color);
-        }
-        
-        .close-btn {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            cursor: pointer;
-            padding: 4px;
-        }
-
-        @media (max-width: 1024px) {
-          .sidebar {
-            width: 240px;
+            left: 0;
+            top: 0;
+            z-index: 200;
+            transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s;
+            overflow: hidden;
           }
-        }
 
-        @media (max-width: 768px) {
-          .sidebar {
+          /* Desktop: sidebar toggles with transform, main content adjusts via DashboardLayout */
+          .sidebar.open {
+            transform: translateX(0);
+            box-shadow: none;
+          }
+
+          .sidebar.closed {
             transform: translateX(-100%);
           }
 
-          .sidebar.show {
-            transform: translateX(0);
+          /* Overlay: visible whenever sidebar is open on any screen */
+          .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            z-index: 199;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s;
           }
-          
-          /* Hide sidebar overlay on desktop */
-           .sidebar-overlay {
-               display: block; 
-           }
-        }
-        
-        @media (min-width: 769px) {
-             .sidebar-overlay {
-                 display: none;
-             }
-        }
-      `}</style>
+          .sidebar-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+          }
+
+          .sidebar-header {
+            padding: 1.25rem 1rem 1.25rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+            min-height: 72px;
+          }
+
+          .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            overflow: hidden;
+            flex: 1;
+            min-width: 0;
+          }
+
+          .logo-icon {
+            width: 44px;
+            height: 44px;
+            min-width: 44px;
+            background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+
+          .logo-text { overflow: hidden; min-width: 0; }
+          .logo-name {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.3;
+          }
+          .logo-tagline {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 1px;
+          }
+
+          .close-btn {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            background: var(--bg-body);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+          }
+          .close-btn:hover {
+            background: var(--error-50, #fef2f2);
+            color: var(--error-600, #dc2626);
+            border-color: var(--error-200, #fecaca);
+          }
+
+          .sidebar-nav {
+            flex: 1;
+            padding: 0.75rem;
+            overflow-y: auto;
+            overflow-x: hidden;
+          }
+
+          .sidebar-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.65rem 0.875rem;
+            margin-bottom: 2px;
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.15s;
+            text-decoration: none;
+            white-space: nowrap;
+          }
+
+          .sidebar-nav-item:hover {
+            background: var(--bg-body);
+            color: var(--primary-600);
+          }
+
+          .sidebar-nav-item.active {
+            background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+            color: var(--primary-700);
+            font-weight: 600;
+          }
+
+          .sidebar-footer {
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--border-color);
+          }
+          .footer-copy {
+            font-size: 0.7rem;
+            color: var(--text-tertiary, #9ca3af);
+            text-align: center;
+          }
+        `}</style>
       </aside>
     </>
   );

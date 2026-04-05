@@ -30,6 +30,8 @@ const FeesPage = () => {
     const [filterPaid, setFilterPaid] = useState('all'); // 'all', 'paid', 'unpaid'
     const [filterClass, setFilterClass] = useState('');
     const [classes, setClasses] = useState([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const FEES_PAGE_SIZE = 20;
     
     // Payment modal
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -164,6 +166,12 @@ const FeesPage = () => {
 
         return filtered;
     }, [students, searchTerm, filterPaid, filterClass, isParent, selectedChildId, getStudentFeeStatus]);
+
+    // Reset page when filters change
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, filterPaid, filterClass, filterMonth, filterYear]);
+
+    const feesTotalPages = Math.ceil(filteredStudents.length / FEES_PAGE_SIZE);
+    const paginatedFeeStudents = filteredStudents.slice((currentPage - 1) * FEES_PAGE_SIZE, currentPage * FEES_PAGE_SIZE);
 
     // Handle payment submission
     const handlePaymentSubmit = async () => {
@@ -587,7 +595,7 @@ const FeesPage = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredStudents.map(student => {
+                                paginatedFeeStudents.map(student => {
                                     const status = getStudentFeeStatus(student.id);
                                     return (
                                         <tr key={student.id}>
@@ -659,6 +667,26 @@ const FeesPage = () => {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination */}
+                {feesTotalPages > 1 && (
+                    <div className="pagination-bar">
+                        <span className="pagination-info">
+                            Showing {(currentPage - 1) * FEES_PAGE_SIZE + 1}–{Math.min(currentPage * FEES_PAGE_SIZE, filteredStudents.length)} of {filteredStudents.length} students
+                        </span>
+                        <div className="pagination-controls">
+                            <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>«</button>
+                            <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>‹</button>
+                            {Array.from({ length: Math.min(5, feesTotalPages) }, (_, i) => {
+                                const start = Math.max(1, Math.min(currentPage - 2, feesTotalPages - 4));
+                                const page = start + i;
+                                return <button key={page} className={`btn btn-sm ${page === currentPage ? 'btn-primary' : 'btn-outline'}`} onClick={() => setCurrentPage(page)}>{page}</button>;
+                            })}
+                            <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === feesTotalPages}>›</button>
+                            <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(feesTotalPages)} disabled={currentPage === feesTotalPages}>»</button>
+                        </div>
+                    </div>
+                )}
             </div>
             </>)}
 
@@ -1019,6 +1047,24 @@ const FeesPage = () => {
                     </div>
                 ) : null}
             </Modal>
+
+            <style>{`
+                .pagination-bar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 0.75rem 1rem;
+                    border-top: 1px solid var(--border-color);
+                    background: var(--bg-card);
+                    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+                }
+                .pagination-info { font-size: 0.875rem; color: var(--text-secondary); }
+                .pagination-controls { display: flex; gap: 4px; align-items: center; }
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.4; }
+                }
+            `}</style>
         </div>
     );
 };

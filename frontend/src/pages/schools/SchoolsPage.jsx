@@ -606,6 +606,47 @@ const SchoolsPage = () => {
             )}
 
             <style>{`
+                .stats-grid {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: var(--spacing-lg);
+                    margin-bottom: var(--spacing-xl);
+                }
+                @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+                @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
+
+                .stat-card {
+                    background: var(--bg-card);
+                    border-radius: var(--radius-xl);
+                    padding: var(--spacing-lg);
+                    display: flex;
+                    align-items: center;
+                    gap: var(--spacing-lg);
+                    border: 1px solid var(--border-color);
+                    box-shadow: var(--shadow-sm);
+                    transition: box-shadow 0.2s;
+                }
+                .stat-card:hover { box-shadow: var(--shadow-md); }
+
+                .stat-icon-wrapper {
+                    width: 56px;
+                    height: 56px;
+                    border-radius: var(--radius-lg);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                }
+                .stat-primary .stat-icon-wrapper { background: var(--primary-100); color: var(--primary-600); }
+                .stat-success .stat-icon-wrapper { background: var(--success-100); color: var(--success-600); }
+                .stat-info .stat-icon-wrapper { background: #dbeafe; color: #2563eb; }
+                .stat-warning .stat-icon-wrapper { background: var(--warning-100); color: var(--warning-600); }
+
+                .stat-content { flex: 1; min-width: 0; }
+                .stat-label { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+                .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+                .stat-sublabel { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+
                 .schools-grid {
                     display: grid;
                     grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Users, UserCheck, UserCircle, DollarSign, TrendingUp, TrendingDown, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Users, UserCheck, DollarSign, AlertCircle, ShieldAlert } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { analyticsService } from '../../services/api';
 import { formatCurrency } from '../../utils';
@@ -93,32 +93,28 @@ const AdminDashboard = () => {
             value: stats?.totalStudents || 0,
             icon: Users,
             color: 'primary',
-            trend: '+12%',
-            trendUp: true,
+            sublabel: 'Enrolled students',
         },
         {
             title: 'Total Teachers',
             value: stats?.totalTeachers || 0,
             icon: UserCheck,
             color: 'secondary',
-            trend: '+5%',
-            trendUp: true,
-        },
-        {
-            title: 'Total Parents',
-            value: stats?.totalParents || 0,
-            icon: UserCircle,
-            color: 'success',
-            trend: '+8%',
-            trendUp: true,
+            sublabel: 'Active staff',
         },
         {
             title: 'Fee Collected',
             value: formatCurrency(stats?.feeCollected || 0),
             icon: DollarSign,
+            color: 'success',
+            sublabel: `Pending: ${formatCurrency(stats?.feePending || 0)}`,
+        },
+        {
+            title: 'Pending Leaves',
+            value: stats?.pendingLeaves || 0,
+            icon: AlertCircle,
             color: 'warning',
-            trend: '+15%',
-            trendUp: true,
+            sublabel: 'Awaiting approval',
         },
     ];
 
@@ -178,14 +174,11 @@ const AdminDashboard = () => {
                                 <div className={`kpi-icon kpi-icon-${card.color}`}>
                                     <Icon size={24} />
                                 </div>
-                                <div className={`kpi-trend ${card.trendUp ? 'trend-up' : 'trend-down'}`}>
-                                    {card.trendUp ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                                    <span>{card.trend}</span>
-                                </div>
                             </div>
                             <div className="kpi-body">
                                 <h3 className="kpi-value">{card.value}</h3>
                                 <p className="kpi-title">{card.title}</p>
+                                {card.sublabel && <p className="kpi-sublabel">{card.sublabel}</p>}
                             </div>
                         </div>
                     );
@@ -387,6 +380,12 @@ const AdminDashboard = () => {
           font-size: 0.875rem;
           color: var(--gray-600);
           margin: 0;
+        }
+
+        .kpi-sublabel {
+          font-size: 0.75rem;
+          color: var(--gray-400);
+          margin-top: 2px;
         }
 
         .activity-list {
