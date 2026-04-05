@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/AQL/.claude/projects/d--School-Management-System/memory/**)",
+      "Bash(npx prisma:*)",
+      "Bash(echo \"EXIT:$?\")"
+    ]
+  }
+}

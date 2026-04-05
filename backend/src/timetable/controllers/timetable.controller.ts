@@ -17,7 +17,7 @@ export class TimetableController {
   constructor(private readonly timetableService: TimetableService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.STUDENT, UserRole.PARENT)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.PARENT)
   @ApiOperation({ summary: 'Get timetable for a class/section' })
   @ApiResponse({ status: 200, description: 'Timetable retrieved successfully' })
   async findByClassSection(
