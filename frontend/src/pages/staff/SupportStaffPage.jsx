@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Phone, Plus, Search, Edit, Trash2, ShieldAlert } from 'lucide-react';
+import { User, Mail, Phone, Plus, Search, Edit, Trash2, ShieldAlert, RefreshCw } from 'lucide-react';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
@@ -224,17 +224,33 @@ const SupportStaffPage = () => {
 
                     <div className="form-group">
                         <label className="form-label">Password</label>
-                        <input
-                            name="password"
-                            value={formData.password}
-                            onChange={handleInputChange}
-                            type="text"
-                            className="input"
-                            placeholder="Enter hardcoded password"
-                            required
-                        />
-                        <p className="text-xs text-warning-600 mt-1">
-                            Note: Determine this password carefully. It will be the user's initial login.
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <input
+                                name="password"
+                                value={formData.password}
+                                onChange={handleInputChange}
+                                type="text"
+                                className="input"
+                                placeholder="Enter or generate a password"
+                                required
+                                style={{ flex: 1 }}
+                            />
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                style={{ flexShrink: 0 }}
+                                onClick={() => {
+                                    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$!';
+                                    const pwd = Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                                    setFormData(prev => ({ ...prev, password: pwd }));
+                                }}
+                                title="Generate password"
+                            >
+                                <RefreshCw size={16} />
+                            </button>
+                        </div>
+                        <p style={{ fontSize: '0.8125rem', color: 'var(--warning-600)', marginTop: '0.25rem' }}>
+                            This will be the user's initial login password. Share it securely.
                         </p>
                     </div>
 

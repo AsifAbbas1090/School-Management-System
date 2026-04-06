@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Users, UserCheck, DollarSign, AlertCircle, ShieldAlert } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { analyticsService } from '../../services/api';
-import { formatCurrency } from '../../utils';
+import { formatCurrency, getRelativeTime } from '../../utils';
 import { useAuthStore } from '../../store';
 import { USER_ROLES } from '../../constants';
 import Loading from '../../components/common/Loading';
@@ -118,40 +118,11 @@ const AdminDashboard = () => {
         },
     ];
 
-    const monthlyFeeData = [
-        { month: 'Jan', collected: 45000, pending: 15000 },
-        { month: 'Feb', collected: 52000, pending: 12000 },
-        { month: 'Mar', collected: 48000, pending: 18000 },
-        { month: 'Apr', collected: 61000, pending: 10000 },
-        { month: 'May', collected: 55000, pending: 14000 },
-        { month: 'Jun', collected: 67000, pending: 8000 },
-    ];
-
-    const attendanceData = [
-        { day: 'Mon', present: 145, absent: 15 },
-        { day: 'Tue', present: 152, absent: 8 },
-        { day: 'Wed', present: 148, absent: 12 },
-        { day: 'Thu', present: 155, absent: 5 },
-        { day: 'Fri', present: 150, absent: 10 },
-    ];
-
-    const classDistribution = [
-        { name: 'Class 1', value: 60 },
-        { name: 'Class 2', value: 58 },
-        { name: 'Class 3', value: 55 },
-        { name: 'Class 4', value: 52 },
-        { name: 'Class 5', value: 50 },
-    ];
-
+    const monthlyFeeData = stats?.monthlyFeeData || [];
+    const attendanceData = stats?.weeklyAttendance || [];
+    const classDistribution = stats?.classDistribution || [];
     const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
-
-    const recentActivities = [
-        { id: 1, type: 'student', message: 'New student Emma Wilson enrolled in Class 1-A', time: '2 hours ago' },
-        { id: 2, type: 'fee', message: 'Fee payment received from John Doe - $5,000', time: '3 hours ago' },
-        { id: 3, type: 'teacher', message: 'Teacher Sarah Johnson updated attendance for Class 2-B', time: '5 hours ago' },
-        { id: 4, type: 'announcement', message: 'New announcement posted: Parent-Teacher Meeting', time: '1 day ago' },
-        { id: 5, type: 'exam', message: 'Midterm exam results published for Class 3', time: '2 days ago' },
-    ];
+    const recentActivities = stats?.recentActivities || [];
 
     const chartTooltipStyle = {
         backgroundColor: 'var(--bg-card)',

@@ -39,6 +39,7 @@ import SchoolsPage from './pages/schools/SchoolsPage';
 import ClassesManagementPage from './pages/classes/ClassesManagementPage';
 import TeacherAttendancePage from './pages/teacher-attendance/TeacherAttendancePage';
 import MyAttendancePage from './pages/teacher-attendance/MyAttendancePage';
+import GlobalAnalyticsPage from './pages/analytics/GlobalAnalyticsPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -150,6 +151,7 @@ function App() {
           <Route path="teacher-attendance" element={<TeacherAttendancePage />} />
           <Route path="my-attendance" element={<MyAttendancePage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="analytics" element={<GlobalAnalyticsPage />} />
         </Route>
 
         {/* 404 Route */}

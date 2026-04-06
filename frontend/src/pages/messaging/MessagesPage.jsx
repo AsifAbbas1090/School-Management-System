@@ -23,6 +23,8 @@ const MessagesPage = () => {
     subject: '',
     content: '',
   });
+  const [replyContent, setReplyContent] = useState('');
+  const [replying, setReplying] = useState(false);
 
   const breadcrumbItems = [
     { label: 'Dashboard', path: '/dashboard' },
@@ -83,8 +85,32 @@ const MessagesPage = () => {
     }
   };
 
+  const handleReply = async () => {
+    if (!replyContent.trim() || !selectedMessage) return;
+    setReplying(true);
+    try {
+      const response = await messagesService.reply({
+        receiverId: selectedMessage.senderId,
+        subject: `Re: ${selectedMessage.subject}`,
+        content: replyContent,
+      });
+      if (response.success) {
+        toast.success('Reply sent');
+        setReplyContent('');
+        loadMessages();
+      } else {
+        toast.error(response.error || 'Failed to send reply');
+      }
+    } catch {
+      toast.error('Failed to send reply');
+    } finally {
+      setReplying(false);
+    }
+  };
+
   const handleMessageClick = async (message) => {
     setSelectedMessage(message);
+    setReplyContent('');
     if (!message.isRead) {
       try {
         const response = await messagesService.markAsRead(message.id);
@@ -207,9 +233,17 @@ const MessagesPage = () => {
                 <p>{selectedMessage.content}</p>
               </div>
               <div className="detail-actions">
-                <button className="btn btn-primary">
+                <textarea
+                  className="textarea"
+                  placeholder="Write a reply..."
+                  rows={4}
+                  value={replyContent}
+                  onChange={e => setReplyContent(e.target.value)}
+                  style={{ marginBottom: 'var(--spacing-md)', resize: 'vertical' }}
+                />
+                <button className="btn btn-primary" onClick={handleReply} disabled={replying || !replyContent.trim()}>
                   <Send size={18} />
-                  <span>Reply</span>
+                  <span>{replying ? 'Sending...' : 'Send Reply'}</span>
                 </button>
               </div>
             </>
@@ -243,23 +277,39 @@ const MessagesPage = () => {
       >
         <form>
           <div className="form-group">
-            <label className="form-label">To *</label>
-            <select className="select">
-              <option value="">Select recipient</option>
-              <option value="teacher">Teachers</option>
-              <option value="parent">Parents</option>
-              <option value="admin">Admin</option>
-            </select>
+            <label className="form-label">Recipient User ID *</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="Enter recipient user ID"
+              value={composeData.receiverId}
+              onChange={e => setComposeData(p => ({ ...p, receiverId: e.target.value }))}
+            />
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+              Find user IDs from the Students, Teachers, or Parents pages.
+            </p>
           </div>
 
           <div className="form-group">
             <label className="form-label">Subject *</label>
-            <input type="text" className="input" placeholder="Enter subject" />
+            <input
+              type="text"
+              className="input"
+              placeholder="Enter subject"
+              value={composeData.subject}
+              onChange={e => setComposeData(p => ({ ...p, subject: e.target.value }))}
+            />
           </div>
 
           <div className="form-group">
             <label className="form-label">Message *</label>
-            <textarea className="textarea" placeholder="Type your message" rows="8" />
+            <textarea
+              className="textarea"
+              placeholder="Type your message"
+              rows="8"
+              value={composeData.content}
+              onChange={e => setComposeData(p => ({ ...p, content: e.target.value }))}
+            />
           </div>
         </form>
       </Modal>

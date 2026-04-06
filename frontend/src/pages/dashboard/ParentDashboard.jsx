@@ -36,21 +36,10 @@ const ParentDashboard = () => {
         const studentsData = response.data.data || response.data;
         const studentsArray = Array.isArray(studentsData) ? studentsData : [];
         setStudents(studentsArray);
-        
-        // Debug logging to help troubleshoot parent-student linking
-        if (user?.id) {
-          const linkedStudents = studentsArray.filter(s => s.parentId === user.id);
-          console.log('Parent ID:', user.id);
-          console.log('Total students loaded:', studentsArray.length);
-          console.log('Students linked to this parent:', linkedStudents.length);
-          console.log('Linked students:', linkedStudents.map(s => ({ id: s.id, name: s.name, parentId: s.parentId })));
-        }
       } else {
-        console.error('Failed to load students - invalid response:', response);
         setStudents([]);
       }
     } catch (error) {
-      console.error('Failed to load students:', error);
       setStudents([]);
     } finally {
       setLoading(false);
@@ -63,38 +52,12 @@ const ParentDashboard = () => {
 
   // Get children for this parent - match by parentId
   const myChildren = useMemo(() => {
-    if (!user?.id || !students || students.length === 0) {
-      console.log('No children found - user ID:', user?.id, 'students count:', students?.length);
-      return [];
-    }
-    
-    // Filter students where parentId matches the logged-in parent's id
-    const children = students.filter(s => {
-      // Primary match: direct parentId field
-      const parentIdMatch = s.parentId === user.id;
-      
-      // Secondary match: check parent relation objects
-      const parentRelationMatch = 
-        (s.parent && s.parent.id === user.id) || 
-        (s.User && s.User.id === user.id);
-      
-      const isMatch = parentIdMatch || parentRelationMatch;
-      
-      if (isMatch) {
-        console.log('Found linked child:', { 
-          studentId: s.id, 
-          studentName: s.name, 
-          parentId: s.parentId,
-          parentObj: s.parent,
-          userObj: s.User
-        });
-      }
-      
-      return isMatch;
-    });
-    
-    console.log(`Found ${children.length} children for parent ${user.id}`);
-    return children;
+    if (!user?.id || !students || students.length === 0) return [];
+    return students.filter(s =>
+      s.parentId === user.id ||
+      (s.parent && s.parent.id === user.id) ||
+      (s.User && s.User.id === user.id)
+    );
   }, [students, user?.id]);
 
   useEffect(() => {

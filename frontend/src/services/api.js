@@ -612,12 +612,25 @@ export const announcementsService = {
  * Messages Service
  */
 export const messagesService = {
+  // getAll is aliased to inbox — backend only exposes GET /inbox
   getAll: async (query = {}) => {
     const params = new URLSearchParams(query);
-    return apiRequest(`/school/messages?${params}`);
+    return apiRequest(`/school/messages/inbox?${params}`);
+  },
+
+  getInbox: async (query = {}) => {
+    const params = new URLSearchParams(query);
+    return apiRequest(`/school/messages/inbox?${params}`);
   },
 
   create: async (data) => {
+    return apiRequest('/school/messages', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  reply: async (data) => {
     return apiRequest('/school/messages', {
       method: 'POST',
       body: JSON.stringify(data),

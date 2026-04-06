@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Users, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { analyticsService } from '../../services/api';
-import { formatCurrency } from '../../utils';
+import { formatCurrency, getRelativeTime } from '../../utils';
 import { useAuthStore } from '../../store';
 import { USER_ROLES } from '../../constants';
 import Loading from '../../components/common/Loading';
@@ -86,33 +86,10 @@ const ManagementDashboard = () => {
         },
     ] : [];
 
-    const performanceData = [
-        { class: 'Class 1', average: 78, passRate: 92 },
-        { class: 'Class 2', average: 82, passRate: 95 },
-        { class: 'Class 3', average: 75, passRate: 88 },
-        { class: 'Class 4', average: 85, passRate: 96 },
-        { class: 'Class 5', average: 80, passRate: 90 },
-    ];
-
-    const attendanceTrend = [
-        { month: 'Aug', rate: 92 },
-        { month: 'Sep', rate: 94 },
-        { month: 'Oct', rate: 91 },
-        { month: 'Nov', rate: 95 },
-        { month: 'Dec', rate: 93 },
-    ];
-
-    const feeDefaulters = [
-        { id: 1, name: 'John Doe', class: 'Class 5-A', amount: 5000, months: 2 },
-        { id: 2, name: 'Jane Smith', class: 'Class 3-B', amount: 7500, months: 3 },
-        { id: 3, name: 'Mike Johnson', class: 'Class 4-A', amount: 2500, months: 1 },
-    ];
-
-    const topStudents = [
-        { rank: 1, name: 'Emma Wilson', class: 'Class 5-A', score: 98 },
-        { rank: 2, name: 'Liam Brown', class: 'Class 4-B', score: 96 },
-        { rank: 3, name: 'Olivia Davis', class: 'Class 5-B', score: 95 },
-    ];
+    const performanceData = stats?.classPerformance || [];
+    const attendanceTrend = stats?.attendanceTrend || [];
+    const feeDefaulters = stats?.feeDefaulters || [];
+    const topStudents = stats?.topStudents || [];
 
     if (loading) {
         return <Loading fullScreen />;
@@ -203,13 +180,15 @@ const ManagementDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {feeDefaulters.map((student) => (
+                                {feeDefaulters.length === 0 ? (
+                                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-secondary)' }}>No defaulters</td></tr>
+                                ) : feeDefaulters.map((student) => (
                                     <tr key={student.id}>
                                         <td className="font-medium">{student.name}</td>
-                                        <td>{student.class}</td>
+                                        <td>{student.className || student.class || 'N/A'}</td>
                                         <td className="text-error-600">{formatCurrency(student.amount)}</td>
                                         <td>
-                                            <span className="badge badge-warning">{student.months} months</span>
+                                            <span className="badge badge-warning">{student.invoiceCount || 1} due</span>
                                         </td>
                                     </tr>
                                 ))}
@@ -233,7 +212,9 @@ const ManagementDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {topStudents.map((student) => (
+                                {topStudents.length === 0 ? (
+                                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-secondary)' }}>No exam results yet</td></tr>
+                                ) : topStudents.map((student) => (
                                     <tr key={student.rank}>
                                         <td>
                                             <span className="badge badge-primary">#{student.rank}</span>

@@ -86,7 +86,7 @@ const LoginPage = () => {
             <div className="lp-brand-icon">
               <GraduationCap size={22} />
             </div>
-            <span className="lp-brand-name">EduMS</span>
+            <span className="lp-brand-name">SMS</span>
           </div>
 
           {/* Hero copy */}

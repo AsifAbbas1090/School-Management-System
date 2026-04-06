@@ -14,7 +14,10 @@
       "Bash(sed -i 's/className=\"flex flex-wrap gap-sm p-md bg-gray-50 rounded-lg border min-h-\\\\[50px\\\\]\"/className=\"flex flex-wrap gap-sm p-md bg-gray-50 rounded-lg border\" style={{ minHeight: \"50px\" }}/g' frontend/src/pages/teachers/TeachersPage.jsx)",
       "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/className=\"text-3xl font-bold text-gray-900 mb-2\"/className=\"page-title\"/g; s/className=\"text-3xl font-bold text-gray-900\"/className=\"page-title\"/g' {} \\\\;)",
       "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/className=\"text-2xl font-bold mb-sm\"/className=\"page-title\"/g; s/className=\"text-2xl font-bold text-gray-900 mb-xs\"/className=\"page-title\"/g; s/className=\"text-2xl font-bold text-gray-900 mb-2\"/className=\"page-title\"/g' {} \\\\;)",
-      "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/className=\"text-2xl font-bold text-gray-900\"/style={{ fontSize: \"1.5rem\", fontWeight: 700, color: \"var\\(--text-primary\\)\" }}/g' {} \\\\;)"
+      "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/className=\"text-2xl font-bold text-gray-900\"/style={{ fontSize: \"1.5rem\", fontWeight: 700, color: \"var\\(--text-primary\\)\" }}/g' {} \\\\;)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(xargs grep:*)"
     ]
   }
 }
