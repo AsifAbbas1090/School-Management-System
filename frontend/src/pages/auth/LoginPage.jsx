@@ -1,559 +1,385 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { GraduationCap, Eye, EyeOff, LogIn } from 'lucide-react';
+import { GraduationCap, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useAuthStore } from '../../store';
 import { authService } from '../../services/api';
 import { USER_ROLES, SCHOOL_INFO } from '../../constants';
 import toast from 'react-hot-toast';
 
+const roleOptions = [
+  { value: USER_ROLES.ADMIN,      label: 'School Admin' },
+  { value: USER_ROLES.MANAGEMENT, label: 'Management'   },
+  { value: USER_ROLES.TEACHER,    label: 'Teacher'      },
+  { value: USER_ROLES.PARENT,     label: 'Parent'       },
+];
+
 const LoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuthStore();
 
-  const [formData, setFormData] = useState({
-    role: USER_ROLES.ADMIN,
-    email: '',
-    password: '',
-  });
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({});
+  const [formData, setFormData]   = useState({ role: USER_ROLES.ADMIN, email: '', password: '' });
+  const [showPassword, setShowPw] = useState(false);
+  const [loading, setLoading]     = useState(false);
+  const [errors, setErrors]       = useState({});
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    }
+    setFormData(p => ({ ...p, [name]: value }));
+    if (errors[name]) setErrors(p => ({ ...p, [name]: '' }));
   };
 
   const validate = () => {
-    const newErrors = {};
-
-    if (!formData.email) {
-      newErrors.email = 'Email is required';
-    }
-
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const e = {};
+    if (!formData.email)    e.email    = 'Email is required';
+    if (!formData.password) e.password = 'Password is required';
+    setErrors(e);
+    return !Object.keys(e).length;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
+  const handleSubmit = async (ev) => {
+    ev.preventDefault();
     if (!validate()) return;
-
     setLoading(true);
-
     try {
-      const response = await authService.login(formData.email, formData.password);
-
-      if (response.success && response.data) {
-        // Backend returns { accessToken, refreshToken, user }
+      const res = await authService.login(formData.email, formData.password);
+      if (res.success && res.data) {
         login({
-          ...response.data.user,
-          role: response.data.user.role?.toUpperCase(),
-          accessToken: response.data.accessToken,
-          refreshToken: response.data.refreshToken,
+          ...res.data.user,
+          role: res.data.user.role?.toUpperCase(),
+          accessToken: res.data.accessToken,
+          refreshToken: res.data.refreshToken,
         });
-        toast.success('Login successful!');
+        toast.success('Welcome back!');
         navigate('/dashboard');
       } else {
-        toast.error(response.error || 'Invalid credentials');
+        toast.error(res.error || 'Invalid credentials');
       }
-    } catch (error) {
-      toast.error(error.message || 'Invalid credentials');
+    } catch (err) {
+      toast.error(err.message || 'Invalid credentials');
     } finally {
       setLoading(false);
     }
   };
 
-  const roleOptions = [
-    { value: USER_ROLES.ADMIN, label: 'School Admin', credentials: '' },
-    { value: USER_ROLES.MANAGEMENT, label: 'Management', credentials: '' },
-    { value: USER_ROLES.TEACHER, label: 'Teacher', credentials: '' },
-    { value: USER_ROLES.PARENT, label: 'Parent', credentials: '' },
-  ];
-
   return (
-    <div className="login-page">
-      <div className="login-container">
-        {/* Left Side - Branding */}
-        <div className="login-branding">
-          <div className="branding-content">
-            <div className="logo-section">
-              <div className="logo-icon">
-                <GraduationCap size={64} />
-              </div>
-              <h1 className="school-name">{SCHOOL_INFO.name}</h1>
-              <p className="school-tagline">{SCHOOL_INFO.tagline}</p>
-            </div>
+    <div className="lp-root">
+      {/* Subtle background blobs */}
+      <div className="lp-blob lp-blob-1" />
+      <div className="lp-blob lp-blob-2" />
 
-            <div className="features">
-              <div className="feature-item">
-                <div className="feature-icon">✓</div>
-                <div>
-                  <h3>Complete Management</h3>
-                  <p>Manage students, teachers, and all school operations</p>
-                </div>
-              </div>
-              <div className="feature-item">
-                <div className="feature-icon">✓</div>
-                <div>
-                  <h3>Real-time Tracking</h3>
-                  <p>Track attendance, fees, and academic performance</p>
-                </div>
-              </div>
-              <div className="feature-item">
-                <div className="feature-icon">✓</div>
-                <div>
-                  <h3>Smart Communication</h3>
-                  <p>Seamless communication between all stakeholders</p>
-                </div>
-              </div>
-            </div>
+      <div className="lp-card">
+        {/* Logo mark */}
+        <div className="lp-logo">
+          <div className="lp-logo-ring">
+            <GraduationCap size={26} />
           </div>
         </div>
 
-        {/* Right Side - Login Form */}
-        <div className="login-form-section">
-          <div className="form-container">
-            <div className="form-header">
-              <h2>Welcome Back</h2>
-              <p>Sign in to your account to continue</p>
+        {/* Heading */}
+        <div className="lp-head">
+          <h1 className="lp-title">Sign in</h1>
+          <p className="lp-sub">{SCHOOL_INFO.name}</p>
+        </div>
+
+        {/* Role tabs */}
+        <div className="lp-roles">
+          {roleOptions.map(r => (
+            <button
+              key={r.value}
+              type="button"
+              className={`lp-role-btn ${formData.role === r.value ? 'active' : ''}`}
+              onClick={() => setFormData(p => ({ ...p, role: r.value }))}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="lp-form" noValidate>
+          <div className="lp-field">
+            <label className="lp-label">Email</label>
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              className={`lp-input${errors.email ? ' lp-input-err' : ''}`}
+              placeholder="you@example.com"
+              autoComplete="email"
+            />
+            {errors.email && <span className="lp-err">{errors.email}</span>}
+          </div>
+
+          <div className="lp-field">
+            <div className="lp-label-row">
+              <label className="lp-label">Password</label>
+              <Link to="/forgot-password" className="lp-forgot">Forgot password?</Link>
             </div>
-
-            <form onSubmit={handleSubmit} className="login-form">
-              <div className="form-group">
-                <label className="form-label">Select Role</label>
-                <select
-                  name="role"
-                  value={formData.role}
-                  onChange={handleChange}
-                  className="select"
-                >
-                  {roleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                </p>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Email Address</label>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className={`input ${errors.email ? 'input-error' : ''}`}
-                  placeholder="Enter your email"
-                />
-                {errors.email && <span className="form-error">{errors.email}</span>}
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Password</label>
-                <div className="password-input">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className={`input ${errors.password ? 'input-error' : ''}`}
-                    placeholder="Enter your password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="password-toggle"
-                    aria-label="Toggle password visibility"
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-                {errors.password && <span className="form-error">{errors.password}</span>}
-              </div>
-
-              <div className="form-actions">
-                <Link to="/forgot-password" className="forgot-link">
-                  Forgot Password?
-                </Link>
-              </div>
-
-              <button type="submit" className="btn btn-primary btn-lg" disabled={loading} style={{ width: '100%' }}>
-                {loading ? (
-                  <span>Signing in...</span>
-                ) : (
-                  <>
-                    <LogIn size={20} />
-                    <span>Sign In</span>
-                  </>
-                )}
+            <div className="lp-pw-wrap">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                className={`lp-input${errors.password ? ' lp-input-err' : ''}`}
+                placeholder="••••••••"
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                className="lp-pw-toggle"
+                onClick={() => setShowPw(v => !v)}
+                aria-label="Toggle password"
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
-            </form>
+            </div>
+            {errors.password && <span className="lp-err">{errors.password}</span>}
           </div>
-        </div>
+
+          <button type="submit" className="lp-submit" disabled={loading}>
+            {loading ? (
+              <span className="lp-spinner" />
+            ) : (
+              <>
+                <span>Continue</span>
+                <ArrowRight size={16} />
+              </>
+            )}
+          </button>
+        </form>
       </div>
 
       <style>{`
-        .login-page {
+        /* ── Root ── */
+        .lp-root {
           min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 25%, #8b5cf6 50%, #a855f7 75%, #ec4899 100%);
-          background-size: 400% 400%;
-          animation: gradientShift 15s ease infinite;
-          padding: var(--spacing-lg);
+          background: #f5f5f7;
+          padding: 1.5rem;
           position: relative;
           overflow: hidden;
+          font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
         }
 
-        .login-page::before {
-          content: '';
+        /* Subtle decorative blobs */
+        .lp-blob {
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.3), transparent 50%),
-                      radial-gradient(circle at 80% 80%, rgba(255, 128, 171, 0.3), transparent 50%),
-                      radial-gradient(circle at 40% 80%, rgba(79, 172, 254, 0.3), transparent 50%);
-          animation: pulse 8s ease-in-out infinite;
-          z-index: 0;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.35;
+          pointer-events: none;
+        }
+        .lp-blob-1 {
+          width: 480px; height: 480px;
+          background: radial-gradient(circle, #c7d7fe, #a5b4fc);
+          top: -120px; left: -100px;
+        }
+        .lp-blob-2 {
+          width: 400px; height: 400px;
+          background: radial-gradient(circle, #fde4cf, #fbcfe8);
+          bottom: -80px; right: -80px;
         }
 
-        @keyframes gradientShift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
+        /* ── Card ── */
+        .lp-card {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          max-width: 420px;
+          background: #ffffff;
+          border-radius: 20px;
+          padding: 2.5rem 2.25rem 2rem;
+          box-shadow:
+            0 0 0 1px rgba(0,0,0,0.06),
+            0 4px 6px -1px rgba(0,0,0,0.05),
+            0 16px 40px -4px rgba(0,0,0,0.10);
+          animation: lp-rise 0.45s cubic-bezier(0.22,1,0.36,1) both;
+        }
+        @keyframes lp-rise {
+          from { opacity: 0; transform: translateY(18px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0)     scale(1);    }
         }
 
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.6; }
+        /* ── Logo ── */
+        .lp-logo {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 1.5rem;
+        }
+        .lp-logo-ring {
+          width: 52px; height: 52px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #3b82f6, #6366f1);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+          box-shadow: 0 4px 14px rgba(99,102,241,0.4);
         }
 
-        .login-container {
+        /* ── Heading ── */
+        .lp-head { text-align: center; margin-bottom: 1.75rem; }
+        .lp-title {
+          font-size: 1.625rem;
+          font-weight: 700;
+          letter-spacing: -0.4px;
+          color: #111827;
+          margin-bottom: 0.3rem;
+        }
+        .lp-sub {
+          font-size: 0.8125rem;
+          color: #6b7280;
+          line-height: 1.4;
+          max-width: 300px;
+          margin: 0 auto;
+        }
+
+        /* ── Role tabs ── */
+        .lp-roles {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          max-width: 1200px;
-          width: 100%;
-          background: rgba(255, 255, 255, 0.98);
-          backdrop-filter: blur(20px);
-          border-radius: 24px;
-          overflow: hidden;
-          box-shadow: 0 32px 64px rgba(0, 0, 0, 0.2),
-                      0 16px 32px rgba(0, 0, 0, 0.15),
-                      inset 0 0 0 1px rgba(255, 255, 255, 0.8);
-          position: relative;
-          z-index: 1;
-          animation: fadeInScale 0.5s ease-out;
+          gap: 0.375rem;
+          background: #f3f4f6;
+          border-radius: 10px;
+          padding: 0.25rem;
+          margin-bottom: 1.75rem;
         }
-
-        @keyframes fadeInScale {
-          from {
-            opacity: 0;
-            transform: scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-
-        .login-branding {
-          background: linear-gradient(135deg, #1e40af 0%, #3b82f6 30%, #8b5cf6 70%, #a855f7 100%);
-          color: white;
-          padding: var(--spacing-3xl);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .login-branding::before {
-          content: '';
-          position: absolute;
-          top: -50%;
-          left: -50%;
-          width: 200%;
-          height: 200%;
-          background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-          background-size: 50px 50px;
-          animation: backgroundMove 20s linear infinite;
-        }
-
-        @keyframes backgroundMove {
-          0% { transform: translate(0, 0); }
-          100% { transform: translate(50px, 50px); }
-        }
-
-        .branding-content {
-          max-width: 400px;
-          position: relative;
-          z-index: 1;
-        }
-
-        .logo-section {
-          text-align: center;
-          margin-bottom: var(--spacing-3xl);
-          animation: fadeInDown 0.8s ease-out;
-        }
-
-        @keyframes fadeInDown {
-          from {
-            opacity: 0;
-            transform: translateY(-20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .logo-icon {
-          width: 100px;
-          height: 100px;
-          background: rgba(255, 255, 255, 0.25);
-          backdrop-filter: blur(10px);
-          border-radius: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin: 0 auto var(--spacing-lg);
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-          transition: transform 0.3s ease;
-        }
-
-        .logo-icon:hover {
-          transform: scale(1.05) rotate(5deg);
-        }
-
-        .school-name {
-          font-size: 1.75rem;
-          font-weight: 700;
-          margin-bottom: var(--spacing-sm);
-          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-          line-height: 1.3;
-        }
-
-        .school-tagline {
-          font-size: 1rem;
-          opacity: 0.95;
+        .lp-role-btn {
+          padding: 0.45rem 0.5rem;
+          font-size: 0.8rem;
           font-weight: 500;
+          border-radius: 7px;
+          border: none;
+          background: transparent;
+          color: #6b7280;
+          cursor: pointer;
+          transition: all 0.15s;
+          white-space: nowrap;
         }
-
-        .features {
-          display: flex;
-          flex-direction: column;
-          gap: var(--spacing-lg);
-          animation: fadeInUp 1s ease-out;
-        }
-
-        @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .feature-item {
-          display: flex;
-          gap: var(--spacing-md);
-          align-items: flex-start;
-          transition: transform 0.2s ease;
-        }
-
-        .feature-item:hover {
-          transform: translateX(5px);
-        }
-
-        .feature-icon {
-          width: 36px;
-          height: 36px;
-          background: rgba(255, 255, 255, 0.25);
-          backdrop-filter: blur(10px);
-          border-radius: var(--radius-full);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 700;
-          font-size: 1.125rem;
-          flex-shrink: 0;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-        }
-
-        .feature-item h3 {
-          font-size: 1.125rem;
+        .lp-role-btn:hover { color: #111827; background: rgba(255,255,255,0.7); }
+        .lp-role-btn.active {
+          background: #ffffff;
+          color: #111827;
           font-weight: 600;
-          margin-bottom: 0.25rem;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.12);
         }
 
-        .feature-item p {
-          font-size: 0.875rem;
-          opacity: 0.9;
-          margin: 0;
-          line-height: 1.5;
-        }
+        /* ── Form ── */
+        .lp-form { display: flex; flex-direction: column; gap: 1.125rem; }
 
-        .login-form-section {
-          padding: var(--spacing-3xl);
+        .lp-field { display: flex; flex-direction: column; gap: 0.375rem; }
+
+        .lp-label-row {
           display: flex;
           align-items: center;
-          justify-content: center;
-          background: white;
+          justify-content: space-between;
         }
+        .lp-label {
+          font-size: 0.8125rem;
+          font-weight: 600;
+          color: #374151;
+        }
+        .lp-forgot {
+          font-size: 0.75rem;
+          color: #6366f1;
+          font-weight: 500;
+          text-decoration: none;
+        }
+        .lp-forgot:hover { text-decoration: underline; }
 
-        .form-container {
+        .lp-input {
           width: 100%;
-          max-width: 400px;
+          height: 42px;
+          padding: 0 0.875rem;
+          font-size: 0.875rem;
+          border: 1.5px solid #e5e7eb;
+          border-radius: 10px;
+          background: #fafafa;
+          color: #111827;
+          outline: none;
+          transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+          box-sizing: border-box;
+        }
+        .lp-input::placeholder { color: #9ca3af; }
+        .lp-input:focus {
+          border-color: #6366f1;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+        }
+        .lp-input-err {
+          border-color: #ef4444 !important;
+          box-shadow: 0 0 0 3px rgba(239,68,68,0.10) !important;
+        }
+        .lp-err {
+          font-size: 0.75rem;
+          color: #ef4444;
+          margin-top: 0.125rem;
         }
 
-        .form-header {
-          text-align: center;
-          margin-bottom: var(--spacing-2xl);
-        }
-
-        .form-header h2 {
-          font-size: 2rem;
-          font-weight: 700;
-          background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-          margin-bottom: var(--spacing-sm);
-        }
-
-        .form-header p {
-          color: var(--text-secondary);
-          margin: 0;
-          font-size: 1rem;
-        }
-
-        .login-form {
-          margin-bottom: var(--spacing-xl);
-        }
-
-        .password-input {
-          position: relative;
-        }
-
-        .password-toggle {
+        .lp-pw-wrap { position: relative; }
+        .lp-pw-wrap .lp-input { padding-right: 2.75rem; }
+        .lp-pw-toggle {
           position: absolute;
-          right: 0.875rem;
+          right: 0.75rem;
           top: 50%;
           transform: translateY(-50%);
           background: none;
           border: none;
-          color: var(--gray-400);
+          color: #9ca3af;
           cursor: pointer;
-          padding: var(--spacing-xs);
+          display: flex;
+          align-items: center;
+          padding: 0.25rem;
+          transition: color 0.15s;
+        }
+        .lp-pw-toggle:hover { color: #6366f1; }
+
+        /* ── Submit ── */
+        .lp-submit {
+          height: 44px;
+          width: 100%;
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: color 0.2s ease;
-        }
-
-        .password-toggle:hover {
-          color: #3b82f6;
-        }
-
-        .form-actions {
-          display: flex;
-          justify-content: flex-end;
-          margin-bottom: var(--spacing-lg);
-        }
-
-        .forgot-link {
-          background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-          font-size: 0.875rem;
+          gap: 0.5rem;
+          margin-top: 0.25rem;
+          background: linear-gradient(135deg, #4f46e5, #6366f1);
+          color: #fff;
+          font-size: 0.9rem;
           font-weight: 600;
-          transition: opacity 0.2s ease;
+          border: none;
+          border-radius: 10px;
+          cursor: pointer;
+          letter-spacing: 0.01em;
+          transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+          box-shadow: 0 2px 8px rgba(99,102,241,0.35);
         }
-
-        .forgot-link:hover {
-          opacity: 0.8;
-          text-decoration: underline;
+        .lp-submit:hover:not(:disabled) {
+          opacity: 0.92;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 14px rgba(99,102,241,0.45);
         }
+        .lp-submit:active:not(:disabled) { transform: translateY(0); }
+        .lp-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
-        .demo-credentials {
-          background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-          border-radius: 16px;
-          padding: var(--spacing-lg);
-          border: 1px solid rgba(59, 130, 246, 0.2);
-          box-shadow: 0 4px 16px rgba(59, 130, 246, 0.08);
+        /* Inline spinner */
+        .lp-spinner {
+          width: 18px; height: 18px;
+          border: 2.5px solid rgba(255,255,255,0.35);
+          border-top-color: #fff;
+          border-radius: 50%;
+          animation: lp-spin 0.65s linear infinite;
         }
+        @keyframes lp-spin { to { transform: rotate(360deg); } }
 
-        .demo-title {
-          font-size: 0.875rem;
-          font-weight: 700;
-          background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-          margin-bottom: var(--spacing-md);
-        }
-
-        .demo-item {
-          font-size: 0.75rem;
-          color: var(--text-primary);
-          margin-bottom: 0.5rem;
-          padding: 0.375rem 0;
-          border-bottom: 1px solid rgba(102, 126, 234, 0.08);
-        }
-
-        .demo-item:last-child {
-          border-bottom: none;
-          margin-bottom: 0;
-        }
-
-        .demo-item strong {
-          color: #3b82f6;
-          font-weight: 600;
-          display: inline-block;
-          min-width: 110px;
-        }
-
-        @media (max-width: 1024px) {
-          .login-container {
-            grid-template-columns: 1fr;
-          }
-
-          .login-branding {
-            display: none;
-          }
-        }
-
-        @media (max-width: 768px) {
-          .login-page {
-            padding: var(--spacing-md);
-          }
-
-          .login-form-section {
-            padding: var(--spacing-xl);
-          }
-
-          .form-header h2 {
-            font-size: 1.75rem;
-          }
+        /* ── Mobile ── */
+        @media (max-width: 480px) {
+          .lp-card { padding: 2rem 1.5rem 1.75rem; border-radius: 16px; }
+          .lp-title { font-size: 1.4rem; }
         }
       `}</style>
     </div>
