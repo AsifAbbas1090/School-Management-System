@@ -369,6 +369,25 @@ a:hover {
   font-size: 1rem;
 }
 
+.btn-ghost {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--gray-100);
+  color: var(--text-primary);
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, var(--warning-500), var(--warning-600));
+  color: white;
+}
+.btn-warning:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--warning-600), var(--warning-700));
+  transform: translateY(-1px);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -402,6 +421,12 @@ a:hover {
 .badge-gray {
   background: var(--gray-100);
   color: var(--gray-700);
+}
+
+.badge-outline {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
 }
 
 .input {
@@ -479,9 +504,9 @@ a:hover {
 .form-label {
   display: block;
   margin-bottom: var(--spacing-sm);
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--gray-700);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .form-error {
@@ -499,28 +524,30 @@ a:hover {
 .table {
   width: 100%;
   border-collapse: collapse;
-  background: white;
+  background: var(--bg-card);
 }
 
 .table thead {
-  background: var(--gray-50);
-  border-bottom: 2px solid var(--gray-200);
+  background: var(--bg-body);
+  border-bottom: 2px solid var(--border-color);
 }
 
 .table th {
   padding: 0.875rem 1rem;
   text-align: left;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: var(--gray-700);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 .table td {
-  padding: 1rem;
-  border-bottom: 1px solid var(--gray-200);
-  color: var(--gray-900);
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.875rem;
 }
 
 .table tbody tr {
