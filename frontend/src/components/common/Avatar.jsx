@@ -1,35 +1,42 @@
 import React from 'react';
 import { getInitials, getAvatarColor } from '../../utils';
 
-const Avatar = ({ name, src, size = 'md', className = '' }) => {
-    const sizeClasses = {
-        sm: { container: 'w-8 h-8', text: 'text-xs' },
-        md: { container: 'w-10 h-10', text: 'text-sm' },
-        lg: { container: 'w-12 h-12', text: 'text-base' },
-        xl: { container: 'w-20 h-20', text: 'text-xl' },
-    };
+const sizePx = { sm: 32, md: 40, lg: 48, xl: 80 };
+const fontSize = { sm: '0.7rem', md: '0.875rem', lg: '1rem', xl: '1.25rem' };
 
-    const sizeConfig = sizeClasses[size] || sizeClasses.md;
-    const initials = getInitials(name);
+const Avatar = ({ name, src, size = 'md', className = '' }) => {
+    const px = sizePx[size] || sizePx.md;
     const bgColor = getAvatarColor(name);
 
     return (
         <div
-            className={`${sizeConfig.container} rounded-full flex items-center justify-center font-bold text-white shadow-md border-2 border-white ${className}`}
-            style={{ 
-                backgroundColor: src ? 'transparent' : bgColor,
+            className={className}
+            style={{
+                width: px,
+                height: px,
+                minWidth: px,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700,
+                color: 'white',
+                fontSize: fontSize[size] || fontSize.md,
                 background: src ? 'transparent' : `linear-gradient(135deg, ${bgColor}, ${getAvatarColor(name + '1')})`,
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                border: '2px solid var(--bg-card)',
+                overflow: 'hidden',
+                flexShrink: 0,
             }}
         >
             {src ? (
                 <img
                     src={src}
                     alt={name}
-                    className="w-full h-full rounded-full object-cover"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
             ) : (
-                <span className={sizeConfig.text}>{initials}</span>
+                <span>{getInitials(name)}</span>
             )}
         </div>
     );
