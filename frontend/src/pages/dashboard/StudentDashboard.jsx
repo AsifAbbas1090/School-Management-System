@@ -78,9 +78,9 @@ const StudentDashboard = () => {
 
   if (!isAuthorized) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", textAlign: "center", minHeight: "60vh" }}>
         <AlertCircle size={64} className="text-error-500 mb-4" />
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+        <h1 className="page-title">Access Denied</h1>
         <p className="text-gray-600 max-w-md">Only students can view the student dashboard.</p>
       </div>
     );
@@ -141,9 +141,9 @@ const StudentDashboard = () => {
     return (
       <div className="dashboard-page">
         <Breadcrumb items={breadcrumbItems} />
-        <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", textAlign: "center", minHeight: "60vh" }}>
           <AlertCircle size={64} className="text-warning-500 mb-4" />
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Student Profile Not Found</h1>
+          <h1 className="page-title">Student Profile Not Found</h1>
           <p className="text-gray-600 max-w-md">Please contact the school administration.</p>
         </div>
       </div>

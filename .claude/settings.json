@@ -9,7 +9,12 @@
       "Bash(sed -i 's/border-top: 1px solid var\\(--gray-200\\)/border-top: 1px solid var\\(--border-color\\)/g' frontend/src/pages/messaging/MessagesPage.jsx frontend/src/pages/schools/SchoolsPage.jsx)",
       "Bash(sed -i 's/color: var\\(--gray-900\\);/color: var\\(--text-primary\\);/g' frontend/src/pages/dashboard/TeacherDashboard.jsx frontend/src/pages/dashboard/ManagementDashboard.jsx frontend/src/pages/dashboard/ParentDashboard.jsx)",
       "Bash(sed -i 's/color: var\\(--gray-600\\);/color: var\\(--text-secondary\\);/g' frontend/src/pages/dashboard/TeacherDashboard.jsx frontend/src/pages/dashboard/ManagementDashboard.jsx frontend/src/pages/dashboard/ParentDashboard.jsx)",
-      "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/color: var\\(--gray-900\\)/color: var\\(--text-primary\\)/g; s/color: var\\(--gray-700\\)/color: var\\(--text-primary\\)/g; s/color: var\\(--gray-600\\)/color: var\\(--text-secondary\\)/g' {} \\\\;)"
+      "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/color: var\\(--gray-900\\)/color: var\\(--text-primary\\)/g; s/color: var\\(--gray-700\\)/color: var\\(--text-primary\\)/g; s/color: var\\(--gray-600\\)/color: var\\(--text-secondary\\)/g' {} \\\\;)",
+      "Bash(sed -i 's/className=\"max-h-\\\\[70vh\\\\] rounded-lg border border-gray-200 object-contain\"/style={{ maxHeight: \"70vh\", borderRadius: \"var\\(--radius-lg\\)\", border: \"1px solid var\\(--border-color\\)\", objectFit: \"contain\" }}/g' frontend/src/pages/expenses/ExpensesPage.jsx)",
+      "Bash(sed -i 's/className=\"flex flex-wrap gap-sm p-md bg-gray-50 rounded-lg border min-h-\\\\[50px\\\\]\"/className=\"flex flex-wrap gap-sm p-md bg-gray-50 rounded-lg border\" style={{ minHeight: \"50px\" }}/g' frontend/src/pages/teachers/TeachersPage.jsx)",
+      "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/className=\"text-3xl font-bold text-gray-900 mb-2\"/className=\"page-title\"/g; s/className=\"text-3xl font-bold text-gray-900\"/className=\"page-title\"/g' {} \\\\;)",
+      "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/className=\"text-2xl font-bold mb-sm\"/className=\"page-title\"/g; s/className=\"text-2xl font-bold text-gray-900 mb-xs\"/className=\"page-title\"/g; s/className=\"text-2xl font-bold text-gray-900 mb-2\"/className=\"page-title\"/g' {} \\\\;)",
+      "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/className=\"text-2xl font-bold text-gray-900\"/style={{ fontSize: \"1.5rem\", fontWeight: 700, color: \"var\\(--text-primary\\)\" }}/g' {} \\\\;)"
     ]
   }
 }

@@ -30,7 +30,7 @@ const StaffPerformancePage = () => {
         return (
             <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
                 <ShieldAlert size={64} className="text-error mb-md" />
-                <h1 className="text-2xl font-bold mb-sm">Access Denied</h1>
+                <h1 className="page-title">Access Denied</h1>
                 <p className="text-gray-600 max-w-md">
                     You do not have permission to view staff performance metrics.
                 </p>
@@ -56,7 +56,7 @@ const StaffPerformancePage = () => {
 
             <div className="page-header mb-xl">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-xs">Staff Performance & Efficiency</h1>
+                    <h1 className="page-title">Staff Performance & Efficiency</h1>
                     <p className="text-gray-600">Track management efficiency and operational metrics</p>
                 </div>
             </div>
@@ -72,7 +72,7 @@ const StaffPerformancePage = () => {
                                 <TrendingUp size={24} />
                             </div>
                             <div>
-                                <div className="text-2xl font-bold text-gray-900">{feeEfficiency}%</div>
+                                <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>{feeEfficiency}%</div>
                                 <div className="text-sm text-gray-600">Fee Collection Rate</div>
                             </div>
                         </div>
@@ -82,7 +82,7 @@ const StaffPerformancePage = () => {
                                 <CheckCircle size={24} />
                             </div>
                             <div>
-                                <div className="text-2xl font-bold text-gray-900">{teacherAttendanceRate}%</div>
+                                <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>{teacherAttendanceRate}%</div>
                                 <div className="text-sm text-gray-600">Teacher Attendance</div>
                             </div>
                         </div>
@@ -92,7 +92,7 @@ const StaffPerformancePage = () => {
                                 <Clock size={24} />
                             </div>
                             <div>
-                                <div className="text-2xl font-bold text-gray-900">{stats?.pendingLeaves || 0}</div>
+                                <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>{stats?.pendingLeaves || 0}</div>
                                 <div className="text-sm text-gray-600">Pending Leave Requests</div>
                             </div>
                         </div>
@@ -102,7 +102,7 @@ const StaffPerformancePage = () => {
                                 <Users size={24} />
                             </div>
                             <div>
-                                <div className="text-2xl font-bold text-gray-900">{stats?.totalTeachers || 0}</div>
+                                <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>{stats?.totalTeachers || 0}</div>
                                 <div className="text-sm text-gray-600">Active Teachers</div>
                             </div>
                         </div>

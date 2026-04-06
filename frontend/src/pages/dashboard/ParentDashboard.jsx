@@ -195,9 +195,9 @@ const ParentDashboard = () => {
     return (
       <div className="dashboard-page">
         <Breadcrumb items={breadcrumbItems} />
-        <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", textAlign: "center", minHeight: "60vh" }}>
           <AlertCircle size={64} className="text-warning-500 mb-4" />
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">No Students Linked</h1>
+          <h1 className="page-title">No Students Linked</h1>
           <p className="text-gray-600 max-w-md">There are no students linked to your account. Please contact the school administration to link your children to your profile.</p>
         </div>
       </div>
@@ -214,7 +214,7 @@ const ParentDashboard = () => {
 
       <div className="dashboard-header flex justify-between items-end mb-xl">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Parent Dashboard</h1>
+          <h1 className="page-title">Parent Dashboard</h1>
           <p className="text-gray-600">Track your child's academic progress and activities</p>
         </div>
 
@@ -241,7 +241,7 @@ const ParentDashboard = () => {
             <Avatar name={selectedChild?.name} src={selectedChild?.avatar} size="xl" />
           </div>
           <div className="student-info flex-1">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2" style={{ textTransform: 'capitalize' }}>{selectedChild?.name}</h2>
+            <h2 className="page-title" style={{ textTransform: 'capitalize' }}>{selectedChild?.name}</h2>
             <div className="flex items-center gap-md text-sm text-gray-600">
               <span><strong>Roll No:</strong> {selectedChild?.rollNumber}</span>
               <span className="text-gray-300">•</span>

@@ -85,9 +85,9 @@ const SupportStaffPage = () => {
 
     if (!canManageStaff) {
         return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", textAlign: "center", minHeight: "60vh" }}>
                 <ShieldAlert size={64} className="text-error-500 mb-4" />
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <h1 className="page-title">Access Denied</h1>
                 <p className="text-gray-600 max-w-md">You do not have permission to access staff management.</p>
             </div>
         );
@@ -102,7 +102,7 @@ const SupportStaffPage = () => {
 
             <div className="page-header mb-lg flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Staff & Management</h1>
+                    <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>Staff & Management</h1>
                     <p className="text-gray-600">Create management users with predefined credentials</p>
                 </div>
                 <button className="btn btn-primary" onClick={() => setShowModal(true)}>

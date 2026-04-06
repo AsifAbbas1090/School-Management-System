@@ -18,7 +18,7 @@ const SettingsPage = () => {
         return (
             <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
                 <ShieldAlert size={64} className="text-error mb-md" />
-                <h1 className="text-2xl font-bold mb-sm">Access Denied</h1>
+                <h1 className="page-title">Access Denied</h1>
                 <p className="text-gray-600 max-w-md">
                     You do not have permission to view or modify system settings.
                     Please contact your system administrator if you believe this is an error.

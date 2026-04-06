@@ -187,7 +187,7 @@ const AttendancePage = () => {
         return (
             <div className="flex flex-col items-center justify-center p-12 text-center" style={{ minHeight: '60vh' }}>
                 <AlertCircle size={64} className="text-error-500 mb-4" />
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <h1 className="page-title">Access Denied</h1>
                 <p className="text-gray-600 max-w-md">You do not have permission to access attendance management.</p>
             </div>
         );
@@ -226,7 +226,7 @@ const AttendancePage = () => {
                         <div style={{ width: 64, height: 64, background: 'var(--success-100)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
                             <CheckCircle size={32} style={{ color: 'var(--success-600)' }} />
                         </div>
-                        <h2 className="text-2xl font-bold text-gray-900">Attendance Saved!</h2>
+                        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>Attendance Saved!</h2>
                         <p className="text-gray-500 mt-sm">
                             {classes.find(c => c.id === submissionSummary.classId)?.name || 'Class'} — Section {sections.find(s => s.id === submissionSummary.sectionId)?.name || ''}
                         </p>

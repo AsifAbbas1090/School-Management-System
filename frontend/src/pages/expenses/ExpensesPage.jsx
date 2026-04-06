@@ -96,7 +96,7 @@ const ExpensesPage = () => {
     if (!isAuthorized) {
         return (
             <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
-                <h1 className="text-2xl font-bold mb-sm">Access Denied</h1>
+                <h1 className="page-title">Access Denied</h1>
                 <p className="text-gray-600 max-w-md">
                     Only Admin and Management users can access the expenses module.
                 </p>
@@ -582,7 +582,7 @@ const ExpensesPage = () => {
                         <img
                             src={previewImage}
                             alt="Receipt"
-                            className="max-h-[70vh] rounded-lg border border-gray-200 object-contain"
+                            style={{ maxHeight: "70vh", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)", objectFit: "contain" }}
                         />
                     </div>
                 )}

@@ -22,9 +22,9 @@ const TeachersPage = () => {
 
     if (!canManageTeachers) {
         return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", textAlign: "center", minHeight: "60vh" }}>
                 <AlertCircle size={64} className="text-error-500 mb-4" />
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <h1 className="page-title">Access Denied</h1>
                 <p className="text-gray-600 max-w-md">You do not have permission to access teachers management. This area is restricted to administrators and school management only.</p>
             </div>
         );
@@ -640,7 +640,7 @@ const TeachersPage = () => {
                             </datalist>
                             <button type="button" className="btn btn-primary" onClick={handleAddSubject}>Add</button>
                         </div>
-                        <div className="flex flex-wrap gap-sm p-md bg-gray-50 rounded-lg border min-h-[50px]">
+                        <div className="flex flex-wrap gap-sm p-md bg-gray-50 rounded-lg border" style={{ minHeight: "50px" }}>
                             {formData.subjectIds.map(sid => {
                                 const sub = subjects.find(s => s.id === sid);
                                 return sub ? (

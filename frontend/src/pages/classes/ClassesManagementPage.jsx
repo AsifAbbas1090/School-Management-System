@@ -193,9 +193,9 @@ const ClassesManagementPage = () => {
 
     if (!canManageClasses) {
         return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[70vh]">
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", textAlign: "center", minHeight: "60vh" }}>
                 <AlertCircle size={64} className="text-error-500 mb-4" />
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                <h1 className="page-title">Access Denied</h1>
                 <p className="text-gray-600 max-w-md">You do not have permission to access classes management. This area is restricted to administrators and school management only.</p>
             </div>
         );
