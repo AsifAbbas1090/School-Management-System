@@ -684,9 +684,9 @@ const ClassesManagementPage = () => {
                 }
 
                 .class-card {
-                    background: white;
+                    background: var(--bg-card);
                     border-radius: var(--radius-lg);
-                    border: 1px solid var(--gray-200);
+                    border: 1px solid var(--border-color);
                     overflow: hidden;
                     transition: all 0.3s ease;
                 }
@@ -707,7 +707,7 @@ const ClassesManagementPage = () => {
                 .class-icon {
                     width: 60px;
                     height: 60px;
-                    background: white;
+                    background: var(--bg-card);
                     border-radius: var(--radius-md);
                     display: flex;
                     align-items: center;
@@ -727,12 +727,12 @@ const ClassesManagementPage = () => {
                 .class-name {
                     font-size: 1.5rem;
                     font-weight: 600;
-                    color: var(--gray-900);
+                    color: var(--text-primary);
                     margin-bottom: var(--spacing-xs);
                 }
 
                 .class-grade {
-                    color: var(--gray-600);
+                    color: var(--text-secondary);
                     font-size: 0.875rem;
                     margin-bottom: var(--spacing-lg);
                 }
@@ -747,7 +747,7 @@ const ClassesManagementPage = () => {
                 .sections-title {
                     font-size: 0.875rem;
                     font-weight: 600;
-                    color: var(--gray-700);
+                    color: var(--text-primary);
                     margin-bottom: var(--spacing-sm);
                 }
 
@@ -781,7 +781,7 @@ const ClassesManagementPage = () => {
                     display: flex;
                     align-items: center;
                     gap: var(--spacing-xs);
-                    color: var(--gray-700);
+                    color: var(--text-primary);
                     font-size: 0.875rem;
                 }
 
@@ -824,7 +824,7 @@ const ClassesManagementPage = () => {
 
                 .preview-text {
                     font-size: 0.875rem;
-                    color: var(--gray-700);
+                    color: var(--text-primary);
                     margin: 0;
                 }
 

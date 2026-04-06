@@ -289,7 +289,7 @@ const AnnouncementsPage = () => {
         .page-header h1 {
           font-size: 2rem;
           font-weight: 700;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: var(--spacing-xs);
         }
 
@@ -300,13 +300,15 @@ const AnnouncementsPage = () => {
         }
 
         .announcement-card {
-          background: white;
+          background: var(--bg-card);
           border-radius: var(--radius-lg);
           padding: var(--spacing-lg);
           box-shadow: var(--shadow-sm);
-          border: 1px solid var(--gray-200);
+          border: 1px solid var(--border-color);
           position: relative;
+          transition: box-shadow var(--transition-base);
         }
+        .announcement-card:hover { box-shadow: var(--shadow-md); }
 
         .announcement-card.pinned {
           border-color: var(--primary-300);
@@ -338,7 +340,7 @@ const AnnouncementsPage = () => {
         .announcement-title {
           font-size: 1.25rem;
           font-weight: 600;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: 0.5rem;
         }
 
@@ -347,12 +349,12 @@ const AnnouncementsPage = () => {
           align-items: center;
           gap: 0.5rem;
           font-size: 0.875rem;
-          color: var(--gray-600);
+          color: var(--text-secondary);
         }
 
         .announcement-content {
           font-size: 0.9375rem;
-          color: var(--gray-700);
+          color: var(--text-primary);
           line-height: 1.6;
         }
 
@@ -367,7 +369,7 @@ const AnnouncementsPage = () => {
           align-items: center;
           gap: var(--spacing-sm);
           font-size: 0.875rem;
-          color: var(--gray-700);
+          color: var(--text-primary);
           cursor: pointer;
         }
 

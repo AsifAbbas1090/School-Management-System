@@ -453,9 +453,9 @@ const ParentDashboard = () => {
                 }
 
                 .card {
-                    background: white;
+                    background: var(--bg-card);
                     border-radius: 1rem;
-                    border: 1px solid var(--gray-200);
+                    border: 1px solid var(--border-color);
                     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
                     overflow: hidden;
                     transition: transform 0.2s;

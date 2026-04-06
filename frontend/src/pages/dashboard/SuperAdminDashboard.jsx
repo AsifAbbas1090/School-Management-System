@@ -77,10 +77,10 @@ const SuperAdminDashboard = () => {
 
     return (
         <div className="super-admin-dashboard">
-            <div className="flex justify-between items-center mb-xl">
+            <div className="page-header" style={{ marginBottom: 'var(--spacing-xl)' }}>
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-xs">Super Admin Dashboard</h1>
-                    <p className="text-gray-600">Overview of all schools and global performance</p>
+                    <h1 className="page-title">Super Admin Dashboard</h1>
+                    <p className="page-subtitle">Overview of all schools and global performance</p>
                 </div>
                 <div className="flex gap-md">
                     <button className="btn btn-primary" onClick={() => navigate('/schools')}>
@@ -96,99 +96,74 @@ const SuperAdminDashboard = () => {
 
             {/* KPI Cards */}
             <div className="grid grid-cols-4 gap-md mb-xl">
-                <div className="card p-lg flex items-center gap-md">
-                    <div className="p-md rounded-full bg-primary-50 text-primary-600">
-                        <School size={24} />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-bold text-gray-900">{stats.totalSchools}</div>
-                        <div className="text-sm text-gray-600">Total Schools</div>
-                    </div>
-                </div>
-
-                <div className="card p-lg flex items-center gap-md">
-                    <div className="p-md rounded-full bg-success-50 text-success-600">
-                        <Users size={24} />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-bold text-gray-900">{stats.totalStudents.toLocaleString()}</div>
-                        <div className="text-sm text-gray-600">Total Students</div>
-                    </div>
-                </div>
-
-                <div className="card p-lg flex items-center gap-md">
-                    <div className="p-md rounded-full bg-warning-50 text-warning-600">
-                        <TrendingUp size={24} />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-bold text-gray-900">$ {stats.totalRevenue.toLocaleString()}</div>
-                        <div className="text-sm text-gray-600">Total Revenue</div>
-                    </div>
-                </div>
-
-                <div className="card p-lg flex items-center gap-md">
-                    <div className="p-md rounded-full bg-purple-50 text-purple-600">
-                        <MapPin size={24} />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-bold text-gray-900">{stats.activeCampuses}</div>
-                        <div className="text-sm text-gray-600">Active Campuses</div>
-                    </div>
-                </div>
+                {[
+                    { icon: School, label: 'Total Schools', value: stats.totalSchools, color: 'primary' },
+                    { icon: Users, label: 'Total Students', value: stats.totalStudents?.toLocaleString(), color: 'success' },
+                    { icon: TrendingUp, label: 'Total Revenue', value: `$ ${stats.totalRevenue?.toLocaleString()}`, color: 'warning' },
+                    { icon: MapPin, label: 'Active Campuses', value: stats.activeCampuses, color: 'secondary' },
+                ].map((card, i) => {
+                    const Icon = card.icon;
+                    return (
+                        <div key={i} className="kpi-card">
+                            <div className="kpi-header">
+                                <div className={`kpi-icon kpi-icon-${card.color}`}><Icon size={22} /></div>
+                            </div>
+                            <div className="kpi-body">
+                                <h3 className="kpi-value">{card.value}</h3>
+                                <p className="kpi-title">{card.label}</p>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Schools List */}
             <div className="card">
-                <div className="card-header border-b border-gray-100 p-lg flex justify-between items-center">
-                    <h3 className="card-title font-semibold text-gray-900">Managed Schools & Subscriptions</h3>
-                    <div className="flex gap-sm">
-                        <input type="text" placeholder="Search schools..." className="input input-sm w-64" />
-                    </div>
+                <div className="card-header">
+                    <h3 className="card-title">Managed Schools & Subscriptions</h3>
+                    <input type="text" placeholder="Search schools..." className="input" style={{ width: '220px', height: '36px' }} />
                 </div>
-                <div className="p-md">
+                <div style={{ padding: 'var(--spacing-lg)' }}>
                     <div className="grid grid-cols-3 gap-md">
                         {schools.map(school => (
-                            <div key={school.id} className="border border-gray-200 rounded-lg p-md hover:shadow-md transition-all bg-white group flex flex-col h-full">
+                            <div key={school.id} className="school-entry-card">
                                 <div className="flex justify-between items-start mb-md">
-                                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                                    <div className="school-entry-icon">
                                         {school.logo ? (
-                                            <img src={school.logo} alt={school.name} className="w-full h-full object-cover" />
+                                            <img src={school.logo} alt={school.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                         ) : (
-                                            <Building className="text-gray-400" />
+                                            <Building size={20} style={{ color: 'var(--gray-400)' }} />
                                         )}
                                     </div>
                                     <div className="flex flex-col items-end gap-xs">
-                                        <span className={`badge ${school.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+                                        <span className={`badge badge-${school.status === 'active' ? 'success' : 'error'}`}>
                                             {school.status}
                                         </span>
-                                        <span className={`text-xs px-2 py-1 rounded-full ${school.subscriptionPlan === 'enterprise' ? 'bg-purple-100 text-purple-700' :
-                                            school.subscriptionPlan === 'premium' ? 'bg-amber-100 text-amber-700' :
-                                                'bg-gray-100 text-gray-700'
-                                            }`}>
-                                            {school.subscriptionPlan?.toUpperCase()}
+                                        <span className={`badge badge-${school.subscriptionPlan === 'enterprise' ? 'purple' : school.subscriptionPlan === 'premium' ? 'warning' : 'gray'}`}>
+                                            {school.subscriptionPlan?.toUpperCase() || 'FREE'}
                                         </span>
                                     </div>
                                 </div>
 
-                                <h4 className="font-bold text-gray-900 text-lg mb-xs">{school.name}</h4>
-                                <p className="text-sm text-gray-500 mb-md truncate">{school.address || "No address provided"}</p>
+                                <h4 style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>{school.name}</h4>
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: 'var(--spacing-md)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{school.address || 'No address provided'}</p>
 
-                                <div className="mt-auto pt-md border-t border-gray-100 space-y-sm">
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-gray-500">Subscription Status:</span>
-                                        <span className={school.subscriptionStatus === 'active' ? 'text-success-600 font-medium' : 'text-error-600 font-medium'}>
+                                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: 'var(--spacing-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <div className="flex justify-between" style={{ fontSize: '0.75rem' }}>
+                                        <span style={{ color: 'var(--text-secondary)' }}>Subscription:</span>
+                                        <span style={{ color: school.subscriptionStatus === 'active' ? 'var(--success-600)' : 'var(--error-600)', fontWeight: 600 }}>
                                             {school.subscriptionStatus?.toUpperCase() || 'ACTIVE'}
                                         </span>
                                     </div>
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-gray-500">Next Payment:</span>
-                                        <span className="text-gray-900">
+                                    <div className="flex justify-between" style={{ fontSize: '0.75rem' }}>
+                                        <span style={{ color: 'var(--text-secondary)' }}>Next Payment:</span>
+                                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
                                             {school.nextPaymentDate ? formatDate(new Date(school.nextPaymentDate)) : 'N/A'}
                                         </span>
                                     </div>
-
                                     <button
-                                        className="btn btn-sm btn-primary w-full mt-2"
+                                        className="btn btn-sm btn-primary"
+                                        style={{ width: '100%', marginTop: '0.5rem' }}
                                         onClick={() => handleEnterSchool(school)}
                                     >
                                         Manage Dashboard
@@ -202,12 +177,34 @@ const SuperAdminDashboard = () => {
 
 
             <style>{`
-                .super-admin-dashboard {
-                    animation: fadeIn 0.3s ease-in-out;
+                .super-admin-dashboard { animation: fadeIn 0.3s ease-in-out; }
+                .school-entry-card {
+                    background: var(--bg-card);
+                    border: 1px solid var(--border-color);
+                    border-radius: var(--radius-lg);
+                    padding: var(--spacing-md);
+                    display: flex;
+                    flex-direction: column;
+                    transition: box-shadow var(--transition-base), transform var(--transition-base);
+                }
+                .school-entry-card:hover {
+                    box-shadow: var(--shadow-md);
+                    transform: translateY(-2px);
+                }
+                .school-entry-icon {
+                    width: 48px;
+                    height: 48px;
+                    background: var(--gray-100);
+                    border-radius: var(--radius-md);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
+                    flex-shrink: 0;
                 }
                 @keyframes fadeIn {
                     from { opacity: 0; transform: translateY(10px); }
-                    to { opacity: 1; transform: translateY(0); }
+                    to   { opacity: 1; transform: translateY(0); }
                 }
             `}</style>
         </div>

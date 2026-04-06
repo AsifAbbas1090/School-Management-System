@@ -279,7 +279,7 @@ const MessagesPage = () => {
         .page-header h1 {
           font-size: 2rem;
           font-weight: 700;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: var(--spacing-xs);
         }
 
@@ -291,7 +291,7 @@ const MessagesPage = () => {
         }
 
         .messages-sidebar {
-          background: white;
+          background: var(--bg-card);
           border-radius: var(--radius-lg);
           padding: var(--spacing-lg);
           box-shadow: var(--shadow-sm);
@@ -314,7 +314,7 @@ const MessagesPage = () => {
           cursor: pointer;
           transition: all var(--transition-base);
           font-size: 0.875rem;
-          color: var(--gray-700);
+          color: var(--text-primary);
         }
 
         .menu-item:hover {
@@ -327,7 +327,7 @@ const MessagesPage = () => {
         }
 
         .messages-list {
-          background: white;
+          background: var(--bg-card);
           border-radius: var(--radius-lg);
           box-shadow: var(--shadow-sm);
           overflow-y: auto;
@@ -337,7 +337,7 @@ const MessagesPage = () => {
           display: flex;
           gap: var(--spacing-md);
           padding: var(--spacing-md);
-          border-bottom: 1px solid var(--gray-200);
+          border-bottom: 1px solid var(--border-color);
           cursor: pointer;
           transition: all var(--transition-base);
           position: relative;
@@ -369,7 +369,7 @@ const MessagesPage = () => {
 
         .sender-name {
           font-weight: 600;
-          color: var(--gray-900);
+          color: var(--text-primary);
           font-size: 0.875rem;
         }
 
@@ -381,7 +381,7 @@ const MessagesPage = () => {
         .message-subject {
           font-size: 0.875rem;
           font-weight: 500;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: 0.25rem;
           white-space: nowrap;
           overflow: hidden;
@@ -390,7 +390,7 @@ const MessagesPage = () => {
 
         .message-snippet {
           font-size: 0.8125rem;
-          color: var(--gray-600);
+          color: var(--text-secondary);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -408,7 +408,7 @@ const MessagesPage = () => {
         }
 
         .message-detail {
-          background: white;
+          background: var(--bg-card);
           border-radius: var(--radius-lg);
           padding: var(--spacing-xl);
           box-shadow: var(--shadow-sm);
@@ -417,7 +417,7 @@ const MessagesPage = () => {
 
         .detail-header {
           padding-bottom: var(--spacing-lg);
-          border-bottom: 1px solid var(--gray-200);
+          border-bottom: 1px solid var(--border-color);
           margin-bottom: var(--spacing-lg);
         }
 
@@ -428,18 +428,18 @@ const MessagesPage = () => {
         .detail-subject h2 {
           font-size: 1.5rem;
           font-weight: 600;
-          color: var(--gray-900);
+          color: var(--text-primary);
         }
 
         .detail-content {
           margin-bottom: var(--spacing-xl);
           line-height: 1.6;
-          color: var(--gray-700);
+          color: var(--text-primary);
         }
 
         .detail-actions {
           padding-top: var(--spacing-lg);
-          border-top: 1px solid var(--gray-200);
+          border-top: 1px solid var(--border-color);
         }
 
         .search-box {

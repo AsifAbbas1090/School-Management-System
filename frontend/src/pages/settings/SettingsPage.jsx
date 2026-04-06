@@ -403,7 +403,7 @@ const SettingsPage = () => {
         .page-header h1 {
           font-size: 2rem;
           font-weight: 700;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: var(--spacing-xs);
         }
 
@@ -414,7 +414,7 @@ const SettingsPage = () => {
         }
 
         .settings-sidebar {
-          background: white;
+          background: var(--bg-card);
           border-radius: var(--radius-lg);
           padding: var(--spacing-md);
           box-shadow: var(--shadow-sm);
@@ -433,7 +433,7 @@ const SettingsPage = () => {
           cursor: pointer;
           transition: all var(--transition-base);
           font-size: 0.875rem;
-          color: var(--gray-700);
+          color: var(--text-primary);
           text-align: left;
         }
 
@@ -463,20 +463,20 @@ const SettingsPage = () => {
           justify-content: space-between;
           align-items: center;
           padding: var(--spacing-lg);
-          border: 1px solid var(--gray-200);
+          border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
         }
 
         .setting-title {
           font-size: 0.9375rem;
           font-weight: 600;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: 0.25rem;
         }
 
         .setting-description {
           font-size: 0.8125rem;
-          color: var(--gray-600);
+          color: var(--text-secondary);
           margin: 0;
         }
 
@@ -527,20 +527,20 @@ const SettingsPage = () => {
 
         .backup-section {
           padding: var(--spacing-lg);
-          border: 1px solid var(--gray-200);
+          border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
         }
 
         .section-title {
           font-size: 1rem;
           font-weight: 600;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: 0.5rem;
         }
 
         .section-description {
           font-size: 0.875rem;
-          color: var(--gray-600);
+          color: var(--text-secondary);
           margin-bottom: var(--spacing-md);
         }
 

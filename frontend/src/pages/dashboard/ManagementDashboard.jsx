@@ -158,13 +158,13 @@ const ManagementDashboard = () => {
                     </div>
                     <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={performanceData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                            <XAxis dataKey="class" stroke="#6b7280" />
-                            <YAxis stroke="#6b7280" />
-                            <Tooltip />
-                            <Legend />
-                            <Bar dataKey="average" fill="#3b82f6" name="Average Score" radius={[8, 8, 0, 0]} />
-                            <Bar dataKey="passRate" fill="#10b981" name="Pass Rate %" radius={[8, 8, 0, 0]} />
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+                            <XAxis dataKey="class" tick={{ fontSize: 12, fill: 'var(--gray-500)' }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 12, fill: 'var(--gray-500)' }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.8125rem' }} />
+                            <Legend wrapperStyle={{ fontSize: '0.8125rem' }} />
+                            <Bar dataKey="average" fill="var(--primary-500)" name="Average Score" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="passRate" fill="var(--success-500)" name="Pass Rate %" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
@@ -175,12 +175,12 @@ const ManagementDashboard = () => {
                     </div>
                     <ResponsiveContainer width="100%" height={300}>
                         <LineChart data={attendanceTrend}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                            <XAxis dataKey="month" stroke="#6b7280" />
-                            <YAxis stroke="#6b7280" />
-                            <Tooltip />
-                            <Legend />
-                            <Line type="monotone" dataKey="rate" stroke="#8b5cf6" strokeWidth={2} name="Attendance %" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fontSize: 12, fill: 'var(--gray-500)' }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 12, fill: 'var(--gray-500)' }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.8125rem' }} />
+                            <Legend wrapperStyle={{ fontSize: '0.8125rem' }} />
+                            <Line type="monotone" dataKey="rate" stroke="var(--secondary-500)" strokeWidth={2.5} dot={false} name="Attendance %" />
                         </LineChart>
                     </ResponsiveContainer>
                 </div>
@@ -250,93 +250,15 @@ const ManagementDashboard = () => {
             </div>
 
             <style>{`
-        .dashboard-page {
-          animation: fadeIn 0.3s ease-in-out;
-        }
-
-        .dashboard-header {
-          margin-bottom: var(--spacing-xl);
-        }
-
+        .dashboard-page { animation: fadeIn 0.3s ease-in-out; }
+        .dashboard-header { margin-bottom: var(--spacing-xl); }
         .dashboard-header h1 {
-          font-size: 2rem;
-          font-weight: 700;
-          color: var(--gray-900);
-          margin-bottom: var(--spacing-xs);
+          font-size: 2rem; font-weight: 700;
+          color: var(--text-primary); margin-bottom: var(--spacing-xs);
         }
-
-        .kpi-card {
-          background: white;
-          border-radius: var(--radius-lg);
-          padding: var(--spacing-lg);
-          box-shadow: var(--shadow-sm);
-          transition: all var(--transition-base);
-        }
-
-        .kpi-card:hover {
-          box-shadow: var(--shadow-md);
-          transform: translateY(-2px);
-        }
-
-        .kpi-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: var(--spacing-md);
-        }
-
-        .kpi-icon {
-          width: 48px;
-          height: 48px;
-          border-radius: var(--radius-lg);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-        }
-
-        .kpi-icon-primary {
-          background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
-        }
-
-        .kpi-icon-secondary {
-          background: linear-gradient(135deg, var(--secondary-500), var(--secondary-600));
-        }
-
-        .kpi-icon-success {
-          background: linear-gradient(135deg, var(--success-500), var(--success-600));
-        }
-
-        .kpi-icon-warning {
-          background: linear-gradient(135deg, var(--warning-500), var(--warning-600));
-        }
-
-        .kpi-body {
-          margin-top: var(--spacing-md);
-        }
-
-        .kpi-value {
-          font-size: 1.875rem;
-          font-weight: 700;
-          color: var(--gray-900);
-          margin-bottom: 0.25rem;
-        }
-
-        .kpi-title {
-          font-size: 0.875rem;
-          color: var(--gray-600);
-          margin: 0;
-        }
-
         @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
         </div>

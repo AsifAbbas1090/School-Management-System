@@ -102,7 +102,7 @@ const TeacherDashboard = () => {
       {/* Quick Stats */}
       <div className="grid grid-cols-4 mb-xl">
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}>
+          <div className="stat-icon" style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-600))' }}>
             <BookOpen size={24} />
           </div>
           <div className="stat-content">
@@ -112,7 +112,7 @@ const TeacherDashboard = () => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}>
+          <div className="stat-icon" style={{ background: 'linear-gradient(135deg, var(--secondary-500), var(--secondary-600))' }}>
             <Users size={24} />
           </div>
           <div className="stat-content">
@@ -122,7 +122,7 @@ const TeacherDashboard = () => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
+          <div className="stat-icon" style={{ background: 'linear-gradient(135deg, var(--success-500), var(--success-600))' }}>
             <ClipboardCheck size={24} />
           </div>
           <div className="stat-content">
@@ -132,7 +132,7 @@ const TeacherDashboard = () => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
+          <div className="stat-icon" style={{ background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))' }}>
             <MessageSquare size={24} />
           </div>
           <div className="stat-content">
@@ -256,12 +256,13 @@ const TeacherDashboard = () => {
         .dashboard-header h1 {
           font-size: 2rem;
           font-weight: 700;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: var(--spacing-xs);
         }
 
         .stat-card {
-          background: white;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
           border-radius: var(--radius-lg);
           padding: var(--spacing-lg);
           box-shadow: var(--shadow-sm);
@@ -294,13 +295,13 @@ const TeacherDashboard = () => {
         .stat-value {
           font-size: 1.875rem;
           font-weight: 700;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: 0.25rem;
         }
 
         .stat-label {
           font-size: 0.875rem;
-          color: var(--gray-600);
+          color: var(--text-secondary);
           margin: 0;
         }
 
@@ -333,7 +334,7 @@ const TeacherDashboard = () => {
         .time-text {
           font-size: 0.875rem;
           font-weight: 600;
-          color: var(--gray-900);
+          color: var(--text-primary);
         }
 
         .status-badge {
@@ -360,13 +361,13 @@ const TeacherDashboard = () => {
         .schedule-class {
           font-size: 0.9375rem;
           font-weight: 600;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: 0.25rem;
         }
 
         .schedule-room {
           font-size: 0.8125rem;
-          color: var(--gray-600);
+          color: var(--text-secondary);
           margin: 0;
         }
 
@@ -379,7 +380,7 @@ const TeacherDashboard = () => {
         .task-item {
           padding: var(--spacing-md);
           border-radius: var(--radius-md);
-          border: 1px solid var(--gray-200);
+          border: 1px solid var(--border-color);
           transition: all var(--transition-base);
         }
 
@@ -415,7 +416,7 @@ const TeacherDashboard = () => {
 
         .priority-low {
           background: var(--gray-100);
-          color: var(--gray-700);
+          color: var(--text-primary);
         }
 
         .task-due {
@@ -425,7 +426,7 @@ const TeacherDashboard = () => {
 
         .task-text {
           font-size: 0.875rem;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin: 0;
         }
 
@@ -438,7 +439,7 @@ const TeacherDashboard = () => {
         .message-item {
           padding: var(--spacing-md);
           border-radius: var(--radius-md);
-          border: 1px solid var(--gray-200);
+          border: 1px solid var(--border-color);
           transition: all var(--transition-base);
         }
 
@@ -461,7 +462,7 @@ const TeacherDashboard = () => {
         .message-from {
           font-size: 0.875rem;
           font-weight: 600;
-          color: var(--gray-900);
+          color: var(--text-primary);
         }
 
         .message-time {
@@ -471,7 +472,7 @@ const TeacherDashboard = () => {
 
         .message-text {
           font-size: 0.875rem;
-          color: var(--gray-700);
+          color: var(--text-primary);
           margin: 0;
         }
 

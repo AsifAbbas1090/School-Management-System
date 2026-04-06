@@ -440,7 +440,7 @@ const LoginPage = () => {
         }
 
         .form-header p {
-          color: var(--gray-600);
+          color: var(--text-secondary);
           margin: 0;
           font-size: 1rem;
         }
@@ -514,7 +514,7 @@ const LoginPage = () => {
 
         .demo-item {
           font-size: 0.75rem;
-          color: var(--gray-700);
+          color: var(--text-primary);
           margin-bottom: 0.5rem;
           padding: 0.375rem 0;
           border-bottom: 1px solid rgba(102, 126, 234, 0.08);

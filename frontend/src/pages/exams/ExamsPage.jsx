@@ -842,7 +842,7 @@ const ExamsPage = () => {
                 .page-header h1 {
                     font-size: 2rem;
                     font-weight: 700;
-                    color: var(--gray-900);
+                    color: var(--text-primary);
                     margin-bottom: var(--spacing-xs);
                 }
 
@@ -872,7 +872,7 @@ const ExamsPage = () => {
                     gap: var(--spacing-md);
                     font-size: 1.125rem;
                     font-weight: 600;
-                    color: var(--gray-900);
+                    color: var(--text-primary);
                     margin-bottom: var(--spacing-md);
                 }
 

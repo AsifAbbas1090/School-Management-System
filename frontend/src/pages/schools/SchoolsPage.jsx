@@ -651,9 +651,9 @@ const SchoolsPage = () => {
                 }
 
                 .school-card {
-                    background: white;
+                    background: var(--bg-card);
                     border-radius: var(--radius-lg);
-                    border: 1px solid var(--gray-200);
+                    border: 1px solid var(--border-color);
                     overflow: hidden;
                     transition: all 0.3s ease;
                 }
@@ -735,13 +735,13 @@ const SchoolsPage = () => {
                 .school-name {
                     font-size: 1.5rem;
                     font-weight: 700;
-                    color: var(--gray-900);
+                    color: var(--text-primary);
                     margin-bottom: var(--spacing-sm);
                     line-height: 1.3;
                 }
 
                 .school-address {
-                    color: var(--gray-600);
+                    color: var(--text-secondary);
                     font-size: 0.875rem;
                     margin-bottom: var(--spacing-lg);
                     line-height: 1.5;
@@ -752,14 +752,14 @@ const SchoolsPage = () => {
                     gap: var(--spacing-lg);
                     margin-bottom: var(--spacing-lg);
                     padding-bottom: var(--spacing-lg);
-                    border-bottom: 1px solid var(--gray-200);
+                    border-bottom: 1px solid var(--border-color);
                 }
 
                 .school-stat {
                     display: flex;
                     align-items: center;
                     gap: var(--spacing-xs);
-                    color: var(--gray-700);
+                    color: var(--text-primary);
                     font-size: 0.875rem;
                 }
 
@@ -768,7 +768,7 @@ const SchoolsPage = () => {
                     padding: var(--spacing-lg);
                     border-radius: var(--radius-lg);
                     margin-bottom: var(--spacing-md);
-                    border: 1px solid var(--gray-200);
+                    border: 1px solid var(--border-color);
                 }
 
                 .subscription-row {
@@ -784,7 +784,7 @@ const SchoolsPage = () => {
 
                 .subscription-label {
                     font-size: 0.875rem;
-                    color: var(--gray-600);
+                    color: var(--text-secondary);
                 }
 
                 .subscription-amount {
@@ -795,21 +795,21 @@ const SchoolsPage = () => {
 
                 .subscription-date {
                     font-size: 0.875rem;
-                    color: var(--gray-700);
+                    color: var(--text-primary);
                 }
 
                 .school-admin {
                     background: linear-gradient(135deg, var(--gray-50) 0%, var(--gray-100) 100%);
                     padding: var(--spacing-lg);
                     border-radius: var(--radius-lg);
-                    border: 1px solid var(--gray-200);
+                    border: 1px solid var(--border-color);
                 }
 
                 .empty-state {
                     grid-column: 1 / -1;
                     text-align: center;
                     padding: var(--spacing-4xl) var(--spacing-xl);
-                    background: white;
+                    background: var(--bg-card);
                     border-radius: var(--radius-xl);
                     border: 2px dashed var(--gray-300);
                 }
@@ -829,13 +829,13 @@ const SchoolsPage = () => {
                 .empty-state-title {
                     font-size: 1.5rem;
                     font-weight: 700;
-                    color: var(--gray-900);
+                    color: var(--text-primary);
                     margin-bottom: var(--spacing-sm);
                 }
 
                 .empty-state-description {
                     font-size: 1rem;
-                    color: var(--gray-600);
+                    color: var(--text-secondary);
                     margin-bottom: var(--spacing-xl);
                     max-width: 400px;
                     margin-left: auto;
@@ -845,13 +845,13 @@ const SchoolsPage = () => {
                 .admin-label {
                     font-size: 0.875rem;
                     font-weight: 600;
-                    color: var(--gray-700);
+                    color: var(--text-primary);
                     margin-bottom: var(--spacing-sm);
                 }
 
                 .admin-credential {
                     font-size: 0.75rem;
-                    color: var(--gray-600);
+                    color: var(--text-secondary);
                     margin-bottom: var(--spacing-xs);
                 }
 
@@ -874,7 +874,7 @@ const SchoolsPage = () => {
                     flex-direction: column;
                     align-items: center;
                     gap: var(--spacing-md);
-                    color: var(--gray-600);
+                    color: var(--text-secondary);
                     cursor: pointer;
                     transition: color 0.2s ease;
                 }

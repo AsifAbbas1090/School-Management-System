@@ -289,7 +289,7 @@ const ExpensesPage = () => {
             {/* Summary Cards */}
             <div className="grid grid-cols-3 mb-xl gap-4">
                 <div className="stat-card">
-                    <div className="stat-icon bg-gradient-to-br from-red-500 to-red-600">
+                    <div className="stat-icon" style={{ background: 'linear-gradient(135deg, var(--error-500), var(--error-600))' }}>
                         <Receipt size={22} />
                     </div>
                     <div>
@@ -299,7 +299,7 @@ const ExpensesPage = () => {
                 </div>
 
                 <div className="stat-card">
-                    <div className="stat-icon bg-gradient-to-br from-slate-500 to-slate-600">
+                    <div className="stat-icon" style={{ background: 'linear-gradient(135deg, var(--gray-500), var(--gray-600))' }}>
                         <Filter size={22} />
                     </div>
                     <div>
@@ -309,7 +309,7 @@ const ExpensesPage = () => {
                 </div>
 
                 <div className="stat-card">
-                    <div className="stat-icon bg-gradient-to-br from-emerald-500 to-emerald-600">
+                    <div className="stat-icon" style={{ background: 'linear-gradient(135deg, var(--success-500), var(--success-600))' }}>
                         <ImageIcon size={22} />
                     </div>
                     <div>
@@ -603,19 +603,22 @@ const ExpensesPage = () => {
                 .page-header h1 {
                     font-size: 2rem;
                     font-weight: 700;
-                    color: var(--gray-900);
+                    color: var(--text-primary);
                     margin-bottom: var(--spacing-xs);
                 }
 
                 .stat-card {
-                    background: white;
+                    background: var(--bg-card);
+                    border: 1px solid var(--border-color);
                     border-radius: var(--radius-lg);
                     padding: var(--spacing-lg);
                     box-shadow: var(--shadow-sm);
                     display: flex;
                     gap: var(--spacing-md);
                     align-items: center;
+                    transition: box-shadow var(--transition-base);
                 }
+                .stat-card:hover { box-shadow: var(--shadow-md); }
 
                 .stat-icon {
                     width: 48px;
@@ -631,12 +634,12 @@ const ExpensesPage = () => {
                 .stat-value {
                     font-size: 1.5rem;
                     font-weight: 700;
-                    color: var(--gray-900);
+                    color: var(--text-primary);
                 }
 
                 .stat-label {
                     font-size: 0.875rem;
-                    color: var(--gray-600);
+                    color: var(--text-secondary);
                 }
 
                 .filters-grid {

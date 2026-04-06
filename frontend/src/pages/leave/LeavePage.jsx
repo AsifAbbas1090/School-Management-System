@@ -428,19 +428,22 @@ const LeavePage = () => {
         .page-header h1 {
           font-size: 2rem;
           font-weight: 700;
-          color: var(--gray-900);
+          color: var(--text-primary);
           margin-bottom: var(--spacing-xs);
         }
 
         .stat-card {
-          background: white;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
           border-radius: var(--radius-lg);
           padding: var(--spacing-lg);
           box-shadow: var(--shadow-sm);
           display: flex;
           gap: var(--spacing-md);
           align-items: center;
+          transition: box-shadow var(--transition-base);
         }
+        .stat-card:hover { box-shadow: var(--shadow-md); }
 
         .stat-icon {
           width: 56px;
@@ -456,12 +459,12 @@ const LeavePage = () => {
         .stat-value {
           font-size: 1.875rem;
           font-weight: 700;
-          color: var(--gray-900);
+          color: var(--text-primary);
         }
 
         .stat-label {
           font-size: 0.875rem;
-          color: var(--gray-600);
+          color: var(--text-secondary);
         }
 
         .filters-grid {
