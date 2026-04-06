@@ -553,7 +553,7 @@ const ExpensesPage = () => {
                                 <img
                                     src={formState.receiptImage}
                                     alt="Receipt preview"
-                                    className="h-24 rounded-md border border-gray-200 object-cover cursor-pointer"
+                                    style={{ height: "96px", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", objectFit: "cover", cursor: "pointer" }}
                                     onClick={() => openImagePreview(formState.receiptImage)}
                                 />
                             </div>

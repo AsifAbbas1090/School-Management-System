@@ -1467,3 +1467,16 @@ a:hover {
 [data-theme="dark"] .stat-label {
   color: var(--text-secondary);
 }
+/* ===========================
+   Hover utility classes
+   =========================== */
+.hover\:bg-gray-50:hover  { background: var(--gray-50); }
+.hover\:bg-primary-50:hover { background: var(--primary-50); }
+.hover\:border-primary-300:hover { border-color: var(--primary-300); }
+.hover\:text-primary-600:hover  { color: var(--primary-600); }
+.hover\:text-primary-700:hover  { color: var(--primary-700); }
+.hover\:text-error-200:hover    { color: var(--error-200); }
+.hover\:shadow-md:hover  { box-shadow: var(--shadow-md); }
+.transition-colors { transition: color var(--transition-base), background-color var(--transition-base), border-color var(--transition-base); }
+.transition-all    { transition: all var(--transition-base); }
+.cursor-pointer    { cursor: pointer; }
