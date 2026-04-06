@@ -153,14 +153,21 @@ const AdminDashboard = () => {
         { id: 5, type: 'exam', message: 'Midterm exam results published for Class 3', time: '2 days ago' },
     ];
 
+    const chartTooltipStyle = {
+        backgroundColor: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '8px',
+        fontSize: '0.8125rem',
+    };
+
     return (
-        <div className="dashboard-page">
+        <div style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
             <Breadcrumb items={breadcrumbItems} />
 
-            <div className="dashboard-header">
+            <div className="page-header" style={{ marginBottom: 'var(--spacing-xl)' }}>
                 <div>
-                    <h1>Admin Dashboard</h1>
-                    <p className="text-gray-600">Welcome back! Here's what's happening today.</p>
+                    <h1 className="page-title">Admin Dashboard</h1>
+                    <p className="page-subtitle">Welcome back, {user?.name?.split(' ')[0]}! Here's what's happening today.</p>
                 </div>
             </div>
 
@@ -172,7 +179,7 @@ const AdminDashboard = () => {
                         <div key={index} className="kpi-card">
                             <div className="kpi-header">
                                 <div className={`kpi-icon kpi-icon-${card.color}`}>
-                                    <Icon size={24} />
+                                    <Icon size={22} />
                                 </div>
                             </div>
                             <div className="kpi-body">
@@ -185,262 +192,119 @@ const AdminDashboard = () => {
                 })}
             </div>
 
-            {/* Charts Row */}
+            {/* Fee + Attendance Charts */}
             <div className="grid grid-cols-2 mb-xl">
-                {/* Monthly Fee Collection */}
                 <div className="card">
                     <div className="card-header">
-                        <h3 className="card-title">Monthly Fee Collection</h3>
+                        <h3 className="card-title">Fee Collection Overview</h3>
+                        <span className="badge badge-primary">This year</span>
                     </div>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={monthlyFeeData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                            <XAxis dataKey="month" stroke="#6b7280" />
-                            <YAxis stroke="#6b7280" />
-                            <Tooltip
-                                contentStyle={{
-                                    backgroundColor: 'white',
-                                    border: '1px solid #e5e7eb',
-                                    borderRadius: '8px',
-                                }}
-                            />
-                            <Legend />
-                            <Bar dataKey="collected" fill="#3b82f6" name="Collected" radius={[8, 8, 0, 0]} />
-                            <Bar dataKey="pending" fill="#f59e0b" name="Pending" radius={[8, 8, 0, 0]} />
+                    <ResponsiveContainer width="100%" height={280}>
+                        <BarChart data={monthlyFeeData} barGap={4}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fontSize: 12, fill: 'var(--gray-500)' }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 12, fill: 'var(--gray-500)' }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={chartTooltipStyle} />
+                            <Legend wrapperStyle={{ fontSize: '0.8125rem' }} />
+                            <Bar dataKey="collected" fill="var(--primary-500)" name="Collected" radius={[4,4,0,0]} />
+                            <Bar dataKey="pending"   fill="var(--warning-400, #fbbf24)" name="Pending"   radius={[4,4,0,0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
 
-                {/* Weekly Attendance */}
                 <div className="card">
                     <div className="card-header">
-                        <h3 className="card-title">Weekly Attendance Overview</h3>
+                        <h3 className="card-title">Weekly Attendance</h3>
+                        <span className="badge badge-green">This week</span>
                     </div>
-                    <ResponsiveContainer width="100%" height={300}>
+                    <ResponsiveContainer width="100%" height={280}>
                         <LineChart data={attendanceData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                            <XAxis dataKey="day" stroke="#6b7280" />
-                            <YAxis stroke="#6b7280" />
-                            <Tooltip
-                                contentStyle={{
-                                    backgroundColor: 'white',
-                                    border: '1px solid #e5e7eb',
-                                    borderRadius: '8px',
-                                }}
-                            />
-                            <Legend />
-                            <Line type="monotone" dataKey="present" stroke="#10b981" strokeWidth={2} name="Present" />
-                            <Line type="monotone" dataKey="absent" stroke="#ef4444" strokeWidth={2} name="Absent" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+                            <XAxis dataKey="day" tick={{ fontSize: 12, fill: 'var(--gray-500)' }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 12, fill: 'var(--gray-500)' }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={chartTooltipStyle} />
+                            <Legend wrapperStyle={{ fontSize: '0.8125rem' }} />
+                            <Line type="monotone" dataKey="present" stroke="var(--success-500)" strokeWidth={2.5} dot={false} name="Present" />
+                            <Line type="monotone" dataKey="absent"  stroke="var(--error-500)"   strokeWidth={2.5} dot={false} name="Absent" />
                         </LineChart>
                     </ResponsiveContainer>
                 </div>
             </div>
 
-            {/* Bottom Row */}
+            {/* Quick Stats Row */}
             <div className="grid grid-cols-3 mb-xl">
-                {/* Class Distribution */}
                 <div className="card">
                     <div className="card-header">
-                        <h3 className="card-title">Class Distribution</h3>
+                        <h3 className="card-title">Fee Summary</h3>
                     </div>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <PieChart>
-                            <Pie
-                                data={classDistribution}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                outerRadius={80}
-                                fill="#8884d8"
-                                dataKey="value"
-                            >
-                                {classDistribution.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-
-                {/* Recent Activities */}
-                <div className="card" style={{ gridColumn: 'span 2' }}>
-                    <div className="card-header">
-                        <h3 className="card-title">Recent Activities</h3>
-                    </div>
-                    <div className="activity-list">
-                        {recentActivities.map((activity) => (
-                            <div key={activity.id} className="activity-item">
-                                <div className="activity-dot"></div>
-                                <div className="activity-content">
-                                    <p className="activity-message">{activity.message}</p>
-                                    <span className="activity-time">{activity.time}</span>
-                                </div>
+                    <div className="space-y-md">
+                        {[
+                            { label: 'Collected', value: formatCurrency(stats?.feeCollected || 0), color: 'var(--success-600)' },
+                            { label: 'Pending',   value: formatCurrency(stats?.feePending   || 0), color: 'var(--warning-600)' },
+                            { label: 'Handed Over', value: formatCurrency(stats?.totalHandedOver || 0), color: 'var(--primary-600)' },
+                        ].map(row => (
+                            <div key={row.label} className="flex items-center justify-between" style={{ paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+                                <span className="text-sm text-gray-600">{row.label}</span>
+                                <span className="font-semibold text-sm" style={{ color: row.color }}>{row.value}</span>
                             </div>
                         ))}
                     </div>
                 </div>
+
+                <div className="card">
+                    <div className="card-header">
+                        <h3 className="card-title">Teacher Attendance</h3>
+                        <span className="badge badge-gray">This month</span>
+                    </div>
+                    <div style={{ marginBottom: '1rem' }}>
+                        <div className="flex items-center justify-between mb-sm">
+                            <span className="text-sm text-gray-600">Attendance Rate</span>
+                            <span className="font-bold" style={{ color: 'var(--primary-600)' }}>{stats?.teacherAttendanceRate || 0}%</span>
+                        </div>
+                        <div style={{ height: 8, background: 'var(--gray-100)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+                            <div style={{ width: `${stats?.teacherAttendanceRate || 0}%`, height: '100%', background: 'var(--primary-500)', borderRadius: 'var(--radius-full)', transition: 'width 0.6s ease' }} />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-md">
+                        <div className="text-center p-md rounded-lg bg-success-50">
+                            <div className="font-bold text-2xl" style={{ color: 'var(--success-600)' }}>{stats?.teacherAttendancePresent || 0}</div>
+                            <div className="text-xs text-gray-600">Present</div>
+                        </div>
+                        <div className="text-center p-md rounded-lg bg-error-50">
+                            <div className="font-bold text-2xl" style={{ color: 'var(--error-600)' }}>{stats?.teacherAttendanceAbsent || 0}</div>
+                            <div className="text-xs text-gray-600">Absent</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="card">
+                    <div className="card-header">
+                        <h3 className="card-title">Recent Handovers</h3>
+                    </div>
+                    {stats?.recentHandovers?.length > 0 ? (
+                        <div className="space-y-sm">
+                            {stats.recentHandovers.slice(0,4).map(h => (
+                                <div key={h.id} className="flex items-center justify-between text-sm">
+                                    <span className="text-gray-600" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>
+                                        {h.User?.name || 'Staff'}
+                                    </span>
+                                    <span className="font-semibold" style={{ color: 'var(--success-600)' }}>{formatCurrency(h.amountSubmitted)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-sm text-gray-500">No handovers yet</p>
+                    )}
+                </div>
             </div>
 
             <style>{`
-        .dashboard-page {
-          animation: fadeIn 0.3s ease-in-out;
-        }
-
-        .dashboard-header {
-          margin-bottom: var(--spacing-xl);
-        }
-
-        .dashboard-header h1 {
-          font-size: 2rem;
-          font-weight: 700;
-          color: var(--gray-900);
-          margin-bottom: var(--spacing-xs);
-        }
-
-        .kpi-card {
-          background: white;
-          border-radius: var(--radius-lg);
-          padding: var(--spacing-lg);
-          box-shadow: var(--shadow-sm);
-          transition: all var(--transition-base);
-        }
-
-        .kpi-card:hover {
-          box-shadow: var(--shadow-md);
-          transform: translateY(-2px);
-        }
-
-        .kpi-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: var(--spacing-md);
-        }
-
-        .kpi-icon {
-          width: 48px;
-          height: 48px;
-          border-radius: var(--radius-lg);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-        }
-
-        .kpi-icon-primary {
-          background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
-        }
-
-        .kpi-icon-secondary {
-          background: linear-gradient(135deg, var(--secondary-500), var(--secondary-600));
-        }
-
-        .kpi-icon-success {
-          background: linear-gradient(135deg, var(--success-500), var(--success-600));
-        }
-
-        .kpi-icon-warning {
-          background: linear-gradient(135deg, var(--warning-500), var(--warning-600));
-        }
-
-        .kpi-trend {
-          display: flex;
-          align-items: center;
-          gap: 0.25rem;
-          font-size: 0.875rem;
-          font-weight: 600;
-          padding: 0.25rem 0.5rem;
-          border-radius: var(--radius-md);
-        }
-
-        .trend-up {
-          color: var(--success-600);
-          background: var(--success-50);
-        }
-
-        .trend-down {
-          color: var(--error-600);
-          background: var(--error-50);
-        }
-
-        .kpi-body {
-          margin-top: var(--spacing-md);
-        }
-
-        .kpi-value {
-          font-size: 1.875rem;
-          font-weight: 700;
-          color: var(--gray-900);
-          margin-bottom: 0.25rem;
-        }
-
-        .kpi-title {
-          font-size: 0.875rem;
-          color: var(--gray-600);
-          margin: 0;
-        }
-
-        .kpi-sublabel {
-          font-size: 0.75rem;
-          color: var(--gray-400);
-          margin-top: 2px;
-        }
-
-        .activity-list {
-          display: flex;
-          flex-direction: column;
-          gap: var(--spacing-md);
-        }
-
-        .activity-item {
-          display: flex;
-          gap: var(--spacing-md);
-          padding-bottom: var(--spacing-md);
-          border-bottom: 1px solid var(--gray-200);
-        }
-
-        .activity-item:last-child {
-          border-bottom: none;
-          padding-bottom: 0;
-        }
-
-        .activity-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: var(--radius-full);
-          background: var(--primary-500);
-          margin-top: 0.5rem;
-          flex-shrink: 0;
-        }
-
-        .activity-content {
-          flex: 1;
-        }
-
-        .activity-message {
-          font-size: 0.875rem;
-          color: var(--gray-900);
-          margin-bottom: 0.25rem;
-        }
-
-        .activity-time {
-          font-size: 0.75rem;
-          color: var(--gray-500);
-        }
-
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(8px); }
+                    to   { opacity: 1; transform: translateY(0); }
+                }
+                .card-header { display: flex; align-items: center; justify-content: space-between; }
+            `}</style>
         </div>
     );
 };
