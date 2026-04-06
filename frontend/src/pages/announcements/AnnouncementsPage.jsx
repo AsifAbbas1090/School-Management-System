@@ -122,7 +122,7 @@ const AnnouncementsPage = () => {
 
             <div className="page-header">
                 <div>
-                    <h1>Announcements</h1>
+                    <h1 className="page-title">Announcements</h1>
                     <p className="text-gray-600">
                         {isAuthorized
                             ? 'Create and manage school announcements'

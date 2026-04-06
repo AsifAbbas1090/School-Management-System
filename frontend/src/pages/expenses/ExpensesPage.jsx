@@ -275,7 +275,7 @@ const ExpensesPage = () => {
 
             <div className="page-header">
                 <div>
-                    <h1>Expenses</h1>
+                    <h1 className="page-title">Expenses</h1>
                     <p className="text-gray-600">
                         Track operational expenses with optional receipt images.
                     </p>

@@ -383,7 +383,7 @@ const ExamsPage = () => {
 
             <div className="page-header">
                 <div>
-                    <h1>Exams & Results</h1>
+                    <h1 className="page-title">Exams & Results</h1>
                     <p className="text-gray-600">
                         {user?.role === USER_ROLES.TEACHER
                             ? `Manage exams and enter marks for: ${teacherSubjects.join(', ') || 'No subjects assigned'}`

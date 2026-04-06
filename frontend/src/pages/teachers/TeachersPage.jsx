@@ -311,7 +311,7 @@ const TeachersPage = () => {
 
             <div className="page-header">
                 <div>
-                    <h1>Teachers Management</h1>
+                    <h1 className="page-title">Teachers Management</h1>
                     <p className="text-gray-600">Manage all teacher records and assignments</p>
                 </div>
                 <div className="flex gap-md">

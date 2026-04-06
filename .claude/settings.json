@@ -3,7 +3,13 @@
     "allow": [
       "Read(//c/Users/AQL/.claude/projects/d--School-Management-System/memory/**)",
       "Bash(npx prisma:*)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(grep -l \"monthlyFeeData\\\\|attendanceData\\\\|classDistribution\\\\|COLORS\\\\|recentActivities\" /d/School-Management-System/frontend/src/pages/**/*.jsx)",
+      "Bash(sed -i 's/border-bottom: 1px solid var\\(--gray-200\\)/border-bottom: 1px solid var\\(--border-color\\)/g' frontend/src/pages/messaging/MessagesPage.jsx frontend/src/pages/schools/SchoolsPage.jsx)",
+      "Bash(sed -i 's/border-top: 1px solid var\\(--gray-200\\)/border-top: 1px solid var\\(--border-color\\)/g' frontend/src/pages/messaging/MessagesPage.jsx frontend/src/pages/schools/SchoolsPage.jsx)",
+      "Bash(sed -i 's/color: var\\(--gray-900\\);/color: var\\(--text-primary\\);/g' frontend/src/pages/dashboard/TeacherDashboard.jsx frontend/src/pages/dashboard/ManagementDashboard.jsx frontend/src/pages/dashboard/ParentDashboard.jsx)",
+      "Bash(sed -i 's/color: var\\(--gray-600\\);/color: var\\(--text-secondary\\);/g' frontend/src/pages/dashboard/TeacherDashboard.jsx frontend/src/pages/dashboard/ManagementDashboard.jsx frontend/src/pages/dashboard/ParentDashboard.jsx)",
+      "Bash(find frontend/src/pages -name \"*.jsx\" -exec sed -i 's/color: var\\(--gray-900\\)/color: var\\(--text-primary\\)/g; s/color: var\\(--gray-700\\)/color: var\\(--text-primary\\)/g; s/color: var\\(--gray-600\\)/color: var\\(--text-secondary\\)/g' {} \\\\;)"
     ]
   }
 }

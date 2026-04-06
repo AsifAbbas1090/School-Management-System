@@ -115,7 +115,7 @@ const MessagesPage = () => {
 
       <div className="page-header">
         <div>
-          <h1>Messages</h1>
+          <h1 className="page-title">Messages</h1>
           <p className="text-gray-600">Internal communication system</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowComposeModal(true)}>

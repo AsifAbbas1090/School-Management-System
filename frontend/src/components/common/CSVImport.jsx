@@ -369,7 +369,7 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
 
         .column-badge {
           padding: 0.25rem 0.75rem;
-          background: white;
+          background: var(--bg-card);
           border: 1px solid var(--gray-300);
           border-radius: var(--radius-full);
           font-size: 0.75rem;
@@ -467,7 +467,7 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
         .preview-table {
           width: 100%;
           border-collapse: collapse;
-          background: white;
+          background: var(--bg-card);
           border-radius: var(--radius-md);
           overflow: hidden;
         }

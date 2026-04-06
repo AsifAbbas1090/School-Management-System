@@ -484,7 +484,7 @@ const ParentsPage = () => {
 
             <div className="page-header">
                 <div>
-                    <h1>Parents Management</h1>
+                    <h1 className="page-title">Parents Management</h1>
                     <p className="text-gray-600">Manage parent accounts and student linkages</p>
                 </div>
                 <div className="flex gap-md">

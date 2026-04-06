@@ -599,7 +599,7 @@ const StudentsPage = () => {
 
             <div className="page-header">
                 <div>
-                    <h1>Students Management</h1>
+                    <h1 className="page-title">Students Management</h1>
                     <p className="text-gray-600">Manage all student records and parents</p>
                 </div>
                 <div className="flex gap-md">

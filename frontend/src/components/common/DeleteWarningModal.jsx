@@ -62,7 +62,7 @@ const DeleteWarningModal = ({
 
                 <style>{`
                     .delete-warning-modal {
-                        background: white;
+                        background: var(--bg-card);
                         border-radius: var(--radius-lg);
                         box-shadow: var(--shadow-2xl);
                         max-width: 500px;

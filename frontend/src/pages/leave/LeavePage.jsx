@@ -170,7 +170,7 @@ const LeavePage = () => {
 
             <div className="page-header">
                 <div>
-                    <h1>Leave Management</h1>
+                    <h1 className="page-title">Leave Management</h1>
                     <p className="text-gray-600">
                         {isAdminOrSuperAdmin 
                             ? 'Approve and manage leave applications' 

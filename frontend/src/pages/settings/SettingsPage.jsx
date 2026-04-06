@@ -84,7 +84,7 @@ const SettingsPage = () => {
 
             <div className="page-header">
                 <div>
-                    <h1>Settings</h1>
+                    <h1 className="page-title">Settings</h1>
                     <p className="text-gray-600">Configure system settings and preferences</p>
                 </div>
             </div>
