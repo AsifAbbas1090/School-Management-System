@@ -635,7 +635,7 @@ const SchoolsPage = () => {
                 }
                 .stat-primary .stat-icon-wrapper { background: var(--primary-100); color: var(--primary-600); }
                 .stat-success .stat-icon-wrapper { background: var(--success-100); color: var(--success-600); }
-                .stat-info .stat-icon-wrapper { background: #dbeafe; color: #2563eb; }
+                .stat-info .stat-icon-wrapper { background: var(--primary-100); color: var(--primary-700); }
                 .stat-warning .stat-icon-wrapper { background: var(--warning-100); color: var(--warning-600); }
 
                 .stat-content { flex: 1; min-width: 0; }

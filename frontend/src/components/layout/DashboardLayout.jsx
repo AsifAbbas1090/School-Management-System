@@ -62,14 +62,16 @@ const DashboardLayout = () => {
         toastOptions={{
           duration: 3000,
           style: {
-            background: 'white',
-            color: 'var(--gray-900)',
+            background: 'var(--bg-card)',
+            color: 'var(--text-primary)',
             boxShadow: 'var(--shadow-lg)',
             borderRadius: 'var(--radius-lg)',
             padding: 'var(--spacing-md)',
+            border: '1px solid var(--border-color)',
+            fontSize: '0.875rem',
           },
-          success: { iconTheme: { primary: 'var(--success-500)', secondary: 'white' } },
-          error: { iconTheme: { primary: 'var(--error-500)', secondary: 'white' } },
+          success: { iconTheme: { primary: 'var(--success-500)', secondary: 'var(--bg-card)' } },
+          error: { iconTheme: { primary: 'var(--error-500)', secondary: 'var(--bg-card)' } },
         }}
       />
 
@@ -77,7 +79,7 @@ const DashboardLayout = () => {
         .dashboard-layout {
           display: flex;
           min-height: 100vh;
-          background: var(--gray-50);
+          background: var(--bg-body);
         }
 
         .main-content {
