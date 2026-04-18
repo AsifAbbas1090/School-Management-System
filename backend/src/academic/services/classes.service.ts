@@ -37,7 +37,7 @@ export class ClassesService {
   }
 
   async findAll(schoolId: string, query: AcademicQueryDto) {
-    const { search, page = 1, pageSize = 10 } = query;
+    const { search, page = 1, pageSize = 50 } = query;
     const skip = (page - 1) * pageSize;
 
     const where: any = {

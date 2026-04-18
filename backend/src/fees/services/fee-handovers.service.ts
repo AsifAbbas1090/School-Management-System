@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateFeeHandoverDto } from '../dto/create-fee-handover.dto';
@@ -48,11 +49,13 @@ export class FeeHandoversService {
 
     const handover = await this.prisma.feeHandover.create({
       data: {
+        id: randomUUID(),
         schoolId,
         submittedById,
         amountSubmitted,
         totalCollectedAtTime: totalCollectedAmount,
         backupAmount,
+        updatedAt: new Date(),
       } as Prisma.FeeHandoverUncheckedCreateInput,
       include: {
         User: {

@@ -370,6 +370,12 @@ cd frontend && npm run dev
 • Restricted access based on assignments
 </td>
 </tr>
+<tr>
+<td><strong>🎓 Student</strong></td>
+<td>
+<strong>Login not yet active.</strong> A dedicated student portal is deferred (see <a href="./FUTURE_PLAN.md">FUTURE_PLAN.md</a> Phase 3-D). The STUDENT role exists for future use; do not rely on it for production access until that phase ships.
+</td>
+</tr>
 </table>
 
 </div>
@@ -459,39 +465,9 @@ Financial expense tracking
 
 ## 🧪 Testing
 
-### 🔌 Backend API Testing
+Run tests with `npm run test` in `backend/`.
 
-<div align="center">
-
-**Test the API using curl commands or the interactive Swagger UI:**
-
-```bash
-# 🔐 User Authentication
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@school.com","password":"admin123"}'
-
-# 👤 Retrieve Current User Profile
-curl -X GET http://localhost:3000/api/auth/me \
-  -H "Authorization: Bearer <token>"
-```
-
-</div>
-
-### 🎨 Frontend Testing
-
-<div align="center">
-
-**Testing Checklist:**
-
-1. ✅ Authenticate using default login credentials
-2. ✅ Create a new school instance (Super Admin role)
-3. ✅ Sign in as Admin or Management user
-4. ✅ Add test data (students, teachers, parents)
-5. ✅ Verify fee management workflows
-6. ✅ Validate additional system features
-
-</div>
+Integration tests cover: auth, leave, exams, parent scoping, fee scoping.
 
 ---
 

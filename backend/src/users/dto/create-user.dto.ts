@@ -1,6 +1,15 @@
-import { IsString, IsNotEmpty, IsEmail, IsOptional, IsEnum, IsNumber } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEmail,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  IsArray,
+  IsDateString,
+} from 'class-validator';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { Gender, UserStatus } from '@prisma/client';
 
 export class CreateParentDto {
   @ApiProperty({ example: 'parent@example.com' })
@@ -59,6 +68,32 @@ export class CreateTeacherDto {
   @IsNumber()
   @IsOptional()
   salary?: number;
+
+  @ApiPropertyOptional({ enum: Gender, example: Gender.FEMALE })
+  @IsEnum(Gender)
+  @IsOptional()
+  gender?: Gender;
+
+  @ApiPropertyOptional({ example: '1990-05-15' })
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({ example: '123 Main St' })
+  @IsString()
+  @IsOptional()
+  address?: string;
+
+  @ApiPropertyOptional({ example: '2024-01-01' })
+  @IsOptional()
+  @IsDateString()
+  joiningDate?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Subject record IDs assigned to this teacher' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  subjectIds?: string[];
 }
 
 export class CreateManagementDto {
@@ -83,8 +118,17 @@ export class CreateManagementDto {
   phone?: string;
 }
 
+/** PATCH /school/users/:id — all fields optional (password only applied when sent). */
+export class UpdateUserDto extends PartialType(CreateTeacherDto) {
+  @ApiPropertyOptional({ enum: UserStatus })
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
 
-
-
+  @ApiPropertyOptional({ example: 'Engineer' })
+  @IsString()
+  @IsOptional()
+  occupation?: string;
+}
 
 

@@ -35,7 +35,7 @@ export class LeaveController {
   constructor(private readonly leaveService: LeaveService) {}
 
   @Post()
-  @Roles(UserRole.TEACHER, UserRole.PARENT)
+  @Roles(UserRole.TEACHER, UserRole.SUPPORT_STAFF, UserRole.PARENT)
   @ApiOperation({ summary: 'Create a leave request (Teacher for self, Parent for child)' })
   @ApiResponse({ status: 201, description: 'Leave request created successfully' })
   async create(
@@ -47,7 +47,7 @@ export class LeaveController {
   }
 
   @Get('my')
-  @Roles(UserRole.TEACHER, UserRole.PARENT, UserRole.ADMIN, UserRole.MANAGEMENT)
+  @Roles(UserRole.TEACHER, UserRole.SUPPORT_STAFF, UserRole.PARENT, UserRole.ADMIN, UserRole.MANAGEMENT)
   @ApiOperation({ summary: 'Get current user\'s leave requests' })
   @ApiResponse({ status: 200, description: 'Leave requests retrieved successfully' })
   async findMyRequests(
@@ -70,7 +70,7 @@ export class LeaveController {
   }
 
   @Get(':id')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.PARENT)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF, UserRole.PARENT)
   @ApiOperation({ summary: 'Get a leave request by ID' })
   @ApiResponse({ status: 200, description: 'Leave request retrieved successfully' })
   async findOne(

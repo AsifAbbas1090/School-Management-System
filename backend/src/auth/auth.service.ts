@@ -1,3 +1,21 @@
+/**
+ * Token lifecycle (JWT)
+ * ----------------------
+ * Access token:
+ *   - TTL: JWT_ACCESS_EXPIRES_IN (default: 15m) — see JwtModule + login/refresh sign options.
+ *   - Payload: sub, email, role, schoolId (SUPER_ADMIN → schoolId null in token).
+ * Refresh token:
+ *   - TTL: JWT_REFRESH_EXPIRES_IN (default: 7d) — set only on login (and optional rotation elsewhere).
+ *   - Same payload shape as access; verified with JWT_SECRET to issue a new access token.
+ *
+ * Frontend storage (SPA):
+ *   - localStorage key: "auth-storage" (Zustand persist).
+ *   - Paths: state.user.accessToken, state.user.refreshToken (legacy: root user.* may exist).
+ *
+ * Auth & school context:
+ * SUPER_ADMIN has schoolId=null in the JWT. For @SchoolContext(), callers must pass schoolId in
+ * query/body when acting on a specific school. Missing schoolId → 400 from SchoolContext decorator.
+ */
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,8 +34,6 @@ export class AuthService {
     const { email, password, schoolId } = loginDto;
 
     try {
-      // Find user by email
-      console.log(`[AUTH] Attempting login for email: ${email}`);
       const user = await this.prisma.user.findUnique({
         where: { email: email.toLowerCase().trim() },
         include: { School: true },
@@ -27,25 +43,17 @@ export class AuthService {
         console.error(`[AUTH] Login failed: User not found for email: ${email}`);
         throw new UnauthorizedException('Invalid credentials');
       }
-      
-      console.log(`[AUTH] User found: ${user.email}, role: ${user.role}, status: ${user.status}`);
 
-      // Verify password
-      console.log(`[AUTH] Verifying password for user: ${user.email}`);
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
         console.error(`[AUTH] Login failed: Invalid password for email: ${email}`);
         throw new UnauthorizedException('Invalid credentials');
       }
-      console.log(`[AUTH] Password verified successfully for user: ${user.email}`);
 
-      // Check user status
       if (user.status !== 'ACTIVE') {
         throw new UnauthorizedException('Account is not active');
       }
 
-      // If schoolId provided, verify user belongs to that school
-      // Handle null/undefined explicitly
       if (schoolId && schoolId !== null && schoolId !== 'null') {
         if (user.role === UserRole.SUPER_ADMIN) {
           throw new BadRequestException('Super admin cannot login with school context');
@@ -54,13 +62,11 @@ export class AuthService {
           throw new UnauthorizedException('User does not belong to this school');
         }
       } else {
-        // If no schoolId provided, super_admin can login, but others must have schoolId
         if (user.role !== UserRole.SUPER_ADMIN && !user.schoolId) {
           throw new BadRequestException('School context required for this user');
         }
       }
 
-      // Generate tokens
       const payload = {
         sub: user.id,
         email: user.email,
@@ -68,7 +74,6 @@ export class AuthService {
         schoolId: user.schoolId,
       };
 
-      console.log('[AUTH] Generating tokens for user:', user.email);
       const accessToken = this.jwtService.sign(payload, {
         expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
       });
@@ -77,12 +82,9 @@ export class AuthService {
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
       });
 
-      console.log('[AUTH] Tokens generated successfully for user:', user.email);
-
-      // Return user data (excluding password)
       const { password: _, ...userWithoutPassword } = user;
 
-      const response = {
+      return {
         accessToken,
         refreshToken,
         user: {
@@ -96,17 +98,53 @@ export class AuthService {
           schoolId: userWithoutPassword.schoolId,
         },
       };
-
-      console.log('[AUTH] Returning response for user:', user.email);
-      return response;
     } catch (error) {
-      // Re-throw known exceptions
       if (error instanceof UnauthorizedException || error instanceof BadRequestException) {
         throw error;
       }
-      // Log unexpected errors and throw generic message
       console.error('Login error:', error);
       throw new UnauthorizedException('Login failed. Please try again.');
+    }
+  }
+
+  /**
+   * Exchange a valid refresh token for a new access token (same user, re-validated in DB).
+   */
+  async refresh(refreshToken: string) {
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      throw new UnauthorizedException('Refresh token required');
+    }
+
+    try {
+      const decoded = this.jwtService.verify<{ sub: string; email: string; role: UserRole; schoolId: string | null }>(
+        refreshToken,
+      );
+      const user = await this.validateUser(decoded.sub);
+      if (!user) {
+        throw new UnauthorizedException('User no longer valid');
+      }
+
+      const payload = {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        schoolId: user.schoolId,
+      };
+
+      const accessToken = this.jwtService.sign(payload, {
+        expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
+      });
+
+      return { accessToken };
+    } catch (err: any) {
+      if (err?.name === 'TokenExpiredError' || err?.name === 'JsonWebTokenError') {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+      if (err instanceof UnauthorizedException) {
+        throw err;
+      }
+      console.error('[AUTH] Refresh error:', err);
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
   }
 
@@ -124,4 +162,3 @@ export class AuthService {
     return userWithoutPassword;
   }
 }
-

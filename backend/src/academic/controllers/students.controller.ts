@@ -15,6 +15,7 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -27,6 +28,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from '../services/students.service';
 import { CreateStudentDto } from '../dto/create-student.dto';
 import { UpdateStudentDto } from '../dto/update-student.dto';
+import { BulkUpdateParentDto } from '../dto/bulk-update-parent.dto';
 import { AcademicQueryDto } from '../dto/query.dto';
 import { CsvImportResponseDto } from '../dto/csv-import.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -36,6 +38,7 @@ import { SchoolContext } from '../decorators/school-context.decorator';
 import { SchoolGuard } from '../guards/school-guard.guard';
 import { UserRole } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 
 @ApiTags('Academic - Students')
 @Controller('school/students')
@@ -63,34 +66,33 @@ export class StudentsController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
-          new FileTypeValidator({ fileType: 'text/csv' }),
+          // Browsers / Excel often send CSV as application/vnd.ms-excel or text/plain — not only text/csv
+          new FileTypeValidator({
+            // CSV has no reliable magic bytes — without this, file-type returns null and every CSV fails.
+            skipMagicNumbersValidation: true,
+            fileType:
+              /(text\/csv|application\/csv|application\/vnd\.ms-excel|text\/plain|application\/octet-stream)/i,
+          }),
         ],
       }),
     )
     file: Express.Multer.File,
   ): Promise<CsvImportResponseDto> {
-    const fileContent = file.buffer.toString('utf-8');
-    const records = parse(fileContent, {
+    const raw = file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
+    if (!raw.trim()) {
+      throw new BadRequestException('CSV file is empty');
+    }
+    const records = parse(raw, {
       columns: true,
       skip_empty_lines: true,
       trim: true,
-    });
+    }) as Record<string, unknown>[];
 
-    const students: CreateStudentDto[] = records.map((record: any) => ({
-      classId: record.classId,
-      sectionId: record.sectionId,
-      rollNumber: record.rollNumber,
-      name: record.name,
-      gender: record.gender.toUpperCase(),
-      dateOfBirth: record.dateOfBirth,
-      parentId: record.parentId || undefined,
-      status: record.status?.toUpperCase() || undefined,
-      address: record.address || undefined,
-      phone: record.phone || undefined,
-      email: record.email || undefined,
-    }));
+    if (!records.length) {
+      throw new BadRequestException('CSV has no data rows (check headers and content)');
+    }
 
-    return this.studentsService.bulkImport(schoolId, students);
+    return this.studentsService.bulkImport(schoolId, records);
   }
 
   @Get()
@@ -98,6 +100,42 @@ export class StudentsController {
   @ApiResponse({ status: 200, description: 'Students retrieved successfully' })
   async findAll(@SchoolContext() schoolId: string, @Query() query: AcademicQueryDto) {
     return this.studentsService.findAll(schoolId, query);
+  }
+
+  @Get('count')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @ApiOperation({ summary: 'Total students in the current school (no list payload)' })
+  @ApiResponse({ status: 200, description: 'Count retrieved successfully' })
+  async getSchoolStudentCount(@SchoolContext() schoolId: string) {
+    return this.studentsService.countBySchool(schoolId);
+  }
+
+  @Get('for-parents-ui')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
+  @ApiOperation({ summary: 'Minimal student rows for Parents page (names, class, parent links)' })
+  async getForParentsUi(@SchoolContext() schoolId: string) {
+    return this.studentsService.findMinimalForParentsUi(schoolId);
+  }
+
+  @Get('my-children')
+  @Roles(UserRole.PARENT)
+  @ApiOperation({ summary: 'List students linked to the current parent (same school)' })
+  @ApiResponse({ status: 200, description: 'Children retrieved successfully' })
+  async getMyChildren(
+    @SchoolContext() schoolId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.studentsService.findByParentId(schoolId, user.id);
+  }
+
+  @Patch('bulk-update-parent')
+  @ApiOperation({ summary: 'Bulk assign or clear parent for students in this school' })
+  @ApiResponse({ status: 200, description: 'Students updated' })
+  async bulkUpdateParent(
+    @SchoolContext() schoolId: string,
+    @Body() body: BulkUpdateParentDto,
+  ) {
+    return this.studentsService.bulkUpdateParent(schoolId, body);
   }
 
   @Get(':id')

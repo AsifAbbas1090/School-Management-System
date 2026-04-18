@@ -1,12 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { useLeaveStore, useAuthStore, useStudentsStore } from '../../store';
-import { leaveService, studentsService } from '../../services/api';
-import { formatDate, getRelativeTime } from '../../utils';
+import { leaveService } from '../../services/api';
+import { formatDate } from '../../utils';
 import { USER_ROLES } from '../../constants';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
+
+/** Normalize Prisma leave row for table display */
+function mapLeaveRow(l) {
+    if (!l) return l;
+    const u = l.User_LeaveRequest_requestedByUserIdToUser;
+    return {
+        ...l,
+        userName: u?.name ?? '—',
+        userRole: u?.role ?? l.role,
+        leaveType: l.type,
+        startDate: l.fromDate,
+        endDate: l.toDate,
+    };
+}
 
 const LeavePage = () => {
     const { user } = useAuthStore();
@@ -15,11 +29,11 @@ const LeavePage = () => {
     const [showModal, setShowModal] = useState(false);
     const [filterStatus, setFilterStatus] = useState('');
     const [formData, setFormData] = useState({
-        leaveType: 'sick',
+        leaveType: 'SICK',
         startDate: '',
         endDate: '',
         reason: '',
-        studentId: '', // For parents applying for children
+        studentId: '',
     });
 
     const breadcrumbItems = [
@@ -27,81 +41,71 @@ const LeavePage = () => {
         { label: 'Leave Management', path: null },
     ];
 
-    // Normalize role to uppercase for comparison
     const userRole = user?.role?.toUpperCase();
-    
-    // Admin and SUPER_ADMIN can only approve/reject (no request)
-    const canApprove = [
-        USER_ROLES.ADMIN, 
-        USER_ROLES.SUPER_ADMIN, 
-        USER_ROLES.MANAGEMENT
-    ].includes(userRole);
-    
-    // Only Admin and SUPER_ADMIN cannot request leave (they are top authority)
-    const isAdminOrSuperAdmin = [
-        USER_ROLES.ADMIN, 
-        USER_ROLES.SUPER_ADMIN
-    ].includes(userRole);
-    
-    // Management, Teachers, Parents, and Support Staff can request leave
-    const canRequestLeave = !isAdminOrSuperAdmin;
-    
-    const isParent = userRole === USER_ROLES.PARENT;
-    const isTeacher = userRole === USER_ROLES.TEACHER;
 
-    const loadData = async () => {
+    const canApprove = [
+        USER_ROLES.SUPER_ADMIN,
+        USER_ROLES.ADMIN,
+        USER_ROLES.MANAGEMENT,
+    ].includes(userRole);
+
+    const canRequestLeave = [USER_ROLES.TEACHER, USER_ROLES.SUPPORT_STAFF, USER_ROLES.PARENT].includes(userRole);
+
+    const isParent = userRole === USER_ROLES.PARENT;
+
+    const loadData = useCallback(async () => {
         try {
-            const response = await leaveService.getAll();
+            const response = canApprove
+                ? await leaveService.getPendingLeave({ pageSize: 100 })
+                : await leaveService.getMyLeave({ pageSize: 100 });
+
             if (response.success && response.data) {
-                const leavesData = response.data.data || response.data;
-                if (Array.isArray(leavesData)) {
-                    setLeaves(leavesData);
-                }
+                const body = response.data;
+                const raw = Array.isArray(body.data) ? body.data : [];
+                setLeaves(raw.map(mapLeaveRow));
             }
         } catch (error) {
             console.error('Failed to load leaves:', error);
         }
-    };
+    }, [canApprove, setLeaves]);
 
     useEffect(() => {
         loadData();
-    }, []);
+    }, [loadData]);
 
     const handleApprove = async (leaveId) => {
         try {
-            const response = await leaveService.update(leaveId, { status: 'APPROVED' });
+            const response = await leaveService.approveLeave(leaveId);
             if (response.success && response.data) {
-                updateLeave(leaveId, response.data);
+                updateLeave(leaveId, mapLeaveRow(response.data));
                 toast.success('Leave approved');
                 loadData();
             } else {
                 toast.error(response.error || 'Failed to approve leave');
             }
         } catch (error) {
-            // Silently handle errors - toast shows user message
             toast.error('Failed to approve leave');
         }
     };
 
     const handleReject = async (leaveId) => {
         try {
-            const response = await leaveService.update(leaveId, { status: 'REJECTED' });
+            const response = await leaveService.rejectLeave(leaveId);
             if (response.success && response.data) {
-                updateLeave(leaveId, response.data);
+                updateLeave(leaveId, mapLeaveRow(response.data));
                 toast.success('Leave rejected');
                 loadData();
             } else {
                 toast.error(response.error || 'Failed to reject leave');
             }
         } catch (error) {
-            // Silently handle errors - toast shows user message
             toast.error('Failed to reject leave');
         }
     };
 
     const handleFormChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleSubmitLeave = async (e) => {
@@ -113,26 +117,24 @@ const LeavePage = () => {
         }
 
         try {
-            // For teachers, don't send studentId (they request for themselves)
             const leaveData = {
-                type: formData.leaveType.toUpperCase(),
+                type: formData.leaveType,
                 fromDate: formData.startDate,
                 toDate: formData.endDate,
                 reason: formData.reason,
             };
 
-            // Only add studentId for parents
             if (isParent && formData.studentId) {
                 leaveData.requestedForStudentId = formData.studentId;
             }
 
-            const response = await leaveService.create(leaveData);
+            const response = await leaveService.createLeave(leaveData);
             if (response.success && response.data) {
-                addLeave(response.data);
+                addLeave(mapLeaveRow(response.data));
                 toast.success('Leave request submitted successfully');
                 setShowModal(false);
                 setFormData({
-                    leaveType: 'sick',
+                    leaveType: 'SICK',
                     startDate: '',
                     endDate: '',
                     reason: '',
@@ -143,26 +145,23 @@ const LeavePage = () => {
                 toast.error(response.error || 'Failed to submit leave request');
             }
         } catch (error) {
-            // Silently handle errors - toast shows user message
             toast.error('Failed to submit leave request');
         }
     };
 
-    // Filter logic: Admins/Management see all, users see their own
-    const visibleLeaves = leaves.filter(leave => {
-        const matchesStatus = !filterStatus || leave.status?.toLowerCase() === filterStatus.toLowerCase();
-        const matchesUser = canApprove || leave.userId === user?.id;
-        return matchesStatus && matchesUser;
+    const visibleLeaves = leaves.filter((leave) => {
+        const st = leave.status?.toLowerCase() || '';
+        const matchesStatus = !filterStatus || st === filterStatus.toLowerCase();
+        return matchesStatus;
     });
 
     const stats = {
-        pending: visibleLeaves.filter(l => l.status?.toLowerCase() === 'pending').length,
-        approved: visibleLeaves.filter(l => l.status?.toLowerCase() === 'approved').length,
-        rejected: visibleLeaves.filter(l => l.status?.toLowerCase() === 'rejected').length,
+        pending: visibleLeaves.filter((l) => l.status?.toLowerCase() === 'pending').length,
+        approved: visibleLeaves.filter((l) => l.status?.toLowerCase() === 'approved').length,
+        rejected: visibleLeaves.filter((l) => l.status?.toLowerCase() === 'rejected').length,
     };
 
-    // For parent: find their children from students store
-    const myChildren = isParent ? students.filter(s => s.parentId === user?.id) : [];
+    const myChildren = isParent ? students.filter((s) => s.parentId === user?.id) : [];
 
     return (
         <div className="leave-page">
@@ -172,12 +171,11 @@ const LeavePage = () => {
                 <div>
                     <h1 className="page-title">Leave Management</h1>
                     <p className="text-gray-600">
-                        {isAdminOrSuperAdmin 
-                            ? 'Approve and manage leave applications' 
-                            : canApprove 
-                                ? 'Manage and approve leave applications. You can also request leave for yourself.'
-                                : 'View and track your leave requests'
-                        }
+                        {canApprove
+                            ? 'Review and approve or reject pending leave requests.'
+                            : canRequestLeave
+                              ? 'View and submit your leave requests.'
+                              : 'View your leave requests.'}
                     </p>
                 </div>
                 {canRequestLeave && (
@@ -188,7 +186,6 @@ const LeavePage = () => {
                 )}
             </div>
 
-            {/* Stats Cards */}
             <div className="grid grid-cols-3 mb-xl">
                 <div className="stat-card">
                     <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
@@ -221,7 +218,6 @@ const LeavePage = () => {
                 </div>
             </div>
 
-            {/* Filter */}
             <div className="card mb-lg">
                 <div className="filters-grid">
                     <div className="form-group mb-0">
@@ -240,10 +236,11 @@ const LeavePage = () => {
                 </div>
             </div>
 
-            {/* Leave Applications */}
             <div className="card">
                 <div className="card-header">
-                    <h3 className="card-title">Leave Applications</h3>
+                    <h3 className="card-title">
+                        {canApprove ? 'Pending leave applications' : 'My leave applications'}
+                    </h3>
                 </div>
                 <div className="table-container">
                     <table className="table">
@@ -269,21 +266,27 @@ const LeavePage = () => {
                                 visibleLeaves.map((leave) => {
                                     const leaveStatus = leave.status?.toLowerCase() || 'pending';
                                     const isPending = leaveStatus === 'pending';
-                                    
+
                                     return (
                                         <tr key={leave.id}>
                                             <td className="font-medium">{leave.userName}</td>
                                             <td className="capitalize">{leave.userRole}</td>
                                             <td className="capitalize">{leave.leaveType || leave.type}</td>
                                             <td>
-                                                {formatDate(leave.startDate || leave.fromDate)} - {formatDate(leave.endDate || leave.toDate)}
+                                                {formatDate(leave.startDate || leave.fromDate)} -{' '}
+                                                {formatDate(leave.endDate || leave.toDate)}
                                             </td>
                                             <td className="text-sm">{leave.reason}</td>
                                             <td>
-                                                <span className={`badge badge-${leaveStatus === 'approved' ? 'success' :
-                                                    leaveStatus === 'rejected' ? 'error' :
-                                                        'warning'
-                                                    }`}>
+                                                <span
+                                                    className={`badge badge-${
+                                                        leaveStatus === 'approved'
+                                                            ? 'success'
+                                                            : leaveStatus === 'rejected'
+                                                              ? 'error'
+                                                              : 'warning'
+                                                    }`}
+                                                >
                                                     {leave.status || 'Pending'}
                                                 </span>
                                             </td>
@@ -320,12 +323,11 @@ const LeavePage = () => {
                 </div>
             </div>
 
-            {/* Apply Leave Modal - Only show if user can request leave */}
             {canRequestLeave && (
                 <Modal
                     isOpen={showModal}
                     onClose={() => setShowModal(false)}
-                    title={isParent ? "Apply for Child's Leave" : "Apply for Leave"}
+                    title={isParent ? "Apply for Child's Leave" : 'Apply for Leave'}
                     footer={
                         <>
                             <button className="btn btn-outline" onClick={() => setShowModal(false)}>
@@ -349,8 +351,10 @@ const LeavePage = () => {
                                     required
                                 >
                                     <option value="">Select Child</option>
-                                    {myChildren.map(child => (
-                                        <option key={child.id} value={child.id}>{child.name}</option>
+                                    {myChildren.map((child) => (
+                                        <option key={child.id} value={child.id}>
+                                            {child.name}
+                                        </option>
                                     ))}
                                 </select>
                             </div>
@@ -364,10 +368,11 @@ const LeavePage = () => {
                                 value={formData.leaveType}
                                 onChange={handleFormChange}
                             >
-                                <option value="sick">Sick Leave</option>
-                                <option value="casual">Casual Leave</option>
-                                <option value="emergency">Emergency Leave</option>
-                                <option value="other">Other</option>
+                                <option value="SICK">Sick Leave</option>
+                                <option value="VACATION">Vacation</option>
+                                <option value="PERSONAL">Personal</option>
+                                <option value="EMERGENCY">Emergency Leave</option>
+                                <option value="OTHER">Other</option>
                             </select>
                         </div>
 

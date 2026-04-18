@@ -1,6 +1,7 @@
-import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { StudentStatus } from '@prisma/client';
 
 export class AcademicQueryDto {
   @ApiPropertyOptional({ example: 'search term' })
@@ -18,6 +19,17 @@ export class AcademicQueryDto {
   @IsOptional()
   sectionId?: string;
 
+  @ApiPropertyOptional({ enum: StudentStatus })
+  @IsEnum(StudentStatus)
+  @IsOptional()
+  status?: StudentStatus;
+
+  /** When SUPER_ADMIN acts in a school context, pass selected school id (must match SchoolContext decorator). */
+  @ApiPropertyOptional({ example: 'school-uuid' })
+  @IsString()
+  @IsOptional()
+  schoolId?: string;
+
   @ApiPropertyOptional({ example: 1, minimum: 1 })
   @Type(() => Number)
   @IsInt()
@@ -25,11 +37,11 @@ export class AcademicQueryDto {
   @IsOptional()
   page?: number = 1;
 
-  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 1000 })
+  @ApiPropertyOptional({ example: 50, minimum: 1, maximum: 1000 })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(1000)
   @IsOptional()
-  pageSize?: number = 10;
+  pageSize?: number = 50;
 }

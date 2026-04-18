@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Plus, Search, Edit, Trash2, Download, UserCircle, Link as LinkIcon, Upload, AlertCircle } from 'lucide-react';
-import { useParentsStore, useStudentsStore, useAuthStore, useSchoolStore, useClassesStore } from '../../store';
+import { Plus, Search, Edit, Trash2, Download, Link as LinkIcon, Upload, AlertCircle } from 'lucide-react';
+import { useParentsStore, useAuthStore, useSchoolStore, useClassesStore } from '../../store';
 import { USER_ROLES } from '../../constants';
 import { usersService, studentsService } from '../../services/api';
 import { exportToCSV, generateId } from '../../utils';
@@ -17,7 +17,6 @@ const ParentsPage = () => {
     const canManageManagement = user?.role === USER_ROLES.ADMIN; // Only Admin can add Management
 
     const { parents, setParents, addParent, updateParent, deleteParent } = useParentsStore();
-    const { students, setStudents } = useStudentsStore();
     const { classes } = useClassesStore();
     const { currentSchool } = useSchoolStore();
 
@@ -31,7 +30,7 @@ const ParentsPage = () => {
         );
     }
 
-    const [searchTerm, setSearchTerm] = useState('');
+    const [search, setSearch] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
@@ -61,139 +60,150 @@ const ParentsPage = () => {
 
     const [errors, setErrors] = useState({});
     const [loading, setLoading] = useState(true);
-    const studentSelectRef = useRef(null);
+    const [isLoading, setIsLoading] = useState(false);
+    /** Slim student rows: id, parentId, name, rollNumber, classId, Class — for link map + names. */
+    const [studentLinkRows, setStudentLinkRows] = useState([]);
+    const [parentsPage, setParentsPage] = useState(1);
+    const [parentsMeta, setParentsMeta] = useState({ total: 0, totalPages: 1, pageSize: 25 });
+    const searchRef = useRef(null);
+    const filterStatusRef = useRef(filterStatus);
+    filterStatusRef.current = filterStatus;
+    const searchValueRef = useRef(search);
+    searchValueRef.current = search;
+    const [linkSearchQuery, setLinkSearchQuery] = useState('');
+    const [debouncedLinkSearch, setDebouncedLinkSearch] = useState('');
+    const [linkSearchResults, setLinkSearchResults] = useState([]);
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedLinkSearch(linkSearchQuery.trim()), 300);
+        return () => clearTimeout(t);
+    }, [linkSearchQuery]);
+
+    useEffect(() => {
+        if (!showModal || modalMode !== 'edit') {
+            setLinkSearchResults([]);
+            return;
+        }
+        if (debouncedLinkSearch.length < 2) {
+            setLinkSearchResults([]);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            const res = await studentsService.getAll({
+                search: debouncedLinkSearch,
+                pageSize: 20,
+                page: 1,
+            });
+            if (cancelled || !res.success) return;
+            const payload = res.data;
+            const list = payload?.data ?? payload;
+            setLinkSearchResults(Array.isArray(list) ? list : []);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [showModal, modalMode, debouncedLinkSearch]);
+
+    const studentById = useMemo(() => {
+        const m = new Map();
+        studentLinkRows.forEach((s) => m.set(s.id, s));
+        return m;
+    }, [studentLinkRows]);
+
+    const normalizeParentRow = useCallback((parent) => {
+        const embedded = parent.Student || parent.students;
+        const idsFromApi = Array.isArray(embedded) ? embedded.map((s) => s.id).filter(Boolean) : [];
+        return {
+            ...parent,
+            studentIds: idsFromApi.length > 0 ? idsFromApi : parent.studentIds || [],
+        };
+    }, []);
+
+    const fetchParents = useCallback(async (currentPage, searchTerm) => {
+        setIsLoading(true);
         try {
-            // Load parents and students in parallel for better performance
-            // Try with smaller pageSize first, then fallback to default if needed
-            const loadStudentsWithFallback = async () => {
-                try {
-                    // Try with pageSize 100 first (safe default)
-                    const response = await studentsService.getAll({ pageSize: 100, page: 1 });
-                    if (response.success && response.data) {
-                        const data = response.data.data || response.data;
-                        if (Array.isArray(data)) {
-                            // If we got less than 100, we have all students
-                            if (data.length < 100) {
-                                return data;
-                            }
-                            // Otherwise, we might need to load more pages
-                            // For now, return what we have
-                            return data;
-                        }
-                    }
-                } catch (error) {
-                    console.warn('Failed to load students with pageSize 100:', error);
-                    // Try with even smaller pageSize as fallback
-                    try {
-                        const response = await studentsService.getAll({ pageSize: 50, page: 1 });
-                        if (response.success && response.data) {
-                            return response.data.data || response.data || [];
-                        }
-                    } catch (fallbackError) {
-                        console.error('Failed to load students:', fallbackError);
-                        return []; // Return empty array instead of throwing
-                    }
-                }
-                return [];
-            };
-
-            const promises = [
-                usersService.getParents(),
-                loadStudentsWithFallback()
-            ];
-
-            // Add management users request if admin (non-blocking)
-            if (canManageManagement) {
-                promises.push(usersService.getManagement());
-            }
-
-            // Use Promise.allSettled to handle partial failures gracefully
-            const responses = await Promise.allSettled(promises);
-            
-            // Process parents response
-            let parentsData = [];
-            if (responses[0].status === 'fulfilled') {
-                const parentResponse = responses[0].value;
-                if (parentResponse.success && parentResponse.data) {
-                    parentsData = Array.isArray(parentResponse.data) ? parentResponse.data : [];
-                }
-            } else {
-                console.error('Failed to load parents:', responses[0].reason);
-            }
-
-            // Process management response (if requested)
-            if (canManageManagement && responses[2]?.status === 'fulfilled') {
-                const managementResponse = responses[2].value;
-                if (managementResponse.success && managementResponse.data) {
-                    const managementData = Array.isArray(managementResponse.data) ? managementResponse.data : [];
-                    const existingIds = new Set(parentsData.map(p => p.id));
-                    const newManagement = managementData
-                        .filter(m => !existingIds.has(m.id))
-                        .map(m => ({ ...m, role: 'MANAGEMENT' }));
-                    parentsData = [...parentsData, ...newManagement];
-                }
-            }
-
-            // Process students response
-            let studentsData = [];
-            if (responses[1].status === 'fulfilled') {
-                const studentsResult = responses[1].value;
-                if (Array.isArray(studentsResult)) {
-                    studentsData = studentsResult;
-                } else if (studentsResult?.data) {
-                    studentsData = Array.isArray(studentsResult.data) ? studentsResult.data : [];
-                }
-                setStudents(studentsData);
-            } else {
-                console.error('Failed to load students:', responses[1].reason);
-                setStudents([]);
-            }
-
-            // Map parent data and build studentIds from students data
-            // Create a map for O(1) lookup instead of O(n) filter for better performance
-            const parentStudentMap = new Map();
-            studentsData.forEach(student => {
-                if (student.parentId) {
-                    if (!parentStudentMap.has(student.parentId)) {
-                        parentStudentMap.set(student.parentId, []);
-                    }
-                    parentStudentMap.get(student.parentId).push(student.id);
-                }
+            const fs = filterStatusRef.current;
+            const parentResponse = await usersService.getParents({
+                page: currentPage,
+                limit: 25,
+                search: searchTerm,
+                ...(fs && { status: fs === 'active' ? 'ACTIVE' : 'INACTIVE' }),
             });
 
-            // Map parent data with studentIds
-            const mappedParents = parentsData.map(parent => ({
-                ...parent,
-                studentIds: parentStudentMap.get(parent.id) || [],
-            }));
-            
-            setParents(mappedParents);
+            if (!parentResponse.success || parentResponse.data == null) {
+                setParents([]);
+                return;
+            }
+
+            const body = parentResponse.data;
+            if (body?.meta && Array.isArray(body.data)) {
+                setParentsMeta(body.meta);
+                setParentsPage(body.meta.page ?? currentPage);
+                setParents(body.data.map(normalizeParentRow));
+                return;
+            }
+
+            if (Array.isArray(body)) {
+                setParents(body.map(normalizeParentRow));
+                setParentsMeta({ total: body.length, totalPages: 1, pageSize: 25 });
+                setParentsPage(1);
+            } else {
+                setParents([]);
+            }
         } catch (error) {
-            console.error('Failed to load data:', error);
-            toast.error('Failed to load parents and students');
+            console.error('Failed to load parents:', error);
+            toast.error('Failed to load parents');
             setParents([]);
-            setStudents([]);
         } finally {
-            setLoading(false);
+            setIsLoading(false);
         }
-    }, [canManageManagement, setParents, setStudents]);
+    }, [setParents, normalizeParentRow]);
+
+    const loadStudentLinkRows = useCallback(async () => {
+        try {
+            const sr = await studentsService.getForParentsUi();
+            if (sr.success && sr.data != null) {
+                const raw = sr.data.data ?? sr.data;
+                setStudentLinkRows(Array.isArray(raw) ? raw : []);
+            } else {
+                setStudentLinkRows([]);
+            }
+        } catch (error) {
+            console.error('Failed to load student link rows:', error);
+            setStudentLinkRows([]);
+        }
+    }, []);
 
     useEffect(() => {
-        loadData();
-    }, [currentSchool]); // Remove loadData from deps to prevent infinite loops
+        let cancelled = false;
+        setSearch('');
+        (async () => {
+            setLoading(true);
+            try {
+                await Promise.all([fetchParents(1, ''), loadStudentLinkRows()]);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [fetchParents, loadStudentLinkRows, currentSchool?.id]);
 
-    // Sync select-multiple selected state when formData.studentIds changes
     useEffect(() => {
-        if (studentSelectRef.current && Array.isArray(formData.studentIds)) {
-            const select = studentSelectRef.current;
-            Array.from(select.options).forEach(option => {
-                option.selected = formData.studentIds.includes(option.value);
-            });
+        fetchParents(1, searchValueRef.current);
+    }, [filterStatus, fetchParents]);
+
+    const handleSearch = useCallback((value) => {
+        setSearch(value);
+        if (searchRef.current) {
+            clearTimeout(searchRef.current);
         }
-    }, [formData.studentIds, showModal]);
+        searchRef.current = setTimeout(() => {
+            fetchParents(1, value);
+        }, 300);
+    }, [fetchParents]);
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
@@ -202,13 +212,14 @@ const ParentsPage = () => {
 
     const handleOpenModal = useCallback((mode, parent = null) => {
         setModalMode(mode);
+        setLinkSearchQuery('');
+        setLinkSearchResults([]);
         if (mode === 'edit' && parent) {
             setSelectedParent(parent);
-            // Get current linked students from students array
-            const currentLinkedStudentIds = students
-                .filter(s => s.parentId === parent.id)
-                .map(s => s.id);
-            
+            const currentLinkedStudentIds = studentLinkRows
+                .filter((s) => s.parentId === parent.id)
+                .map((s) => s.id);
+
             setFormData({
                 name: parent.name,
                 email: parent.email,
@@ -223,7 +234,7 @@ const ParentsPage = () => {
             resetForm();
         }
         setShowModal(true);
-    }, [students]);
+    }, [studentLinkRows]);
 
     const resetForm = () => {
         setFormData({
@@ -283,147 +294,91 @@ const ParentsPage = () => {
 
         if (!validate()) return;
 
-        try {
-            const parentData = {
-                name: formData.name,
-                email: formData.email,
-                password: formData.password,
-                phone: formData.phone,
-                occupation: formData.occupation,
-            };
+        let succeeded = false;
 
+        try {
             if (modalMode === 'add') {
                 const response = await usersService.createParent({
                     name: formData.name,
                     email: formData.email,
                     password: formData.password,
                     phone: formData.phone,
-                    occupation: formData.occupation, // Include occupation
+                    occupation: formData.occupation,
                 });
                 if (response.success && response.data) {
-                    addParent({
-                        ...response.data,
-                        occupation: formData.occupation,
-                        address: formData.address,
-                        studentIds: formData.studentIds,
-                    });
                     toast.success('Parent added successfully');
-                    loadData();
+                    await fetchParents(parentsPage, search);
+                    await loadStudentLinkRows();
+                    succeeded = true;
                 } else {
                     toast.error(response.error || 'Failed to create parent');
-                    return;
                 }
             } else {
-                // Update parent user info
                 const updateData = {
-                    name: formData.name,
-                    email: formData.email,
-                    phone: formData.phone,
+                    name: formData.name.trim(),
+                    email: formData.email.trim(),
+                    phone: formData.phone.trim(),
+                    occupation: formData.occupation,
+                    address: formData.address,
+                    status: (formData.status || 'ACTIVE').toUpperCase(),
                 };
-                
-                // Only include password if it's provided
+
                 if (formData.password && formData.password.trim()) {
                     updateData.password = formData.password;
                 }
 
                 const response = await usersService.updateUser(selectedParent.id, updateData);
-                if (response.success && response.data) {
-                    // Update parent in store
-                    updateParent(selectedParent.id, {
-                        ...response.data,
-                        occupation: formData.occupation,
-                        address: formData.address,
-                        studentIds: formData.studentIds,
-                    });
-
-                    // Link/unlink students to this parent
-                    if (formData.studentIds !== undefined && Array.isArray(formData.studentIds)) {
-                        try {
-                            // Get current students linked to this parent (from fresh data)
-                            const currentLinkedStudents = students.filter(s => s.parentId === selectedParent.id);
-                            const currentLinkedIds = currentLinkedStudents.map(s => s.id);
-                            
-                            // Find students to link (new ones)
-                            const studentsToLink = formData.studentIds.filter(id => !currentLinkedIds.includes(id));
-                            // Find students to unlink (removed ones)
-                            const studentsToUnlink = currentLinkedIds.filter(id => !formData.studentIds.includes(id));
-
-                            const linkToast = toast.loading(`Updating ${studentsToLink.length + studentsToUnlink.length} student link(s)...`);
-
-                            // Link new students in parallel
-                            const linkPromises = studentsToLink.map(async (studentId) => {
-                                try {
-                                    const response = await studentsService.update(studentId, { parentId: selectedParent.id });
-                                    if (!response.success) {
-                                        console.error(`Failed to link student ${studentId}:`, response.error);
-                                        return { studentId, success: false, error: response.error };
-                                    }
-                                    return { studentId, success: true };
-                                } catch (error) {
-                                    console.error(`Failed to link student ${studentId}:`, error);
-                                    return { studentId, success: false, error: error.message };
-                                }
-                            });
-
-                            // Unlink removed students (set parentId to null) in parallel
-                            const unlinkPromises = studentsToUnlink.map(async (studentId) => {
-                                try {
-                                    const response = await studentsService.update(studentId, { parentId: null });
-                                    if (!response.success) {
-                                        console.error(`Failed to unlink student ${studentId}:`, response.error);
-                                        return { studentId, success: false, error: response.error };
-                                    }
-                                    return { studentId, success: true };
-                                } catch (error) {
-                                    console.error(`Failed to unlink student ${studentId}:`, error);
-                                    return { studentId, success: false, error: error.message };
-                                }
-                            });
-
-                            // Wait for all updates to complete
-                            const [linkResults, unlinkResults] = await Promise.all([
-                                Promise.all(linkPromises),
-                                Promise.all(unlinkPromises)
-                            ]);
-
-                            // Check for failures
-                            const failedLinks = linkResults.filter(r => !r.success);
-                            const failedUnlinks = unlinkResults.filter(r => !r.success);
-
-                            if (failedLinks.length > 0 || failedUnlinks.length > 0) {
-                                const failedCount = failedLinks.length + failedUnlinks.length;
-                                toast.error(`${failedCount} student link(s) failed to update`, { id: linkToast });
-                                console.warn('Some student links failed:', { failedLinks, failedUnlinks });
-                            } else if (studentsToLink.length > 0 || studentsToUnlink.length > 0) {
-                                toast.success(`Successfully updated ${studentsToLink.length + studentsToUnlink.length} student link(s)`, { id: linkToast });
-                            } else {
-                                toast.dismiss(linkToast);
-                            }
-                        } catch (linkError) {
-                            console.error('Failed to link/unlink students:', linkError);
-                            toast.error('Parent updated but failed to update student links: ' + linkError.message);
-                        }
-                    }
-
-                    // Only show success if no linking was done (to avoid duplicate messages)
-                    if (!formData.studentIds || formData.studentIds.length === 0 || 
-                        (students.filter(s => s.parentId === selectedParent.id).length === formData.studentIds.length &&
-                         formData.studentIds.every(id => students.find(s => s.id === id && s.parentId === selectedParent.id)))) {
-                        toast.success('Parent updated successfully');
-                    }
-                    
-                    // Always reload data to ensure UI reflects database state
-                    await loadData();
-                } else {
+                if (!response.success || !response.data) {
                     toast.error(response.error || 'Failed to update parent');
                     return;
                 }
+
+                updateParent(selectedParent.id, response.data);
+
+                const desiredIds = Array.isArray(formData.studentIds) ? formData.studentIds : [];
+                const currentLinkedIds = studentLinkRows.filter((s) => s.parentId === selectedParent.id).map((s) => s.id);
+                const studentsToLink = desiredIds.filter((id) => !currentLinkedIds.includes(id));
+                const studentsToUnlink = currentLinkedIds.filter((id) => !desiredIds.includes(id));
+
+                const bulkTasks = [];
+                if (studentsToLink.length > 0) {
+                    bulkTasks.push(
+                        studentsService.bulkUpdateParent({
+                            studentIds: studentsToLink,
+                            parentId: selectedParent.id,
+                        }),
+                    );
+                }
+                if (studentsToUnlink.length > 0) {
+                    bulkTasks.push(
+                        studentsService.bulkUpdateParent({
+                            studentIds: studentsToUnlink,
+                            parentId: null,
+                        }),
+                    );
+                }
+                if (bulkTasks.length > 0) {
+                    const bulkResults = await Promise.all(bulkTasks);
+                    const failed = bulkResults.find((r) => !r.success);
+                    if (failed) {
+                        toast.error(failed.error || 'Failed to update student links');
+                        await fetchParents(parentsPage, search);
+                        await loadStudentLinkRows();
+                        return;
+                    }
+                }
+
+                toast.success('Parent updated successfully');
+                await fetchParents(parentsPage, search);
+                await loadStudentLinkRows();
+                succeeded = true;
             }
 
-            handleCloseModal();
-        } catch (error) {
-            // Silently handle errors - toast shows user message
-            toast.error('Failed to save parent');
+            if (succeeded) {
+                handleCloseModal();
+            }
+        } catch (err) {
+            toast.error(err?.message || 'Failed to save parent');
         }
     };
 
@@ -438,16 +393,17 @@ const ParentsPage = () => {
         toast.success('Parent deleted successfully');
         setShowDeleteConfirm(false);
         setParentToDelete(null);
-        loadData();
+        fetchParents(parentsPage, search);
+        loadStudentLinkRows();
     };
 
     const handleExport = () => {
-        const exportData = filteredParents.map((parent) => ({
+        const exportData = displayParents.map((parent) => ({
             'Name': parent.name,
             'Email': parent.email,
             'Phone': parent.phone,
             'Occupation': parent.occupation,
-            'Children': getStudentNames(parent.studentIds),
+            'Children': getStudentNames(parent),
             'Status': parent.status,
         }));
 
@@ -455,28 +411,26 @@ const ParentsPage = () => {
         toast.success('Parents exported successfully');
     };
 
-    const getStudentNames = (studentIds) => {
+    const getStudentNames = (parent) => {
+        const embedded = parent?.Student || parent?.students;
+        if (Array.isArray(embedded) && embedded.length > 0) {
+            return embedded.map((s) => s.name).filter(Boolean).join(', ') || 'No children linked';
+        }
+        const studentIds = parent?.studentIds;
         if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
             return 'No children linked';
         }
-        return studentIds
-            .map(id => students.find(s => s.id === id)?.name)
-            .filter(Boolean)
-            .join(', ') || 'No children linked';
+        return (
+            studentIds
+                .map((id) => studentById.get(id)?.name)
+                .filter(Boolean)
+                .join(', ') || 'No children linked'
+        );
     };
 
-    const filteredParents = parents.filter((parent) => {
-        // Filter by school
-        const matchesSchool = !currentSchool || parent.schoolId === currentSchool.id;
-        if (!matchesSchool) return false;
-
-        const matchesSearch = parent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            parent.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            parent.phone.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesStatus = !filterStatus || parent.status === filterStatus;
-
-        return matchesSearch && matchesStatus;
-    });
+    const displayParents = useMemo(() => {
+        return parents.filter((parent) => !currentSchool || parent.schoolId === currentSchool.id);
+    }, [parents, currentSchool?.id]);
 
     return (
         <div className="parents-page">
@@ -517,8 +471,8 @@ const ParentsPage = () => {
                         <input
                             type="text"
                             placeholder="Search parents..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            value={search}
+                            onChange={(e) => handleSearch(e.target.value)}
                             className="input"
                         />
                     </div>
@@ -536,7 +490,7 @@ const ParentsPage = () => {
             </div>
 
             {/* Parents Table */}
-            <div className="table-container">
+            <div className="table-container" style={{ opacity: isLoading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
                 <table className="table">
                     <thead>
                         <tr>
@@ -574,14 +528,14 @@ const ParentsPage = () => {
                                     </td>
                                 </tr>
                             ))
-                        ) : filteredParents.length === 0 ? (
+                        ) : displayParents.length === 0 ? (
                             <tr>
                                 <td colSpan="6" className="text-center">
                                     <div className="empty-state">
                                         <div className="empty-state-icon">👨‍👩‍👧‍👦</div>
                                         <h3 className="empty-state-title">No parents found</h3>
                                         <p className="empty-state-description">
-                                            {searchTerm || filterStatus
+                                            {search || filterStatus
                                                 ? 'Try adjusting your filters'
                                                 : 'Get started by adding your first parent'}
                                         </p>
@@ -589,7 +543,7 @@ const ParentsPage = () => {
                                 </td>
                             </tr>
                         ) : (
-                            filteredParents.map((parent) => (
+                            displayParents.map((parent) => (
                                 <tr key={parent.id}>
                                     <td>
                                         <div className="flex items-center gap-md">
@@ -606,7 +560,7 @@ const ParentsPage = () => {
                                         {parent.studentIds && Array.isArray(parent.studentIds) && parent.studentIds.length > 0 ? (
                                             <div className="flex items-center gap-sm">
                                                 <LinkIcon size={14} className="text-primary-600" />
-                                                <span>{getStudentNames(parent.studentIds)}</span>
+                                                <span>{getStudentNames(parent)}</span>
                                             </div>
                                         ) : (
                                             <span className="text-gray-400">No children linked</span>
@@ -641,6 +595,32 @@ const ParentsPage = () => {
                     </tbody>
                 </table>
             </div>
+
+            {parentsMeta.totalPages > 1 && (
+                <div className="pagination-bar" style={{ marginTop: 'var(--spacing-md)' }}>
+                    <span className="pagination-info">
+                        Page {parentsPage} of {parentsMeta.totalPages} ({parentsMeta.total} parents)
+                    </span>
+                    <div className="pagination-controls">
+                        <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={() => fetchParents(parentsPage - 1, search)}
+                            disabled={parentsPage <= 1 || isLoading}
+                        >
+                            Previous
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={() => fetchParents(parentsPage + 1, search)}
+                            disabled={parentsPage >= parentsMeta.totalPages || isLoading}
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Add/Edit Modal */}
             <Modal
@@ -730,36 +710,87 @@ const ParentsPage = () => {
                         </div>
 
                         <div className="form-group">
-                            <label className="form-label">Link Students</label>
-                            <select
-                                name="studentIds"
-                                multiple
-                                value={Array.isArray(formData.studentIds) ? formData.studentIds : []}
-                                onChange={handleChange}
-                                className="select"
-                                size="5"
-                                style={{ minHeight: '120px', width: '100%' }}
-                            >
-                                {students.length === 0 ? (
-                                    <option disabled>No students available. Please add students first.</option>
-                                ) : (
-                                    students.map((student) => {
-                                        const className = classes.find(c => c.id === student.classId);
-                                        return (
-                                            <option 
-                                                key={student.id} 
-                                                value={student.id}
-                                            >
-                                                {student.name} ({student.rollNumber}){className ? ` - ${className.name}` : ''}
-                                            </option>
-                                        );
-                                    })
-                                )}
-                            </select>
-                            <span className="text-xs text-gray-500 mt-1 block">
-                                Hold Ctrl/Cmd (Windows/Mac) or Shift (Linux) to select multiple. 
-                                Currently selected: <strong>{formData.studentIds?.length || 0}</strong> student(s)
-                            </span>
+                            <label className="form-label">Link students</label>
+                            {modalMode === 'add' ? (
+                                <p className="text-xs text-gray-500">Save the parent first, then edit to link students.</p>
+                            ) : (
+                                <>
+                                    <p className="text-xs text-gray-500 mb-sm">
+                                        Search by name or roll (min. 2 characters), then add from results. Selected:{' '}
+                                        <strong>{formData.studentIds?.length || 0}</strong>
+                                    </p>
+                                    <input
+                                        type="text"
+                                        className="input mb-sm"
+                                        placeholder="Type to search students…"
+                                        value={linkSearchQuery}
+                                        onChange={(e) => setLinkSearchQuery(e.target.value)}
+                                    />
+                                    {debouncedLinkSearch.length >= 2 && linkSearchResults.length > 0 && (
+                                        <div className="mb-sm" style={{ maxHeight: 140, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, padding: 8 }}>
+                                            {linkSearchResults.map((student) => {
+                                                const cn = classes.find((c) => c.id === student.classId);
+                                                const picked = formData.studentIds?.includes(student.id);
+                                                return (
+                                                    <div key={student.id} className="flex items-center justify-between gap-sm py-xs text-sm">
+                                                        <span>
+                                                            {student.name} ({student.rollNumber})
+                                                            {cn ? ` — ${cn.name}` : student.Class?.name ? ` — ${student.Class.name}` : ''}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-xs btn-outline"
+                                                            disabled={picked}
+                                                            onClick={() => {
+                                                                if (picked) return;
+                                                                setFormData((prev) => ({
+                                                                    ...prev,
+                                                                    studentIds: [...(prev.studentIds || []), student.id],
+                                                                }));
+                                                            }}
+                                                        >
+                                                            Add
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    {Array.isArray(formData.studentIds) && formData.studentIds.length > 0 && (
+                                        <div className="flex flex-wrap gap-sm">
+                                            {formData.studentIds.map((id) => {
+                                                const s = studentById.get(id) || linkSearchResults.find((x) => x.id === id);
+                                                const cn = s && classes.find((c) => c.id === s.classId);
+                                                const label = s
+                                                    ? `${s.name} (${s.rollNumber})${cn ? ` — ${cn.name}` : ''}`
+                                                    : id;
+                                                return (
+                                                    <span
+                                                        key={id}
+                                                        className="badge badge-gray"
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                                    >
+                                                        {label}
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-xs btn-ghost"
+                                                            aria-label="Remove"
+                                                            onClick={() =>
+                                                                setFormData((prev) => ({
+                                                                    ...prev,
+                                                                    studentIds: (prev.studentIds || []).filter((x) => x !== id),
+                                                                }))
+                                                            }
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
 
                         <div className="form-group">
@@ -854,7 +885,8 @@ const ParentsPage = () => {
                                         setShowManagementModal(false);
                                         setManagementFormData({ name: '', email: '', password: '', phone: '' });
                                         setManagementErrors({});
-                                        loadData(); // Reload to show the new management user
+                                        fetchParents(parentsPage, search);
+                                        loadStudentLinkRows();
                                     } else {
                                         toast.error(response.error || 'Failed to create management user');
                                     }
@@ -951,7 +983,7 @@ const ParentsPage = () => {
                                 // Find student IDs from roll numbers
                                 const linkedRollNumbers = row.linkedStudentRollNumbers ? row.linkedStudentRollNumbers.split(';') : [];
                                 const linkedStudentIds = linkedRollNumbers
-                                    .map(roll => students.find(s => s.rollNumber === roll.trim())?.id)
+                                    .map((roll) => studentLinkRows.find((s) => s.rollNumber === roll.trim())?.id)
                                     .filter(Boolean);
 
                                 addParent({

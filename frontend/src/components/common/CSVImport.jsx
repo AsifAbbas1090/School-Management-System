@@ -3,18 +3,56 @@ import { Upload, Download, FileText, AlertCircle } from 'lucide-react';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
 
-const CSVImport = ({ type = 'students', onImport, onClose }) => {
+const CSVImport = ({ type = 'students', onImport, onClose, serverImportFn, onServerImportResult }) => {
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState([]);
     const [errors, setErrors] = useState([]);
+    const [uploading, setUploading] = useState(false);
+
+    const isServerImport = typeof serverImportFn === 'function';
 
     const templates = {
         students: {
-            headers: ['name', 'rollNumber', 'email', 'phone', 'fatherName', 'class', 'section', 'fees', 'admissionDate', 'address'],
+            headers: [
+                'name',
+                'rollNumber',
+                'email',
+                'monthlyFee',
+                'className',
+                'sectionName',
+                'gender',
+                'dateOfBirth',
+                'admissionDate',
+                'address',
+                'phone',
+                'parentName',
+                'parentEmail',
+                'parentPassword',
+                'parentPhone',
+                'parentOccupation',
+                'parentId',
+            ],
             sample: [
-                ['John Doe', 'STU001', 'john@example.com', '1234567890', 'Robert Doe', 'Class 5', 'A', '5000', '2024-01-15', '123 Main St'],
-                ['Jane Smith', 'STU002', 'jane@example.com', '0987654321', 'Michael Smith', 'Class 4', 'B', '5000', '2024-01-16', '456 Oak Ave'],
-            ]
+                [
+                    'Ali Khan',
+                    'STU101',
+                    '',
+                    '5000',
+                    'Grade 5',
+                    'A',
+                    'MALE',
+                    '10/05/2012',
+                    '18/04/2026',
+                    '123 Main Street City',
+                    '',
+                    'Ahmed Khan',
+                    'ahmed.parent@example.com',
+                    'TempPass123!',
+                    '+923001234567',
+                    'Engineer',
+                    '',
+                ],
+            ],
         },
         attendance: {
             headers: ['name', 'rollNumber', 'status'],
@@ -38,6 +76,22 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
                 ['STU001', 'John Doe', '5000'],
                 ['STU002', 'Jane Smith', '2500'],
             ]
+        },
+        feePayments: {
+            headers: [
+                'rollNumber',
+                'month',
+                'year',
+                'amountPaid',
+                'paymentMethod',
+                'discountPercentage',
+                'originalAmount',
+                'remarks',
+            ],
+            sample: [
+                ['STU001', '4', '2026', '5000', 'CASH', '0', '', 'April fee'],
+                ['STU002', '4', '2026', '4500', 'BANK_TRANSFER', '10', '', ''],
+            ],
         },
         parents: {
             headers: ['name', 'email', 'phone', 'occupation', 'address', 'linkedStudentRollNumbers'],
@@ -65,6 +119,14 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
         }
 
         setFile(selectedFile);
+
+        if (isServerImport && (type === 'students' || type === 'feePayments')) {
+            setPreview([]);
+            setErrors([]);
+            toast.success(`Selected ${selectedFile.name} — click Import to upload to the server`);
+            return;
+        }
+
         parseCSV(selectedFile);
     };
 
@@ -159,7 +221,27 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
         reader.readAsText(file);
     };
 
-    const handleImport = () => {
+    const handleImport = async () => {
+        if (isServerImport && (type === 'students' || type === 'feePayments')) {
+            if (!file) {
+                toast.error('Please select a CSV file');
+                return;
+            }
+            setUploading(true);
+            try {
+                const result = await serverImportFn(file);
+                onServerImportResult?.(result);
+                if (result?.success !== false) {
+                    onClose();
+                }
+            } catch (err) {
+                toast.error(err?.message || 'Import failed');
+            } finally {
+                setUploading(false);
+            }
+            return;
+        }
+
         if (preview.length === 0) {
             toast.error('No data to import');
             return;
@@ -170,7 +252,9 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
             return;
         }
 
-        onImport(preview);
+        if (typeof onImport === 'function') {
+            onImport(preview);
+        }
         toast.success(`${preview.length} records imported successfully`);
         onClose();
     };
@@ -199,25 +283,83 @@ const CSVImport = ({ type = 'students', onImport, onClose }) => {
         <Modal
             isOpen={true}
             onClose={onClose}
-            title={`Import ${type === 'students' ? 'Students' : 'Attendance'} from CSV`}
+            title={
+                type === 'students' && isServerImport
+                    ? 'Import students from CSV (server)'
+                    : type === 'feePayments' && isServerImport
+                      ? 'Import fee payments from CSV (server)'
+                      : `Import ${type === 'students' ? 'Students' : 'Attendance'} from CSV`
+            }
             size="xl"
             footer={
                 <>
-                    <button className="btn btn-outline" onClick={onClose}>
+                    <button className="btn btn-outline" onClick={onClose} disabled={uploading}>
                         Cancel
                     </button>
                     <button
                         className="btn btn-primary"
                         onClick={handleImport}
-                        disabled={preview.length === 0 || errors.length > 0}
+                        disabled={
+                            uploading ||
+                            (isServerImport && (type === 'students' || type === 'feePayments')
+                                ? !file
+                                : preview.length === 0 || errors.length > 0)
+                        }
                     >
                         <Upload size={18} />
-                        <span>Import {preview.length} Records</span>
+                        <span>
+                            {uploading
+                                ? 'Uploading…'
+                                : isServerImport && (type === 'students' || type === 'feePayments')
+                                  ? 'Upload & import'
+                                  : `Import ${preview.length} Records`}
+                        </span>
                     </button>
                 </>
             }
         >
             <div className="csv-import">
+                {type === 'feePayments' && isServerImport && (
+                    <div
+                        className="p-md rounded-lg border text-sm"
+                        style={{ background: 'var(--gray-50)', borderColor: 'var(--gray-200)' }}
+                    >
+                        <p className="font-semibold text-gray-900 mb-xs">Fee payment CSV</p>
+                        <p className="text-gray-700 mb-xs">
+                            <strong>Required:</strong> rollNumber, month (1–12), year, amountPaid, paymentMethod (
+                            CASH, CARD, BANK_TRANSFER, ONLINE, CHEQUE).
+                        </p>
+                        <p className="text-gray-700 mb-xs">
+                            <strong>Optional:</strong> discountPercentage (0–100), originalAmount (defaults to student
+                            monthly fee), remarks.
+                        </p>
+                        <p className="text-gray-700">
+                            Rows for a student/month/year that already has a payment are <strong>skipped</strong>.
+                        </p>
+                    </div>
+                )}
+                {type === 'students' && isServerImport && (
+                    <div
+                        className="p-md rounded-lg border text-sm"
+                        style={{ background: 'var(--gray-50)', borderColor: 'var(--gray-200)' }}
+                    >
+                        <p className="font-semibold text-gray-900 mb-xs">Expected CSV format</p>
+                        <p className="text-gray-700 mb-xs">
+                            <strong>Required (student):</strong> name, rollNumber, monthlyFee, className, sectionName
+                            (or classId / sectionId), gender, dateOfBirth, admissionDate, address. Dates:{' '}
+                            <code>yyyy-mm-dd</code> or <code>dd/mm/yyyy</code>.
+                        </p>
+                        <p className="text-gray-700 mb-xs">
+                            <strong>Parent:</strong> either <code>parentId</code> (existing parent user id) or{' '}
+                            <code>parentName</code>, <code>parentEmail</code>, <code>parentPassword</code>,{' '}
+                            <code>parentPhone</code> (and optional <code>parentOccupation</code>) to create and link a
+                            parent — same as the Add Student form.
+                        </p>
+                        <p className="text-gray-700">
+                            <strong>Optional:</strong> email (student), phone (student), status.
+                        </p>
+                    </div>
+                )}
                 {/* Download Template */}
                 <div className="template-section">
                     <div className="template-info">

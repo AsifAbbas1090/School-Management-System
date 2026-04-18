@@ -1,5 +1,5 @@
 import { format, parseISO, isValid } from 'date-fns';
-import { GRADE_SCALE } from '../constants';
+import { GRADE_SCALE, USER_ROLES } from '../constants';
 
 /**
  * Format date to readable string
@@ -435,4 +435,16 @@ export const validateRequiredFields = (data, requiredFields) => {
 export const generateRollNumber = (schoolCode, session, classRoman, sequenceNumber) => {
     const sequence = sequenceNumber.toString().padStart(3, '0');
     return `${schoolCode}${session}${classRoman}${sequence}`.toUpperCase();
+};
+
+/**
+ * School id for API calls that use @SchoolContext on the backend.
+ * SUPER_ADMIN has no school in JWT — use the selected school from the UI store.
+ */
+export const getTargetSchoolIdForScopedApi = (user, currentSchool) => {
+    if (!user) return null;
+    if (user.role === USER_ROLES.SUPER_ADMIN) {
+        return currentSchool?.id ?? null;
+    }
+    return user.schoolId ?? null;
 };

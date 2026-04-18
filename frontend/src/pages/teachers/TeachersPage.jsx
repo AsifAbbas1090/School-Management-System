@@ -49,13 +49,13 @@ const TeachersPage = () => {
         password: '',
         employeeId: '',
         phone: '',
-        gender: 'male',
+        gender: 'MALE',
         dateOfBirth: '',
         address: '',
         subjectIds: [],
         salary: '',
         joiningDate: '',
-        status: 'active',
+        status: 'ACTIVE',
     });
 
     const [customSubject, setCustomSubject] = useState('');
@@ -107,7 +107,7 @@ const TeachersPage = () => {
                 gender: teacher.gender || 'MALE',
                 dateOfBirth: teacher.dateOfBirth ? formatDate(teacher.dateOfBirth, 'yyyy-MM-dd') : '',
                 address: teacher.address || '',
-                subjectIds: teacher.subjectIds || [],
+                subjectIds: Array.isArray(teacher.subjectIds) ? teacher.subjectIds : [],
                 salary: teacher.salary ? teacher.salary.toString() : '',
                 joiningDate: teacher.joiningDate ? formatDate(teacher.joiningDate, 'yyyy-MM-dd') : '',
                 status: teacher.status || 'ACTIVE',
@@ -204,35 +204,48 @@ const TeachersPage = () => {
         if (!validate()) return;
 
         try {
-            // Backend CreateTeacherDto only accepts: email, password, name, phone
-            // Additional teacher details (gender, address, employeeId, salary, etc.) 
-            // would need to be stored in a separate Teacher profile model
+            const subjectIds = Array.isArray(formData.subjectIds) ? formData.subjectIds : [];
+
             const teacherData = {
-                name: formData.name,
-                email: formData.email,
+                name: formData.name.trim(),
+                email: formData.email.trim(),
                 password: formData.password,
-                phone: formData.phone,
+                phone: formData.phone.trim(),
+                employeeId: formData.employeeId.trim(),
+                salary: Number(formData.salary),
+                gender: formData.gender || 'MALE',
+                dateOfBirth: formData.dateOfBirth,
+                address: formData.address.trim(),
+                joiningDate: formData.joiningDate,
+                subjectIds,
             };
+
+            let succeeded = false;
 
             if (modalMode === 'add') {
                 const response = await usersService.createTeacher(teacherData);
                 if (response.success && response.data) {
-                    addTeacher(response.data);
                     toast.success('Teacher added successfully');
-                    loadData();
+                    await loadData();
+                    succeeded = true;
                 } else {
                     toast.error(response.error || 'Failed to create teacher');
-                    return;
                 }
             } else {
-                // Update teacher - only update if password is provided or other fields changed
                 const updateData = {
-                    name: formData.name,
-                    email: formData.email,
-                    phone: formData.phone,
+                    name: formData.name.trim(),
+                    email: formData.email.trim(),
+                    phone: formData.phone.trim(),
+                    employeeId: formData.employeeId.trim(),
+                    salary: Number(formData.salary),
+                    gender: formData.gender || 'MALE',
+                    dateOfBirth: formData.dateOfBirth,
+                    address: formData.address.trim(),
+                    joiningDate: formData.joiningDate,
+                    subjectIds,
+                    status: (formData.status || 'ACTIVE').toUpperCase(),
                 };
-                
-                // Only include password if it's provided
+
                 if (formData.password && formData.password.trim()) {
                     updateData.password = formData.password;
                 }
@@ -241,17 +254,18 @@ const TeachersPage = () => {
                 if (response.success && response.data) {
                     updateTeacher(selectedTeacher.id, response.data);
                     toast.success('Teacher updated successfully');
-                    loadData();
+                    await loadData();
+                    succeeded = true;
                 } else {
                     toast.error(response.error || 'Failed to update teacher');
-                    return;
                 }
             }
 
-            handleCloseModal();
-        } catch (error) {
-            // Silently handle errors - toast shows user message
-            toast.error('Failed to save teacher');
+            if (succeeded) {
+                handleCloseModal();
+            }
+        } catch (err) {
+            toast.error(err?.message || 'Failed to save teacher');
         }
     };
 
@@ -261,12 +275,22 @@ const TeachersPage = () => {
     };
 
     const handleDeleteConfirm = async () => {
-        // Delete not available in API yet - would need to be added
-        deleteTeacher(teacherToDelete.id);
-        toast.success('Teacher deleted successfully');
-        setShowDeleteConfirm(false);
-        setTeacherToDelete(null);
-        loadData();
+        if (!teacherToDelete) return;
+        try {
+            const response = await usersService.deleteUser(teacherToDelete.id);
+            if (response.success) {
+                deleteTeacher(teacherToDelete.id);
+                toast.success('Teacher deleted successfully');
+                await loadData();
+            } else {
+                toast.error(response.error || 'Failed to delete teacher');
+            }
+        } catch (err) {
+            toast.error(err?.message || 'Failed to delete teacher');
+        } finally {
+            setShowDeleteConfirm(false);
+            setTeacherToDelete(null);
+        }
     };
 
     const handleExport = () => {
@@ -643,14 +667,15 @@ const TeachersPage = () => {
                         <div className="flex flex-wrap gap-sm p-md bg-gray-50 rounded-lg border" style={{ minHeight: "50px" }}>
                             {formData.subjectIds.map(sid => {
                                 const sub = subjects.find(s => s.id === sid);
-                                return sub ? (
+                                const label = sub?.name || sid;
+                                return (
                                     <span key={sid} className="badge badge-primary flex items-center gap-xs">
-                                        {sub.name}
+                                        {label}
                                         <button type="button" onClick={() => handleRemoveSubject(sid)} className="hover:text-error-200">
                                             <Trash2 size={12} />
                                         </button>
                                     </span>
-                                ) : null;
+                                );
                             })}
                             {formData.subjectIds.length === 0 && <span className="text-gray-400 text-sm">No subjects added yet</span>}
                         </div>

@@ -3,11 +3,16 @@ import { BookOpen, Users, ClipboardCheck, MessageSquare, Calendar, Bell } from '
 import { messagesService, studentsService } from '../../services/api';
 import { useAuthStore } from '../../store';
 import { USER_ROLES } from '../../constants';
-import Loading from '../../components/common/Loading';
 import Breadcrumb from '../../components/common/Breadcrumb';
+import DashboardSkeleton from '../../components/dashboard/DashboardSkeleton';
 import { ShieldAlert } from 'lucide-react';
 import { getRelativeTime } from '../../utils';
 
+/**
+ * Mount API calls (parallel):
+ * - GET /school/messages/inbox  (messagesService.getInbox)
+ * - GET /school/students/count  (studentsService.getSchoolStudentCount)
+ */
 const TeacherDashboard = () => {
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
@@ -36,9 +41,9 @@ const TeacherDashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [messagesRes, studentsRes] = await Promise.all([
+      const [messagesRes, countRes] = await Promise.all([
         messagesService.getInbox(),
-        studentsService.getAll({ pageSize: 1 }),
+        studentsService.getSchoolStudentCount(),
       ]);
 
       if (messagesRes.success && messagesRes.data) {
@@ -48,8 +53,10 @@ const TeacherDashboard = () => {
         setUnreadCount(arr.filter(m => !m.isRead).length);
       }
 
-      if (studentsRes.success && studentsRes.data) {
-        setTotalStudents(studentsRes.data.total || studentsRes.data.data?.length || 0);
+      if (countRes.success && countRes.data != null) {
+        const body = countRes.data;
+        const n = typeof body.total === 'number' ? body.total : body?.meta?.total;
+        setTotalStudents(typeof n === 'number' ? n : 0);
       }
     } catch (error) {
       // silently handle
@@ -69,7 +76,7 @@ const TeacherDashboard = () => {
   ];
 
   if (loading) {
-    return <Loading fullScreen />;
+    return <DashboardSkeleton breadcrumbItems={breadcrumbItems} />;
   }
 
   return (

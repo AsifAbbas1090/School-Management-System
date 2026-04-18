@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, CheckCircle, Users, ShieldAlert, ArrowDownCircle, Clock, DollarSign } from 'lucide-react';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import { formatCurrency } from '../../utils';
-import { useAuthStore } from '../../store';
+import { useAuthStore, useSchoolStore } from '../../store';
 import { USER_ROLES } from '../../constants';
 import { analyticsService } from '../../services/api';
+import { getTargetSchoolIdForScopedApi } from '../../utils';
+import toast from 'react-hot-toast';
 
 const StaffPerformancePage = () => {
     const { user } = useAuthStore();
+    const { currentSchool } = useSchoolStore();
     const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN].includes(user?.role);
 
     const [stats, setStats] = useState(null);
@@ -17,14 +20,25 @@ const StaffPerformancePage = () => {
         if (!isAuthorized) return;
         const load = async () => {
             try {
-                const res = await analyticsService.getDashboardStats();
+                const targetSchoolId = getTargetSchoolIdForScopedApi(user, currentSchool);
+                if (!targetSchoolId) {
+                    if (user?.role === USER_ROLES.SUPER_ADMIN) {
+                        toast.error('Select a school before viewing staff performance.');
+                    }
+                    setStats(null);
+                    return;
+                }
+                const res = await analyticsService.getDashboardStats({
+                    schoolId: targetSchoolId,
+                    role: user?.role,
+                });
                 if (res.success) setStats(res.data);
             } finally {
                 setLoading(false);
             }
         };
         load();
-    }, [isAuthorized]);
+    }, [isAuthorized, user, currentSchool]);
 
     if (!isAuthorized) {
         return (

@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertParentOwnsStudent } from '../../common/assert-parent-owns-student';
 import { CreateFeePaymentDto } from '../dto/create-fee-payment.dto';
 import { UpdateFeePaymentDto } from '../dto/update-fee-payment.dto';
 import { PaymentQueryDto } from '../dto/fee-query.dto';
 import { ReceiptService } from './receipt.service';
-import { Prisma } from '@prisma/client';
+import { PaymentMethod, Prisma, UserRole } from '@prisma/client';
 
 @Injectable()
 export class FeePaymentsService {
@@ -17,7 +18,11 @@ export class FeePaymentsService {
    * Create a new fee payment
    * Simplified model: Each student has monthlyFee, payments are tracked monthly
    */
-  async create(schoolId: string, createFeePaymentDto: CreateFeePaymentDto) {
+  async create(
+    schoolId: string,
+    createFeePaymentDto: CreateFeePaymentDto,
+    user?: { id: string; role: UserRole },
+  ) {
     try {
       // Verify student belongs to school
       const student = await this.prisma.student.findFirst({
@@ -34,6 +39,10 @@ export class FeePaymentsService {
 
       if (!student) {
         throw new NotFoundException(`Student with ID ${createFeePaymentDto.studentId} not found`);
+      }
+
+      if (user?.role === UserRole.PARENT) {
+        await assertParentOwnsStudent(this.prisma, schoolId, user.id, createFeePaymentDto.studentId);
       }
 
       // Check if payment already exists for this student/month/year
@@ -124,9 +133,20 @@ export class FeePaymentsService {
   /**
    * Get all fee payments with filters
    */
-  async findAll(schoolId: string, query: PaymentQueryDto) {
+  async findAll(
+    schoolId: string,
+    query: PaymentQueryDto,
+    user?: { id: string; role: UserRole },
+  ) {
     const { studentId, paymentMethod, month, year, page = 1, pageSize = 100 } = query;
     const skip = (page - 1) * pageSize;
+
+    if (user?.role === UserRole.PARENT) {
+      if (!studentId) {
+        throw new BadRequestException('studentId is required for parents');
+      }
+      await assertParentOwnsStudent(this.prisma, schoolId, user.id, studentId);
+    }
 
     const where: any = {
       schoolId,
@@ -156,9 +176,15 @@ export class FeePaymentsService {
         orderBy: [{ year: 'desc' }, { month: 'desc' }, { paidAt: 'desc' }],
         include: {
           Student: {
-            include: {
-              Class: true,
-              Section: true,
+            select: {
+              id: true,
+              name: true,
+              rollNumber: true,
+              monthlyFee: true,
+              classId: true,
+              sectionId: true,
+              Class: { select: { name: true } },
+              Section: { select: { name: true } },
             },
           },
         },
@@ -251,13 +277,25 @@ export class FeePaymentsService {
   }
 
   /**
-   * Get student fee summary
+   * Get student fee summary (monthly fee + opening dues vs recorded payments)
    */
-  async getStudentFeeSummary(schoolId: string, studentId: string) {
+  async getStudentFeeSummary(
+    schoolId: string,
+    studentId: string,
+    user?: { id: string; role: UserRole },
+  ) {
     const student = await this.prisma.student.findFirst({
       where: {
         id: studentId,
         schoolId,
+      },
+      select: {
+        id: true,
+        name: true,
+        rollNumber: true,
+        monthlyFee: true,
+        pendingDues: true,
+        schoolId: true,
       },
     });
 
@@ -265,54 +303,53 @@ export class FeePaymentsService {
       throw new NotFoundException(`Student with ID ${studentId} not found`);
     }
 
-    // Get all payments for this student
-    const payments = await this.prisma.feePayment.findMany({
-      where: {
-        schoolId,
-        studentId,
-      },
-      orderBy: [{ year: 'desc' }, { month: 'desc' }],
-    });
+    if (user?.role === UserRole.PARENT) {
+      await assertParentOwnsStudent(this.prisma, schoolId, user.id, studentId);
+    }
 
-    // Calculate totals
-    const totalPaid = payments.reduce((sum, p) => sum + p.amountPaid, 0);
-    const totalDiscount = payments.reduce((sum, p) => sum + p.discountAmount, 0);
+    const [totalPaidAgg, payments] = await Promise.all([
+      this.prisma.feePayment.aggregate({
+        where: { schoolId, studentId },
+        _sum: { amountPaid: true },
+      }),
+      this.prisma.feePayment.findMany({
+        where: { schoolId, studentId },
+        orderBy: { paidAt: 'desc' },
+        take: 6,
+        select: {
+          id: true,
+          amountPaid: true,
+          month: true,
+          year: true,
+          paidAt: true,
+          paymentMethod: true,
+        },
+      }),
+    ]);
 
-    // Get current month/year
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
-
-    // Check if paid for current month
-    const currentMonthPayment = payments.find(
-      p => p.month === currentMonth && p.year === currentYear
-    );
+    const monthlyFee = student.monthlyFee ?? 0;
+    const pendingDues = student.pendingDues ?? 0;
+    const totalDue = monthlyFee + pendingDues;
+    const totalPaid = totalPaidAgg._sum.amountPaid ?? 0;
+    const remaining = totalDue - totalPaid;
 
     return {
-      student: {
-        id: student.id,
-        name: student.name,
-        rollNumber: student.rollNumber,
-        monthlyFee: student.monthlyFee || 0,
-      },
-      summary: {
-        totalPaid,
-        totalDiscount,
-        monthlyFee: student.monthlyFee || 0,
-        currentMonthPaid: currentMonthPayment ? true : false,
-        currentMonthPayment: currentMonthPayment || null,
-      },
-      payments: payments.map(p => ({
+      studentId: student.id,
+      studentName: student.name,
+      monthlyFee,
+      pendingDues,
+      totalDue,
+      totalPaid,
+      remaining,
+      isAdvance: remaining < 0,
+      lastPaymentDate: payments[0]?.paidAt ?? null,
+      payments: payments.map((p) => ({
         id: p.id,
+        amount: p.amountPaid,
         month: p.month,
         year: p.year,
-        originalAmount: p.originalAmount,
-        discountPercentage: p.discountPercentage,
-        discountAmount: p.discountAmount,
-        amountPaid: p.amountPaid,
+        paymentDate: p.paidAt,
         paymentMethod: p.paymentMethod,
-        paidAt: p.paidAt,
-        receiptNumber: p.receiptNumber,
       })),
     };
   }
@@ -320,7 +357,11 @@ export class FeePaymentsService {
   /**
    * Get a single payment by ID
    */
-  async findOne(schoolId: string, id: string) {
+  async findOne(
+    schoolId: string,
+    id: string,
+    user?: { id: string; role: UserRole },
+  ) {
     const payment = await this.prisma.feePayment.findFirst({
       where: {
         id,
@@ -348,14 +389,32 @@ export class FeePaymentsService {
       throw new NotFoundException(`Fee payment with ID ${id} not found`);
     }
 
+    if (user?.role === UserRole.PARENT) {
+      await assertParentOwnsStudent(this.prisma, schoolId, user.id, payment.studentId);
+    }
+
     return payment;
   }
 
   /**
-   * Update a fee payment (admin only)
+   * Update a fee payment (admin: full edit; parent: amountPaid / paymentMethod / remarks only — same child)
    */
-  async update(schoolId: string, id: string, updateFeePaymentDto: UpdateFeePaymentDto) {
-    const existing = await this.findOne(schoolId, id);
+  async update(
+    schoolId: string,
+    id: string,
+    updateFeePaymentDto: UpdateFeePaymentDto,
+    user?: { id: string; role: UserRole },
+  ) {
+    const existing = await this.findOne(schoolId, id, user);
+
+    if (user?.role === UserRole.PARENT) {
+      if (
+        updateFeePaymentDto.originalAmount !== undefined ||
+        updateFeePaymentDto.discountPercentage !== undefined
+      ) {
+        throw new ForbiddenException('Parents cannot change fee amount or discount; contact the school to adjust.');
+      }
+    }
 
     // Calculate discount if discountPercentage or originalAmount changed
     let discountAmount = existing.discountAmount;
@@ -414,10 +473,201 @@ export class FeePaymentsService {
   }
 
   /**
+   * Bulk-import fee payments from parsed CSV rows (rollNumber, month, year, amountPaid, paymentMethod, …).
+   */
+  async bulkImportFromRows(schoolId: string, rows: Record<string, unknown>[]) {
+    const results = {
+      total: rows.length,
+      success: 0,
+      failed: 0,
+      skipped: 0,
+      errors: [] as string[],
+      skippedDetails: [] as string[],
+    };
+
+    const normKey = (k: string) => k.replace(/\s+/g, '').toLowerCase();
+    const rowMap = (row: Record<string, unknown>) => {
+      const m = new Map<string, string>();
+      for (const [k, v] of Object.entries(row)) {
+        m.set(normKey(k), String(v ?? '').trim());
+      }
+      return m;
+    };
+    const get = (m: Map<string, string>, ...aliases: string[]) => {
+      for (const a of aliases) {
+        const v = m.get(normKey(a));
+        if (v !== undefined && v !== '') return v;
+      }
+      return '';
+    };
+
+    const parsePaymentMethod = (raw: string): PaymentMethod => {
+      const s = raw.trim().toUpperCase().replace(/[-\s]/g, '_');
+      const aliases: Record<string, PaymentMethod> = {
+        CASH: PaymentMethod.CASH,
+        CARD: PaymentMethod.CARD,
+        BANK_TRANSFER: PaymentMethod.BANK_TRANSFER,
+        BANK: PaymentMethod.BANK_TRANSFER,
+        BANKTRANSFER: PaymentMethod.BANK_TRANSFER,
+        ONLINE: PaymentMethod.ONLINE,
+        CHEQUE: PaymentMethod.CHEQUE,
+        CHECK: PaymentMethod.CHEQUE,
+      };
+      if (['CASH', 'CARD', 'BANK_TRANSFER', 'ONLINE', 'CHEQUE'].includes(s)) return s as PaymentMethod;
+      if (aliases[s]) return aliases[s];
+      throw new Error(`Invalid paymentMethod "${raw}" (use CASH, CARD, BANK_TRANSFER, ONLINE, CHEQUE)`);
+    };
+
+    type ParsedRow = {
+      rowIndex: number;
+      rollNumber: string;
+      month: number;
+      year: number;
+      amountPaid: number;
+      discountPercentage: number;
+      originalAmount: number | null;
+      remarks: string | null;
+      method: PaymentMethod;
+    };
+
+    const parsedOk: ParsedRow[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        const m = rowMap(rows[i]);
+        const rollNumber = get(m, 'rollNumber', 'roll', 'roll_no');
+        const monthStr = get(m, 'month');
+        const yearStr = get(m, 'year');
+        const amountPaidStr = get(m, 'amountPaid', 'amount', 'feeReceived', 'paid');
+        const methodStr = get(m, 'paymentMethod', 'method');
+        const discStr = get(m, 'discountPercentage', 'discount');
+        const origStr = get(m, 'originalAmount', 'original');
+        const remarks = get(m, 'remarks', 'note') || null;
+
+        if (!rollNumber) throw new Error('rollNumber is required');
+        if (!monthStr || !yearStr) throw new Error('month and year are required');
+        if (!amountPaidStr) throw new Error('amountPaid is required');
+        if (!methodStr) throw new Error('paymentMethod is required');
+
+        const month = parseInt(monthStr, 10);
+        const year = parseInt(yearStr, 10);
+        if (!Number.isFinite(month) || month < 1 || month > 12) throw new Error('month must be 1–12');
+        if (!Number.isFinite(year) || year < 2000 || year > 2100) throw new Error('year invalid');
+
+        const amountPaid = parseFloat(amountPaidStr);
+        if (Number.isNaN(amountPaid) || amountPaid < 0) throw new Error('amountPaid invalid');
+
+        const discountPercentage = discStr ? parseFloat(discStr) : 0;
+        if (Number.isNaN(discountPercentage) || discountPercentage < 0 || discountPercentage > 100) {
+          throw new Error('discountPercentage must be 0–100');
+        }
+
+        let originalAmount: number | null = origStr ? parseFloat(origStr) : null;
+        if (origStr && (originalAmount === null || Number.isNaN(originalAmount) || originalAmount < 0)) {
+          throw new Error('originalAmount invalid');
+        }
+
+        const method = parsePaymentMethod(methodStr);
+
+        parsedOk.push({
+          rowIndex: i,
+          rollNumber: rollNumber.trim(),
+          month,
+          year,
+          amountPaid,
+          discountPercentage,
+          originalAmount,
+          remarks,
+          method,
+        });
+      } catch (e) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: ${(e as Error).message}`);
+      }
+    }
+
+    if (parsedOk.length === 0) {
+      return results;
+    }
+
+    const rolls = [...new Set(parsedOk.map((p) => p.rollNumber))];
+    const students = await this.prisma.student.findMany({
+      where: { schoolId, rollNumber: { in: rolls } },
+      select: { id: true, rollNumber: true, monthlyFee: true, name: true },
+    });
+    const byRoll = new Map(students.map((s) => [s.rollNumber.trim(), s]));
+
+    for (const row of parsedOk) {
+      const stu = byRoll.get(row.rollNumber);
+      if (!stu) {
+        results.failed++;
+        results.errors.push(
+          `Row ${row.rowIndex + 1}: No student with roll "${row.rollNumber}" in this school`,
+        );
+        continue;
+      }
+
+      const existing = await this.prisma.feePayment.findFirst({
+        where: {
+          schoolId,
+          studentId: stu.id,
+          month: row.month,
+          year: row.year,
+        },
+      });
+      if (existing) {
+        results.skipped++;
+        results.skippedDetails.push(
+          `Row ${row.rowIndex + 1}: Payment already exists for ${stu.name} (${row.rollNumber}) ${row.month}/${row.year}`,
+        );
+        continue;
+      }
+
+      const originalAmount =
+        row.originalAmount != null && !Number.isNaN(row.originalAmount)
+          ? row.originalAmount
+          : (stu.monthlyFee ?? 0);
+      const discountAmount = (originalAmount * row.discountPercentage) / 100;
+
+      try {
+        let receiptNumber = this.receiptService.generateReceiptNumber();
+        receiptNumber = await this.receiptService.ensureUniqueReceiptNumber(this.prisma, receiptNumber);
+
+        await this.prisma.feePayment.create({
+          data: {
+            schoolId,
+            studentId: stu.id,
+            month: row.month,
+            year: row.year,
+            originalAmount,
+            discountPercentage: row.discountPercentage,
+            discountAmount,
+            amountPaid: row.amountPaid,
+            paymentMethod: row.method,
+            receiptNumber,
+            remarks: row.remarks,
+            transactionId: null,
+          },
+        });
+        results.success++;
+      } catch (e) {
+        results.failed++;
+        results.errors.push(`Row ${row.rowIndex + 1}: ${(e as Error).message}`);
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Get receipt payload for PDF generation
    */
-  async getReceiptPayload(schoolId: string, paymentId: string) {
-    const payment = await this.findOne(schoolId, paymentId);
+  async getReceiptPayload(
+    schoolId: string,
+    paymentId: string,
+    user?: { id: string; role: UserRole },
+  ) {
+    const payment = await this.findOne(schoolId, paymentId, user);
 
     if (!payment.Student) {
       throw new NotFoundException('Student not found');

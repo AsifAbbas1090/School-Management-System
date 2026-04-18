@@ -2,25 +2,55 @@ import React, { useEffect, useState } from 'react';
 import { Users, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { analyticsService } from '../../services/api';
-import { formatCurrency, getRelativeTime } from '../../utils';
-import { useAuthStore } from '../../store';
+import { formatCurrency, getTargetSchoolIdForScopedApi } from '../../utils';
+import { useAuthStore, useSchoolStore } from '../../store';
 import { USER_ROLES } from '../../constants';
-import Loading from '../../components/common/Loading';
 import Breadcrumb from '../../components/common/Breadcrumb';
+import DashboardSkeleton from '../../components/dashboard/DashboardSkeleton';
 import { ShieldAlert } from 'lucide-react';
+import toast from 'react-hot-toast';
 
+/**
+ * Mount API calls:
+ * - GET /school/analytics/dashboard?schoolId=&role=  (analyticsService.getDashboardStats)
+ */
 const ManagementDashboard = () => {
     const { user } = useAuthStore();
+    const { currentSchool } = useSchoolStore();
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
 
     const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN, USER_ROLES.MANAGEMENT].includes(user?.role);
 
+    const loadDashboardData = async () => {
+        setLoading(true);
+        try {
+            const targetSchoolId = getTargetSchoolIdForScopedApi(user, currentSchool);
+            if (!targetSchoolId) {
+                if (user?.role === USER_ROLES.SUPER_ADMIN) {
+                    toast.error('Select a school (e.g. from the Schools page) before opening this dashboard.');
+                }
+                return;
+            }
+            const response = await analyticsService.getDashboardStats({
+                schoolId: targetSchoolId,
+                role: user?.role,
+            });
+            if (response.success && response.data) {
+                setStats(response.data);
+            }
+        } catch (error) {
+            // Silently handle errors - UI shows empty state
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (isAuthorized) {
             loadDashboardData();
         }
-    }, [isAuthorized]);
+    }, [isAuthorized, user, currentSchool]);
 
     if (!isAuthorized) {
         return (
@@ -39,19 +69,6 @@ const ManagementDashboard = () => {
             </div>
         );
     }
-
-    const loadDashboardData = async () => {
-        try {
-            const response = await analyticsService.getDashboardStats();
-            if (response.success && response.data) {
-                setStats(response.data);
-            }
-        } catch (error) {
-            // Silently handle errors - UI shows empty state
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const breadcrumbItems = [{ label: 'Dashboard', path: null }];
 
@@ -92,7 +109,7 @@ const ManagementDashboard = () => {
     const topStudents = stats?.topStudents || [];
 
     if (loading) {
-        return <Loading fullScreen />;
+        return <DashboardSkeleton breadcrumbItems={breadcrumbItems} />;
     }
 
     return (

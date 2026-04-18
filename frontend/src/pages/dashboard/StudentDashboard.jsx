@@ -1,66 +1,112 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { User, Calendar, Award, FileText, TrendingUp, AlertCircle, BookOpen } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { useAuthStore, useStudentsStore, useExamsStore, useAttendanceStore, useAnnouncementsStore } from '../../store';
-import { examsService, attendanceService, announcementsService } from '../../services/api';
-import { formatCurrency, formatDate } from '../../utils';
+import { useSearchParams, useParams } from 'react-router-dom';
+import { Calendar, Award, FileText, TrendingUp, AlertCircle, BookOpen } from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useAuthStore, useStudentsStore } from '../../store';
+import { examsService, studentAttendanceService, announcementsService } from '../../services/api';
+import { formatDate } from '../../utils';
 import { USER_ROLES } from '../../constants';
 import Loading from '../../components/common/Loading';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import toast from 'react-hot-toast';
 
-const StudentDashboard = () => {
+const VIEWER_ROLES = [
+  USER_ROLES.SUPER_ADMIN,
+  USER_ROLES.ADMIN,
+  USER_ROLES.MANAGEMENT,
+  USER_ROLES.TEACHER,
+  USER_ROLES.PARENT,
+];
+
+function canViewerAccessStudent(user, student) {
+  if (!user || !student) return false;
+  const role = user.role;
+  if ([USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.TEACHER].includes(role)) {
+    return true;
+  }
+  if (role === USER_ROLES.PARENT && student.parentId === user.id) {
+    return true;
+  }
+  return false;
+}
+
+/** ExamResult row helpers (nested Exam from API) */
+function resultPct(r) {
+  const total = r?.Exam?.totalMarks;
+  const got = r?.obtainedMarks;
+  if (!total || total <= 0) return 0;
+  return (got / total) * 100;
+}
+
+const StudentDashboard = ({ studentId: studentIdProp }) => {
+  const { studentId: routeStudentId } = useParams();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const { students } = useStudentsStore();
-  const { results } = useExamsStore();
-  const { attendanceRecords } = useAttendanceStore();
-  const { announcements: allAnnouncements } = useAnnouncementsStore();
+
+  const effectiveStudentId =
+    studentIdProp || routeStudentId || searchParams.get('studentId') || '';
 
   const [loading, setLoading] = useState(true);
   const [studentData, setStudentData] = useState(null);
   const [myResults, setMyResults] = useState([]);
+  const [gpa, setGpa] = useState(null);
   const [myAttendance, setMyAttendance] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
 
-  const isAuthorized = user?.role === USER_ROLES.STUDENT;
+  const viewerOk = user && VIEWER_ROLES.includes(user.role);
 
   const loadData = useCallback(async () => {
-    if (!isAuthorized || !user?.id) return;
+    if (!viewerOk || !effectiveStudentId) {
+      setLoading(false);
+      return;
+    }
 
+    const currentStudent = students.find((s) => s.id === effectiveStudentId);
+    if (!currentStudent) {
+      toast.error('Student not found in loaded data');
+      setStudentData(null);
+      setLoading(false);
+      return;
+    }
+
+    if (!canViewerAccessStudent(user, currentStudent)) {
+      toast.error('You do not have access to this student');
+      setStudentData(null);
+      setLoading(false);
+      return;
+    }
+
+    setStudentData(currentStudent);
     setLoading(true);
     try {
-      // Find current student
-      const currentStudent = students.find(s => s.userId === user.id || s.id === user.id);
-      if (!currentStudent) {
-        toast.error('Student profile not found');
-        setLoading(false);
-        return;
-      }
-
-      setStudentData(currentStudent);
-
-      // Load results, attendance, and announcements in parallel
       const [resultsRes, attendanceRes, announcementsRes] = await Promise.all([
-        examsService.getAll({ studentId: currentStudent.id }),
-        attendanceService.getByStudent(currentStudent.id),
-        announcementsService.getAll({ targetRoles: ['STUDENT'] }),
+        examsService.getStudentResults({ studentId: effectiveStudentId }),
+        studentAttendanceService.getAll({ studentId: effectiveStudentId, pageSize: 1000 }),
+        announcementsService.getAll({ targetRoles: ['STUDENT', 'PARENT'] }),
       ]);
 
       if (resultsRes.success && resultsRes.data) {
-        const resultsData = resultsRes.data.data || resultsRes.data;
-        setMyResults(Array.isArray(resultsData) ? resultsData : []);
+        const payload = resultsRes.data;
+        const rows = payload.results ?? payload.data?.results ?? [];
+        setMyResults(Array.isArray(rows) ? rows : []);
+        setGpa(payload.gpa != null ? payload.gpa : null);
+      } else {
+        setMyResults([]);
+        setGpa(null);
       }
 
       if (attendanceRes.success && attendanceRes.data) {
-        const attendanceData = attendanceRes.data.data || attendanceRes.data || [];
+        const body = attendanceRes.data;
+        const attendanceData = body.data ?? body ?? [];
         setMyAttendance(Array.isArray(attendanceData) ? attendanceData : []);
       } else {
         setMyAttendance([]);
       }
 
       if (announcementsRes.success && announcementsRes.data) {
-        const announcementsData = announcementsRes.data.data || announcementsRes.data || [];
-        setAnnouncements(Array.isArray(announcementsData) ? announcementsData : []);
+        const raw = announcementsRes.data.data ?? announcementsRes.data ?? [];
+        setAnnouncements(Array.isArray(raw) ? raw : []);
       } else {
         setAnnouncements([]);
       }
@@ -70,41 +116,75 @@ const StudentDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, students, isAuthorized]);
+  }, [viewerOk, effectiveStudentId, students, user]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  if (!isAuthorized) {
+  if (!viewerOk) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", textAlign: "center", minHeight: "60vh" }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '3rem',
+          textAlign: 'center',
+          minHeight: '60vh',
+        }}
+      >
         <AlertCircle size={64} className="text-error-500 mb-4" />
         <h1 className="page-title">Access Denied</h1>
-        <p className="text-gray-600 max-w-md">Only students can view the student dashboard.</p>
+        <p className="text-gray-600 max-w-md">You do not have permission to view this dashboard.</p>
       </div>
     );
   }
 
-  const breadcrumbItems = [{ label: 'Dashboard', path: null }];
+  if (!effectiveStudentId) {
+    return (
+      <div className="dashboard-page">
+        <Breadcrumb items={[{ label: 'Dashboard', path: '/dashboard' }, { label: 'Student', path: null }]} />
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '3rem',
+            textAlign: 'center',
+            minHeight: '50vh',
+          }}
+        >
+          <BookOpen size={48} className="text-gray-400 mb-4" />
+          <h2 className="page-title">No student selected</h2>
+          <p className="text-gray-600 max-w-md">
+            Pass <code className="text-sm bg-gray-100 px-1 rounded">studentId</code> as a prop, route param, or{' '}
+            <code className="text-sm bg-gray-100 px-1 rounded">?studentId=...</code> query.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-  // Calculate statistics
   const stats = useMemo(() => {
     if (!studentData) return null;
 
     const totalExams = myResults.length;
-    const passedExams = myResults.filter(r => {
-      const percentage = (r.marksObtained / r.totalMarks) * 100;
-      return percentage >= 40; // Assuming 40% is passing
-    }).length;
+    const passedExams = myResults.filter((r) => resultPct(r) >= 40).length;
 
     const totalAttendance = myAttendance.length;
-    const presentDays = myAttendance.filter(a => a.status === 'PRESENT').length;
-    const attendanceRate = totalAttendance > 0 ? ((presentDays / totalAttendance) * 100).toFixed(1) : 0;
+    const presentDays = myAttendance.filter((a) => a.status === 'PRESENT').length;
+    const attendanceRate =
+      totalAttendance > 0 ? ((presentDays / totalAttendance) * 100).toFixed(1) : 0;
 
-    const averageMarks = totalExams > 0
-      ? (myResults.reduce((sum, r) => sum + ((r.marksObtained / r.totalMarks) * 100), 0) / totalExams).toFixed(1)
-      : 0;
+    const averageMarks =
+      totalExams > 0
+        ? (
+            myResults.reduce((sum, r) => sum + resultPct(r), 0) / totalExams
+          ).toFixed(1)
+        : 0;
 
     return {
       totalExams,
@@ -114,24 +194,25 @@ const StudentDashboard = () => {
     };
   }, [studentData, myResults, myAttendance]);
 
-  // Prepare chart data
   const resultsChartData = useMemo(() => {
-    return myResults.slice(0, 10).map(result => ({
-      name: result.examName || 'Exam',
-      marks: result.marksObtained,
-      total: result.totalMarks,
-      percentage: ((result.marksObtained / result.totalMarks) * 100).toFixed(1),
+    return myResults.slice(0, 10).map((r) => ({
+      name: r.Exam?.name || 'Exam',
+      marks: r.obtainedMarks,
+      total: r.Exam?.totalMarks ?? 0,
+      percentage: resultPct(r).toFixed(1),
     }));
   }, [myResults]);
 
   const attendanceChartData = useMemo(() => {
-    const last30Days = myAttendance.slice(0, 30);
-    return last30Days.map(record => ({
+    const sorted = [...myAttendance].sort((a, b) => new Date(b.date) - new Date(a.date));
+    return sorted.slice(0, 30).map((record) => ({
       date: formatDate(record.date, 'MMM dd'),
       present: record.status === 'PRESENT' ? 1 : 0,
       absent: record.status === 'ABSENT' ? 1 : 0,
     }));
   }, [myAttendance]);
+
+  const breadcrumbItems = [{ label: 'Dashboard', path: '/dashboard' }, { label: 'Student', path: null }];
 
   if (loading) {
     return <Loading fullScreen />;
@@ -141,10 +222,20 @@ const StudentDashboard = () => {
     return (
       <div className="dashboard-page">
         <Breadcrumb items={breadcrumbItems} />
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", textAlign: "center", minHeight: "60vh" }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '3rem',
+            textAlign: 'center',
+            minHeight: '60vh',
+          }}
+        >
           <AlertCircle size={64} className="text-warning-500 mb-4" />
-          <h1 className="page-title">Student Profile Not Found</h1>
-          <p className="text-gray-600 max-w-md">Please contact the school administration.</p>
+          <h1 className="page-title">Student not available</h1>
+          <p className="text-gray-600 max-w-md">Check student id or reload students list.</p>
         </div>
       </div>
     );
@@ -157,11 +248,17 @@ const StudentDashboard = () => {
       <div className="page-header">
         <div>
           <h1>Welcome, {studentData.name}!</h1>
-          <p className="text-gray-600">Student Dashboard - {studentData.rollNumber}</p>
+          <p className="text-gray-600">
+            Student overview — {studentData.rollNumber}
+            {gpa != null && (
+              <span className="ml-2">
+                · GPA <strong>{gpa}</strong>
+              </span>
+            )}
+          </p>
         </div>
       </div>
 
-      {/* Stats Cards */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-lg mb-lg">
           <div className="card">
@@ -177,7 +274,7 @@ const StudentDashboard = () => {
           <div className="card">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Average Marks</p>
+                <p className="text-sm text-gray-600">Average %</p>
                 <h3 className="text-2xl font-bold">{stats.averageMarks}%</h3>
               </div>
               <TrendingUp className="text-success-500" size={32} />
@@ -198,7 +295,9 @@ const StudentDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Passed Exams</p>
-                <h3 className="text-2xl font-bold">{stats.passedExams}/{stats.totalExams}</h3>
+                <h3 className="text-2xl font-bold">
+                  {stats.passedExams}/{stats.totalExams}
+                </h3>
               </div>
               <Award className="text-success-500" size={32} />
             </div>
@@ -206,9 +305,7 @@ const StudentDashboard = () => {
         </div>
       )}
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-lg mb-lg">
-        {/* Results Chart */}
         {resultsChartData.length > 0 && (
           <div className="card">
             <h3 className="card-title">Recent Exam Results</h3>
@@ -225,7 +322,6 @@ const StudentDashboard = () => {
           </div>
         )}
 
-        {/* Attendance Chart */}
         {attendanceChartData.length > 0 && (
           <div className="card">
             <h3 className="card-title">Attendance Trend</h3>
@@ -244,9 +340,7 @@ const StudentDashboard = () => {
         )}
       </div>
 
-      {/* Recent Results and Announcements */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-lg">
-        {/* Recent Results */}
         <div className="card">
           <h3 className="card-title">Recent Results</h3>
           <div className="table-container">
@@ -256,7 +350,7 @@ const StudentDashboard = () => {
                   <th>Exam</th>
                   <th>Subject</th>
                   <th>Marks</th>
-                  <th>Grade</th>
+                  <th>%</th>
                 </tr>
               </thead>
               <tbody>
@@ -267,15 +361,15 @@ const StudentDashboard = () => {
                     </td>
                   </tr>
                 ) : (
-                  myResults.slice(0, 5).map((result, index) => (
-                    <tr key={index}>
-                      <td>{result.examName || 'Exam'}</td>
-                      <td>{result.subjectName || 'Subject'}</td>
-                      <td>{result.marksObtained}/{result.totalMarks}</td>
+                  myResults.slice(0, 5).map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.Exam?.name || '—'}</td>
+                      <td>{r.Exam?.Subject?.name || '—'}</td>
                       <td>
-                        <span className="badge badge-success">
-                          {((result.marksObtained / result.totalMarks) * 100).toFixed(0)}%
-                        </span>
+                        {r.obtainedMarks}/{r.Exam?.totalMarks ?? '—'}
+                      </td>
+                      <td>
+                        <span className="badge badge-success">{resultPct(r).toFixed(0)}%</span>
                       </td>
                     </tr>
                   ))
@@ -285,7 +379,6 @@ const StudentDashboard = () => {
           </div>
         </div>
 
-        {/* Recent Announcements */}
         <div className="card">
           <h3 className="card-title">Recent Announcements</h3>
           <div className="space-y-md">
@@ -308,4 +401,3 @@ const StudentDashboard = () => {
 };
 
 export default StudentDashboard;
-

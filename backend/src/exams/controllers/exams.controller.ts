@@ -21,6 +21,7 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { SchoolContext } from '../../academic/decorators/school-context.decorator';
 import { SchoolGuard } from '../../academic/guards/school-guard.guard';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('Exams & Results')
@@ -50,6 +51,24 @@ export class ExamsController {
     return this.examsService.findAll(schoolId, classId, sectionId, subjectId);
   }
 
+  @Get('results')
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.TEACHER,
+    UserRole.PARENT,
+  )
+  @ApiOperation({ summary: 'Get student results' })
+  @ApiResponse({ status: 200, description: 'Results retrieved successfully' })
+  async getStudentResults(
+    @SchoolContext() schoolId: string,
+    @Query('studentId') studentId: string,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.examsService.getStudentResults(schoolId, studentId, user);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get an exam by ID with results' })
   @ApiResponse({ status: 200, description: 'Exam retrieved successfully' })
@@ -67,16 +86,6 @@ export class ExamsController {
     @Body() bulkResultsDto: BulkResultsDto,
   ) {
     return this.examsService.submitBulkResults(schoolId, id, bulkResultsDto);
-  }
-
-  @Get('results')
-  @ApiOperation({ summary: 'Get student results' })
-  @ApiResponse({ status: 200, description: 'Results retrieved successfully' })
-  async getStudentResults(
-    @SchoolContext() schoolId: string,
-    @Query('studentId') studentId: string,
-  ) {
-    return this.examsService.getStudentResults(schoolId, studentId);
   }
 }
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeaveRequestDto } from '../dto/create-leave-request.dto';
@@ -45,17 +46,18 @@ export class LeaveService {
       if (!student) {
         throw new NotFoundException('Student not found or does not belong to you');
       }
-    } else if (userRole === UserRole.TEACHER) {
-      // Teacher requests for self, so requestedForStudentId should be null
+    } else if (userRole === UserRole.TEACHER || userRole === UserRole.SUPPORT_STAFF) {
       if (createLeaveRequestDto.requestedForStudentId) {
-        throw new BadRequestException('Teachers can only request leave for themselves');
+        throw new BadRequestException('You can only request leave for yourself');
       }
     } else {
-      throw new ForbiddenException('Only TEACHER and PARENT roles can create leave requests');
+      throw new ForbiddenException('Only TEACHER, SUPPORT_STAFF, and PARENT roles can create leave requests');
     }
 
+    const now = new Date();
     return this.prisma.leaveRequest.create({
       data: {
+        id: randomUUID(),
         schoolId,
         requestedByUserId: userId,
         requestedForStudentId: createLeaveRequestDto.requestedForStudentId || null,
@@ -65,6 +67,7 @@ export class LeaveService {
         toDate,
         reason: createLeaveRequestDto.reason,
         status: LeaveStatus.PENDING,
+        updatedAt: now,
       } as Prisma.LeaveRequestUncheckedCreateInput,
       include: {
         User_LeaveRequest_requestedByUserIdToUser: {
@@ -269,6 +272,7 @@ export class LeaveService {
         status: LeaveStatus.APPROVED,
         decisionByUserId: userId,
         decidedAt: new Date(),
+        updatedAt: new Date(),
       },
       include: {
         User_LeaveRequest_requestedByUserIdToUser: {
@@ -317,6 +321,7 @@ export class LeaveService {
         status: LeaveStatus.REJECTED,
         decisionByUserId: userId,
         decidedAt: new Date(),
+        updatedAt: new Date(),
       },
       include: {
         User_LeaveRequest_requestedByUserIdToUser: {

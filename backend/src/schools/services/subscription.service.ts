@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SubscriptionStatus } from '@prisma/client';
 
@@ -36,7 +36,7 @@ export class SubscriptionService {
     });
 
     if (!school) {
-      throw new Error('School not found');
+      throw new NotFoundException('School not found');
     }
 
     const newStatus = this.calculateSubscriptionStatus(school.nextBillingDate);

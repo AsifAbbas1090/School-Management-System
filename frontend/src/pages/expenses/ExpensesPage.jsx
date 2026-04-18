@@ -5,7 +5,7 @@ import Modal from '../../components/common/Modal';
 import { useAuthStore, useExpensesStore, useSchoolStore } from '../../store';
 import { expensesService, fileUploadService } from '../../services/api';
 import { USER_ROLES } from '../../constants';
-import { formatCurrency, formatDateTime, generateId, validateRequiredFields } from '../../utils';
+import { formatCurrency, formatDateTime, generateId, validateRequiredFields, getTargetSchoolIdForScopedApi } from '../../utils';
 import toast from 'react-hot-toast';
 
 const INITIAL_FORM_STATE = {
@@ -196,8 +196,12 @@ const ExpensesPage = () => {
                     const response = await fetch(formState.receiptImage);
                     const blob = await response.blob();
                     const file = new File([blob], 'receipt.jpg', { type: 'image/jpeg' });
-                    
-                    const uploadResponse = await fileUploadService.uploadExpenseReceipt(file);
+                    const targetSchoolId = getTargetSchoolIdForScopedApi(user, currentSchool);
+                    if (!targetSchoolId) {
+                        toast.error('Select a school context before uploading a receipt.');
+                        return;
+                    }
+                    const uploadResponse = await fileUploadService.uploadExpenseReceipt(file, targetSchoolId);
                     if (uploadResponse.success && uploadResponse.data) {
                         receiptImageUrl = uploadResponse.data.receiptImageUrl || uploadResponse.data.url;
                     }

@@ -1,9 +1,8 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Plus, Search, Edit, Trash2, Download, Upload, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { Plus, Search, Edit, Trash2, Download, Upload, AlertCircle, Loader2 } from 'lucide-react';
 import { useStudentsStore, useClassesStore, useParentsStore, useFeesStore, useAuthStore, useSchoolStore } from '../../store';
-import { studentsService, classesService, sectionsService } from '../../services/api';
-import { formatDate, exportToCSV, generateId, formatCurrency } from '../../utils';
-import { debounce } from '../../utils/debounce';
+import { studentsService, classesService, sectionsService, formatSettledApiError } from '../../services/api';
+import { formatCurrency } from '../../utils';
 import { printTable } from '../../utils/printUtils';
 import { USER_ROLES } from '../../constants';
 import Breadcrumb from '../../components/common/Breadcrumb';
@@ -12,6 +11,58 @@ import Avatar from '../../components/common/Avatar';
 import Loading from '../../components/common/Loading';
 import CSVImport from '../../components/common/CSVImport';
 import toast from 'react-hot-toast';
+
+const STUDENTS_LIST_PAGE_SIZE = 50;
+const DROPDOWN_LIST_PAGE_SIZE = 200;
+
+function toDateInputValue(value) {
+    if (!value) return '';
+    try {
+        const d = typeof value === 'string' ? new Date(value) : value;
+        if (Number.isNaN(d.getTime())) return '';
+        return d.toISOString().split('T')[0];
+    } catch {
+        return '';
+    }
+}
+
+function normalizeGender(g) {
+    const u = String(g || 'MALE').toUpperCase();
+    if (u === 'MALE' || u === 'FEMALE' || u === 'OTHER') return u;
+    return 'MALE';
+}
+
+/** Build PATCH body with only changed scalar fields (reduces backend work). */
+function buildStudentUpdatePatch(original, form) {
+    const patch = {};
+    const str = (x) => (x == null ? '' : String(x)).trim();
+    if (str(form.name) !== str(original.name)) patch.name = form.name.trim();
+    if (str(form.rollNumber) !== str(original.rollNumber)) patch.rollNumber = form.rollNumber.trim();
+    if (str(form.email) !== str(original.email)) patch.email = form.email || undefined;
+    if (str(form.classId) !== str(original.classId)) patch.classId = form.classId;
+    if (str(form.sectionId) !== str(original.sectionId)) patch.sectionId = form.sectionId;
+    const fg = normalizeGender(form.gender);
+    const og = normalizeGender(original.gender);
+    if (fg !== og) patch.gender = fg;
+    const st = (form.status || 'ACTIVE').toUpperCase();
+    const ost = (original.status || 'ACTIVE').toUpperCase();
+    if (st !== ost) patch.status = st;
+    const fd = toDateInputValue(form.dateOfBirth);
+    const od = toDateInputValue(original.dateOfBirth);
+    if (fd !== od) patch.dateOfBirth = fd;
+    const fa = toDateInputValue(form.admissionDate);
+    const oa = toDateInputValue(original.admissionDate);
+    if (fa !== oa) patch.admissionDate = fa;
+    if (str(form.phone) !== str(original.phone)) patch.phone = form.phone || undefined;
+    if (str(form.address) !== str(original.address)) patch.address = form.address.trim();
+    const nf = form.monthlyFee === '' || form.monthlyFee === undefined ? null : Number(form.monthlyFee);
+    const of = original.monthlyFee == null ? null : Number(original.monthlyFee);
+    if (nf !== of) patch.monthlyFee = nf == null ? undefined : nf;
+    const npd = form.pendingDues === '' || form.pendingDues === undefined ? 0 : Number(form.pendingDues);
+    const opd = original.pendingDues == null ? 0 : Number(original.pendingDues);
+    if (npd !== opd) patch.pendingDues = Number.isFinite(npd) ? npd : 0;
+    return patch;
+}
 
 // Skeleton loader for table rows
 const StudentRowSkeleton = () => (
@@ -41,7 +92,7 @@ const StudentRowSkeleton = () => (
 
 const StudentsPage = () => {
     const { user } = useAuthStore();
-    const { students, setStudents, addStudent, updateStudent, deleteStudent, loading, setLoading } = useStudentsStore();
+    const { students, setStudents, addStudent, updateStudent, deleteStudent } = useStudentsStore();
 
     // Permissions check
     const canManageStudents = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
@@ -56,15 +107,20 @@ const StudentsPage = () => {
         );
     }
 
-    const { classes, sections, setClasses, setSections, getClassesBySchool, getSectionsBySchool } = useClassesStore();
+    const { classes, sections, setClasses, setSections } = useClassesStore();
     const { addParent, parents } = useParentsStore();
     const { feePayments } = useFeesStore();
     const { currentSchool } = useSchoolStore();
 
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const [currentPage, setCurrentPage] = useState(1);
-    const PAGE_SIZE = 20;
+    const [page, setPage] = useState(1);
+    const [studentsMeta, setStudentsMeta] = useState({
+        total: 0,
+        page: 1,
+        pageSize: STUDENTS_LIST_PAGE_SIZE,
+        totalPages: 1,
+    });
     
     // Debounce search input
     useEffect(() => {
@@ -82,6 +138,9 @@ const StudentsPage = () => {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [studentToDelete, setStudentToDelete] = useState(null);
     const [showImportModal, setShowImportModal] = useState(false);
+    const [dropdownsLoading, setDropdownsLoading] = useState(true);
+    const [studentsFetching, setStudentsFetching] = useState(false);
+    const [searchBusy, setSearchBusy] = useState(false);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -96,6 +155,7 @@ const StudentsPage = () => {
         address: '',
         status: 'active',
         monthlyFee: '',
+        pendingDues: 0,
 
         // Parent Details (Only for 'add' mode)
         parentName: '',
@@ -107,62 +167,103 @@ const StudentsPage = () => {
 
     const [errors, setErrors] = useState({});
 
-    // Track if initial data is loaded
-    const initialDataLoaded = useRef(false);
+    // Classes + sections for dropdowns: load once per school (small lists, cached in store)
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            setDropdownsLoading(true);
+            const listQuery = {
+                page: 1,
+                pageSize: DROPDOWN_LIST_PAGE_SIZE,
+                ...(currentSchool?.id ? { schoolId: currentSchool.id } : {}),
+            };
+            try {
+                const [classesResponse, sectionsResponse] = await Promise.allSettled([
+                    classesService.getAll(listQuery),
+                    sectionsService.getAll(listQuery),
+                ]);
+                if (cancelled) return;
 
-    // Optimized data loading - load critical data first, fee payments later
-    const loadData = useCallback(async () => {
-        setLoading(true);
+                const classesErr = classesResponse.status === 'fulfilled' && classesResponse.value.success && classesResponse.value.data != null
+                    ? null
+                    : formatSettledApiError(classesResponse);
+                const sectionsErr = sectionsResponse.status === 'fulfilled' && sectionsResponse.value.success && sectionsResponse.value.data != null
+                    ? null
+                    : formatSettledApiError(sectionsResponse);
+
+                if (!classesErr) {
+                    const classesData = classesResponse.value.data.data || classesResponse.value.data;
+                    setClasses(Array.isArray(classesData) ? classesData : []);
+                } else {
+                    console.error('Failed to load classes:', classesErr);
+                    setClasses([]);
+                }
+
+                if (!sectionsErr) {
+                    const sectionsData = sectionsResponse.value.data.data || sectionsResponse.value.data;
+                    setSections(Array.isArray(sectionsData) ? sectionsData : []);
+                } else {
+                    console.error('Failed to load sections:', sectionsErr);
+                    setSections([]);
+                }
+
+                if (classesErr || sectionsErr) {
+                    toast.error(classesErr || sectionsErr || 'Failed to load classes or sections');
+                }
+            } catch (e) {
+                if (!cancelled) {
+                    toast.error('Failed to load classes or sections');
+                    setClasses([]);
+                    setSections([]);
+                }
+            } finally {
+                if (!cancelled) setDropdownsLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [currentSchool?.id, setClasses, setSections]);
+
+    const loadStudentsPage = useCallback(async () => {
+        setStudentsFetching(true);
+        setSearchBusy(true);
         try {
-            // Load critical data in parallel (students, classes, sections)
-            const [studentsResponse, classesResponse, sectionsResponse] = await Promise.allSettled([
-                studentsService.getAll(),
-                classesService.getAll(),
-                sectionsService.getAll()
-            ]);
-
-            // Process students
-            if (studentsResponse.status === 'fulfilled' && studentsResponse.value.success && studentsResponse.value.data) {
-                const studentsData = studentsResponse.value.data.data || studentsResponse.value.data;
+            const studentsQuery = {
+                page,
+                pageSize: STUDENTS_LIST_PAGE_SIZE,
+                ...(debouncedSearchTerm.trim() && { search: debouncedSearchTerm.trim() }),
+                ...(filterClass && { classId: filterClass }),
+                ...(filterStatus && { status: filterStatus }),
+                ...(currentSchool?.id ? { schoolId: currentSchool.id } : {}),
+            };
+            const studentsResponse = await studentsService.getAll(studentsQuery);
+            if (studentsResponse.success && studentsResponse.data != null) {
+                const payload = studentsResponse.data;
+                const studentsData = payload?.data ?? payload;
+                const meta = payload?.meta;
                 setStudents(Array.isArray(studentsData) ? studentsData : []);
+                if (meta && typeof meta.total === 'number') {
+                    setStudentsMeta(meta);
+                }
             } else {
-                console.error('Failed to load students:', studentsResponse.reason);
-                setStudents([]);
+                console.error('Failed to load students:', studentsResponse.error);
+                toast.error(studentsResponse.error || 'Failed to load students');
             }
-            
-            // Process classes
-            if (classesResponse.status === 'fulfilled' && classesResponse.value.success && classesResponse.value.data) {
-                const classesData = classesResponse.value.data.data || classesResponse.value.data;
-                setClasses(Array.isArray(classesData) ? classesData : []);
-            } else {
-                console.error('Failed to load classes:', classesResponse.reason);
-                setClasses([]);
-            }
-            
-            // Process sections
-            if (sectionsResponse.status === 'fulfilled' && sectionsResponse.value.success && sectionsResponse.value.data) {
-                const sectionsData = sectionsResponse.value.data.data || sectionsResponse.value.data;
-                setSections(Array.isArray(sectionsData) ? sectionsData : []);
-            } else {
-                console.error('Failed to load sections:', sectionsResponse.reason);
-                setSections([]);
-            }
-
-            initialDataLoaded.current = true;
         } catch (error) {
-            console.error('Failed to load data:', error);
+            console.error('Failed to load students:', error);
             toast.error('Failed to load students. Please check your connection.');
-            setStudents([]);
-            setClasses([]);
-            setSections([]);
         } finally {
-            setLoading(false);
+            setStudentsFetching(false);
+            setSearchBusy(false);
         }
-    }, [setStudents, setClasses, setSections, setLoading]);
+    }, [setStudents, currentSchool?.id, page, debouncedSearchTerm, filterClass, filterStatus]);
 
     useEffect(() => {
-        loadData();
-    }, [currentSchool]); // Remove loadData from deps to prevent infinite loops
+        loadStudentsPage();
+    }, [loadStudentsPage]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [currentSchool?.id]);
 
     const breadcrumbItems = useMemo(() => [
         { label: 'Dashboard', path: '/dashboard' },
@@ -173,21 +274,20 @@ const StudentsPage = () => {
         setModalMode(mode);
         if (mode === 'edit' && student) {
             setSelectedStudent(student);
-            // Find linked parent if needed, but for now we focus on student edit
             setFormData({
-                name: student.name,
-                rollNumber: student.rollNumber,
-                email: student.email,
-                classId: student.classId,
-                sectionId: student.sectionId,
-                gender: student.gender || 'MALE',
-                dateOfBirth: student.dateOfBirth ? formatDate(student.dateOfBirth, 'yyyy-MM-dd') : '',
-                admissionDate: student.admissionDate ? formatDate(student.admissionDate, 'yyyy-MM-dd') : '',
+                name: student.name || '',
+                rollNumber: student.rollNumber || '',
+                email: student.email || '',
+                classId: student.classId || '',
+                sectionId: student.sectionId || '',
+                gender: normalizeGender(student.gender),
+                dateOfBirth: toDateInputValue(student.dateOfBirth),
+                admissionDate: toDateInputValue(student.admissionDate),
                 phone: student.phone || '',
-                address: student.address,
-                status: student.status || 'ACTIVE',
-                monthlyFee: student.monthlyFee || '',
-                // Parent fields left empty for edit as we manage parent separately or don't edit here
+                address: student.address || '',
+                status: (student.status || 'ACTIVE').toUpperCase(),
+                monthlyFee: student.monthlyFee ?? '',
+                pendingDues: student.pendingDues ?? 0,
                 parentName: '',
                 parentEmail: '',
                 parentPassword: '',
@@ -214,6 +314,7 @@ const StudentsPage = () => {
             address: '',
             status: 'ACTIVE',
             monthlyFee: '',
+            pendingDues: 0,
             parentName: '',
             parentEmail: '',
             parentPassword: '',
@@ -272,40 +373,29 @@ const StudentsPage = () => {
         if (!validate()) return;
 
         try {
-            // Prepare student data - backend will create parent user if parent details provided
-            const studentData = {
-                ...formData,
-                gender: formData.gender.toUpperCase(), // Convert to uppercase enum: MALE, FEMALE, OTHER
-                status: formData.status ? formData.status.toUpperCase() : 'ACTIVE', // Convert to uppercase enum: ACTIVE, INACTIVE, GRADUATED, TRANSFERRED
-                dateOfBirth: formData.dateOfBirth,
-                admissionDate: formData.admissionDate || new Date().toISOString().split('T')[0],
-                // Include parent creation fields if in add mode
-                ...(modalMode === 'add' && {
+            if (modalMode === 'add') {
+                const studentData = {
+                    ...formData,
+                    gender: formData.gender.toUpperCase(),
+                    status: formData.status ? formData.status.toUpperCase() : 'ACTIVE',
+                    dateOfBirth: formData.dateOfBirth,
+                    admissionDate: formData.admissionDate || new Date().toISOString().split('T')[0],
                     parentName: formData.parentName,
                     parentEmail: formData.parentEmail,
                     parentPassword: formData.parentPassword,
                     parentPhone: formData.parentPhone,
                     parentOccupation: formData.parentOccupation,
-                }),
-                // Include parentId if editing and parent exists
-                ...(modalMode === 'edit' && selectedStudent?.parentId && {
-                    parentId: selectedStudent.parentId,
-                }),
-            };
+                };
 
-            // Include monthlyFee if provided
-            if (formData.monthlyFee !== '' && formData.monthlyFee !== undefined) {
-                studentData.monthlyFee = parseFloat(formData.monthlyFee) || 0;
-            }
+                if (formData.monthlyFee !== '' && formData.monthlyFee !== undefined) {
+                    studentData.monthlyFee = Number(formData.monthlyFee);
+                }
+                studentData.pendingDues = Number(formData.pendingDues) || 0;
 
-            if (modalMode === 'add') {
                 const response = await studentsService.create(studentData);
                 if (response.success && response.data) {
-                    // Backend creates parent user and student
                     const newStudent = response.data;
-                    addStudent(newStudent);
-                    
-                    // Link parent if created
+
                     if (newStudent.User || newStudent.parentId) {
                         const parentData = newStudent.User || {
                             id: newStudent.parentId,
@@ -324,58 +414,47 @@ const StudentsPage = () => {
                         });
                     }
                     toast.success('Student and Parent account created successfully');
-                    
-                    // Clear localStorage cache to force fresh data
-                    if (currentSchool) {
-                        const schoolDataKey = `school_data_${currentSchool.id}`;
-                        localStorage.removeItem(schoolDataKey);
-                    }
-                    
-                    // Reload all data from backend
-                    await loadData();
+                    handleCloseModal();
+                    await loadStudentsPage();
                 } else {
                     toast.error(response.error || 'Failed to create student');
                 }
-            } else {
-                // For edit mode, don't include parent creation fields
-                const updateData = {
-                    name: formData.name,
-                    rollNumber: formData.rollNumber,
-                    email: formData.email,
-                    classId: formData.classId,
-                    sectionId: formData.sectionId,
-                    gender: formData.gender.toUpperCase(),
-                    status: formData.status ? formData.status.toUpperCase() : 'ACTIVE',
-                    dateOfBirth: formData.dateOfBirth,
-                    admissionDate: formData.admissionDate,
-                    phone: formData.phone,
-                    address: formData.address,
-                    ...(formData.monthlyFee !== '' && formData.monthlyFee !== undefined && {
-                        monthlyFee: parseFloat(formData.monthlyFee) || 0,
-                    }),
-                };
-
-                const response = await studentsService.update(selectedStudent.id, updateData);
-                if (response.success && response.data) {
-                    updateStudent(selectedStudent.id, response.data);
-                    toast.success('Student updated successfully');
-                    // Clear localStorage cache to force fresh data
-                    if (currentSchool) {
-                        const schoolDataKey = `school_data_${currentSchool.id}`;
-                        localStorage.removeItem(schoolDataKey);
-                    }
-                    await loadData(); // Reload data from backend
-                } else {
-                    toast.error(response.error || 'Failed to update student');
-                }
+                return;
             }
 
+            const patch = buildStudentUpdatePatch(selectedStudent, formData);
+            if (Object.keys(patch).length === 0) {
+                toast.success('No changes to save');
+                handleCloseModal();
+                return;
+            }
+
+            const prevSnapshot = { ...selectedStudent };
+            const optimisticRow = {
+                ...selectedStudent,
+                ...patch,
+            };
+            updateStudent(selectedStudent.id, optimisticRow);
             handleCloseModal();
-        } catch (error) {
-            // Silently handle errors - toast shows user message
-            toast.error(error.response?.data?.message || 'Operation failed');
+
+            try {
+                const response = await studentsService.update(prevSnapshot.id, patch);
+                if (response.success && response.data) {
+                    updateStudent(prevSnapshot.id, response.data);
+                    toast.success('Student updated successfully');
+                } else {
+                    updateStudent(prevSnapshot.id, prevSnapshot);
+                    toast.error(response.error || 'Failed to update student');
+                }
+            } catch (err) {
+                updateStudent(prevSnapshot.id, prevSnapshot);
+                toast.error(err?.message || 'Failed to update student');
+            }
+        } catch (err) {
+            const message = err?.message || 'Operation failed';
+            toast.error(message);
         }
-    }, [formData, modalMode, selectedStudent, validate, addStudent, addParent, currentSchool, loadData, handleCloseModal]);
+    }, [formData, modalMode, selectedStudent, validate, addStudent, addParent, currentSchool, loadStudentsPage, handleCloseModal, updateStudent]);
 
     const handleDeleteClick = useCallback((student) => {
         setStudentToDelete(student);
@@ -384,64 +463,52 @@ const StudentsPage = () => {
 
     const handleDeleteConfirm = useCallback(async () => {
         if (!studentToDelete) return;
+        const snapshot = { ...studentToDelete };
+        deleteStudent(snapshot.id);
+        setShowDeleteConfirm(false);
+        setStudentToDelete(null);
         try {
-            const response = await studentsService.delete(studentToDelete.id);
+            const response = await studentsService.delete(snapshot.id);
             if (response.success) {
-                deleteStudent(studentToDelete.id);
                 toast.success('Student deleted successfully');
-                loadData(); // Reload data from backend
+                await loadStudentsPage();
             } else {
+                addStudent(snapshot);
                 toast.error(response.error || 'Failed to delete student');
             }
-            setShowDeleteConfirm(false);
-            setStudentToDelete(null);
-        } catch (error) {
+        } catch {
+            addStudent(snapshot);
             toast.error('Failed to delete student');
         }
-    }, [studentToDelete, deleteStudent, loadData]);
+    }, [studentToDelete, deleteStudent, addStudent, loadStudentsPage]);
 
-    const handleImport = useCallback((importedData) => {
-        // Process imported data and add students
-        importedData.forEach((row) => {
-            const classData = classes.find(c => c.name === row.class);
-            const sectionData = sections.find(s => s.name === row.section && s.classId === classData?.id);
-
-            // Generate Parent ID
-            const parentId = `p_imp_${generateId()}`;
-
-            // Create Parent (Implicitly)
-            addParent({
-                id: parentId,
-                name: row.fatherName || 'Unknown Parent',
-                email: `parent_${row.rollNumber}@example.com`, // Auto-gen email
-                password: row.parentPassword || 'password123', // Use provided password or default
-                role: 'parent',
-                phone: row.phone || '',
-                createdAt: new Date()
-            });
-
-            const studentData = {
-                id: generateId(),
-                name: row.name,
-                rollNumber: row.rollNumber,
-                email: row.email,
-                phone: row.phone || '',
-                fatherName: row.fatherName || '',
-                classId: classData?.id || '',
-                sectionId: sectionData?.id || '',
-                gender: 'male',
-                dateOfBirth: row.admissionDate ? new Date(row.admissionDate) : new Date(),
-                address: row.address || '',
-                status: 'active',
-                monthlyFee: parseFloat(row.monthlyFee) || 5000,
-                parentId: parentId,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
-
-            addStudent(studentData);
-        });
-    }, [classes, sections, addParent, addStudent]);
+    const handleCsvImportResult = useCallback(
+        (result) => {
+            if (!result?.success) {
+                toast.error(result?.error || 'Import failed');
+                return;
+            }
+            const d = result.data;
+            if (!d) return;
+            const ok = typeof d.success === 'number' ? d.success : 0;
+            const fail = typeof d.failed === 'number' ? d.failed : 0;
+            const skipped = typeof d.skipped === 'number' ? d.skipped : 0;
+            toast.success(
+                `${ok} imported${skipped ? ` · ${skipped} skipped (already exist or duplicate in file)` : ''}${fail ? ` · ${fail} failed` : ''}.`,
+                { duration: 6000 },
+            );
+            if (Array.isArray(d.skippedDetails) && d.skippedDetails.length > 0) {
+                const shown = d.skippedDetails.slice(0, 15).join('\n');
+                toast(shown, { duration: 20000 });
+            }
+            if (Array.isArray(d.errors) && d.errors.length > 0) {
+                const shown = d.errors.slice(0, 8).join(' · ');
+                toast.error(shown, { duration: 12000 });
+            }
+            loadStudentsPage();
+        },
+        [loadStudentsPage],
+    );
 
     // Memoize fee status calculation
     const getFeeStatus = useCallback((student) => {
@@ -485,36 +552,25 @@ const StudentsPage = () => {
         });
     }, [sections, formData.classId, currentSchool]);
 
-    // Reset page when filters change
-    useEffect(() => { setCurrentPage(1); }, [debouncedSearchTerm, filterClass, filterStatus]);
+    // Reset page when filters change (server-side filters)
+    useEffect(() => { setPage(1); }, [debouncedSearchTerm, filterClass, filterStatus]);
 
-    // Memoize filtered students for performance
-    const filteredStudents = useMemo(() => {
-        return students.filter((student) => {
-            // Filter by school
-            const matchesSchool = !currentSchool || student.schoolId === currentSchool.id;
-            if (!matchesSchool) return false;
-        
-            // Filter by search term (use debounced version)
-            const matchesSearch = !debouncedSearchTerm || 
-                student.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-                student.rollNumber.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-                (student.email && student.email.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
-            const matchesClass = !filterClass || student.classId === filterClass;
-            const matchesStatus = !filterStatus || (student.status || 'ACTIVE').toUpperCase() === filterStatus.toUpperCase();
-
-            return matchesSearch && matchesClass && matchesStatus;
-        });
-    }, [students, currentSchool, filterClass, filterStatus, debouncedSearchTerm]);
-
-    const totalPages = Math.ceil(filteredStudents.length / PAGE_SIZE);
-    const paginatedStudents = filteredStudents.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+    const classSectionLabel = useCallback(
+        (student) => {
+            const cn = student.Class?.name || getClassName(student.classId);
+            const sn = student.Section?.name
+                ? `Section ${student.Section.name}`
+                : getSectionName(student.sectionId);
+            return `${cn} - ${sn}`;
+        },
+        [getClassName, getSectionName],
+    );
 
     const handleExport = useCallback(() => {
-        const data = filteredStudents.map(student => ({
+        const data = students.map(student => ({
             name: student.name,
             roll: student.rollNumber,
-            class: `${getClassName(student.classId)} - ${getSectionName(student.sectionId)}`,
+            class: classSectionLabel(student),
             fee: student.monthlyFee && student.monthlyFee > 0 ? formatCurrency(student.monthlyFee) : 'Rs 0',
             status: (student.status || 'ACTIVE').toUpperCase()
         }));
@@ -530,11 +586,11 @@ const StudentsPage = () => {
             ],
             data: data
         });
-    }, [filteredStudents, getClassName, getSectionName]);
+    }, [students, classSectionLabel]);
 
     // Memoize table rows to prevent unnecessary re-renders
     const tableRows = useMemo(() => {
-        return paginatedStudents.map((student) => {
+        return students.map((student) => {
             const { pending, isAlert } = getFeeStatus(student);
             return (
                 <tr key={student.id}>
@@ -543,13 +599,13 @@ const StudentsPage = () => {
                             <Avatar name={student.name} src={student.avatar} />
                             <div>
                                 <div className="font-medium">{student.name}</div>
-                                <div className="text-sm text-gray-500">{student.email}</div>
+                                <div className="text-sm text-gray-500">{student.email || '—'}</div>
                             </div>
                         </div>
                     </td>
                     <td>{student.rollNumber}</td>
                     <td>
-                        {getClassName(student.classId)} - {getSectionName(student.sectionId)}
+                        {classSectionLabel(student)}
                     </td>
                     <td>{formatCurrency(student.monthlyFee || 0)}</td>
                     <td>
@@ -588,10 +644,10 @@ const StudentsPage = () => {
                 </tr>
             );
         });
-    }, [paginatedStudents, getFeeStatus, getClassName, getSectionName, handleOpenModal, handleDeleteClick]);
+    }, [students, getFeeStatus, classSectionLabel, handleOpenModal, handleDeleteClick]);
 
-    // Show skeleton loaders during initial load instead of full screen loading
-    const showSkeleton = loading && students.length === 0 && classes.length === 0;
+    const showSkeleton = dropdownsLoading && classes.length === 0;
+    const showTableSkeleton = studentsFetching && students.length === 0;
 
     return (
         <div className="students-page">
@@ -601,13 +657,18 @@ const StudentsPage = () => {
                 <div>
                     <h1 className="page-title">Students Management</h1>
                     <p className="text-gray-600">Manage all student records and parents</p>
+                    <p className="text-xs text-gray-500 mt-sm max-w-2xl">
+                        CSV import (server): required columns — name, rollNumber, dateOfBirth, gender, className,
+                        sectionName (you may use classId / sectionId instead). Optional — monthlyFee, pendingDues, parentId,
+                        phone, address, email, admissionDate, status. Download a template from the import dialog.
+                    </p>
                 </div>
                 <div className="flex gap-md">
                     <button className="btn btn-outline" onClick={() => setShowImportModal(true)} disabled={showSkeleton}>
                         <Upload size={18} />
                         <span>Import CSV</span>
                     </button>
-                    <button className="btn btn-outline" onClick={handleExport} disabled={showSkeleton || filteredStudents.length === 0}>
+                    <button className="btn btn-outline" onClick={handleExport} disabled={showSkeleton || students.length === 0}>
                         <Download size={18} />
                         <span>PDF Report</span>
                     </button>
@@ -621,7 +682,7 @@ const StudentsPage = () => {
             {/* Filters */}
             <div className="filters-section card mb-lg">
                 <div className="filters-grid">
-                    <div className="search-box">
+                    <div className="search-box" style={{ position: 'relative' }}>
                         <Search size={18} className="search-icon" />
                         <input
                             type="text"
@@ -630,7 +691,22 @@ const StudentsPage = () => {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="input"
                             disabled={showSkeleton}
+                            style={{ paddingRight: searchBusy ? '2.5rem' : undefined }}
                         />
+                        {searchBusy && students.length > 0 && (
+                            <span
+                                className="students-search-spinner"
+                                style={{
+                                    position: 'absolute',
+                                    right: '0.75rem',
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    display: 'inline-flex',
+                                }}
+                            >
+                                <Loader2 size={18} className="text-gray-400" />
+                            </span>
+                        )}
                     </div>
 
                     <select
@@ -675,12 +751,12 @@ const StudentsPage = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {showSkeleton ? (
+                        {showTableSkeleton ? (
                             // Show skeleton loaders
                             [...Array(8)].map((_, i) => (
                                 <StudentRowSkeleton key={i} />
                             ))
-                        ) : filteredStudents.length === 0 ? (
+                        ) : students.length === 0 ? (
                             <tr>
                                 <td colSpan="7" className="text-center">
                                     <div className="empty-state">
@@ -702,23 +778,28 @@ const StudentsPage = () => {
             </div>
 
             {/* Pagination */}
-            {totalPages > 1 && (
+            {studentsMeta.totalPages > 1 && (
                 <div className="pagination-bar">
                     <span className="pagination-info">
-                        Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredStudents.length)} of {filteredStudents.length} students
+                        Page {studentsMeta.page} of {studentsMeta.totalPages} ({studentsMeta.total} students)
                     </span>
                     <div className="pagination-controls">
-                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>«</button>
-                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>‹</button>
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                            const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
-                            const page = start + i;
-                            return (
-                                <button key={page} className={`btn btn-sm ${page === currentPage ? 'btn-primary' : 'btn-outline'}`} onClick={() => setCurrentPage(page)}>{page}</button>
-                            );
-                        })}
-                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages}>›</button>
-                        <button className="btn btn-sm btn-outline" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>»</button>
+                        <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={page <= 1}
+                        >
+                            Previous
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={() => setPage((p) => Math.min(studentsMeta.totalPages, p + 1))}
+                            disabled={page >= studentsMeta.totalPages}
+                        >
+                            Next
+                        </button>
                     </div>
                 </div>
             )}
@@ -794,6 +875,21 @@ const StudentsPage = () => {
                                 placeholder="e.g 5000"
                             />
                             {errors.monthlyFee && <span className="form-error">{errors.monthlyFee}</span>}
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Opening Pending Dues (Rs.)</label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                name="pendingDues"
+                                value={formData.pendingDues}
+                                onChange={handleChange}
+                                className="input"
+                                placeholder="0 — leave blank if no prior dues"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Enter any fee dues this student carried from before enrollment</p>
                         </div>
 
                         <div className="form-group">
@@ -984,7 +1080,8 @@ const StudentsPage = () => {
             {showImportModal && (
                 <CSVImport
                     type="students"
-                    onImport={handleImport}
+                    serverImportFn={studentsService.bulkImport}
+                    onServerImportResult={handleCsvImportResult}
                     onClose={() => setShowImportModal(false)}
                 />
             )}
@@ -1080,6 +1177,14 @@ const StudentsPage = () => {
             opacity: 1;
             transform: translateY(0);
           }
+        }
+
+        .students-search-spinner svg {
+          animation: studentsSearchSpin 0.8s linear infinite;
+        }
+        @keyframes studentsSearchSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
         </div>

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
@@ -12,6 +13,7 @@ export class ExpensesService {
   async create(schoolId: string, userId: string, userRole: string, createExpenseDto: CreateExpenseDto) {
     return this.prisma.expense.create({
       data: {
+        id: randomUUID(),
         schoolId,
         title: createExpenseDto.title,
         amount: createExpenseDto.amount,
@@ -20,6 +22,7 @@ export class ExpensesService {
         receiptImageUrl: createExpenseDto.receiptImageUrl || null,
         createdById: userId,
         createdByRole: userRole as UserRole,
+        updatedAt: new Date(),
       } as Prisma.ExpenseUncheckedCreateInput,
       include: {
         User: {

@@ -67,6 +67,12 @@ export class CreateStudentDto {
   @IsOptional()
   monthlyFee?: number;
 
+  @ApiPropertyOptional({ example: 0, description: 'Opening pending dues carried from before enrollment' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  pendingDues?: number;
+
   // Parent creation fields (when creating parent along with student)
   @ApiPropertyOptional({ example: 'John Parent', description: 'Parent name (required if creating parent)' })
   @IsString()

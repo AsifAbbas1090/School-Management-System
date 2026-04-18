@@ -17,7 +17,7 @@ const STATUS_OPTIONS = [
 
 const AttendancePage = () => {
     const { user } = useAuthStore();
-    const canManageAttendance = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.TEACHER, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+    const canManageAttendance = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.TEACHER, USER_ROLES.SUPPORT_STAFF, USER_ROLES.SUPER_ADMIN].includes(user?.role);
 
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedClass, setSelectedClass] = useState('');

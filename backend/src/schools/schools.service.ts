@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { UpdateSchoolDto } from './dto/update-school.dto';
+import { UpdateSchoolProfileDto } from './dto/update-school-profile.dto';
 import { SchoolQueryDto } from './dto/school-query.dto';
 import { SubscriptionService } from './services/subscription.service';
 import { SubscriptionStatus, UserRole } from '@prisma/client';
@@ -215,6 +216,13 @@ export class SchoolsService {
     }
 
     return school;
+  }
+
+  /**
+   * School admin: update display/contact fields only (no subscription billing fields).
+   */
+  async updateSchoolProfile(id: string, dto: UpdateSchoolProfileDto) {
+    return this.update(id, dto as UpdateSchoolDto);
   }
 
   /**

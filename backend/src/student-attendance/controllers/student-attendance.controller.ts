@@ -29,7 +29,7 @@ export class StudentAttendanceController {
   constructor(private readonly service: StudentAttendanceService) {}
 
   @Post('bulk')
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Submit bulk attendance for a class/section' })
   @ApiResponse({ status: 201, description: 'Attendance saved successfully' })
@@ -42,7 +42,7 @@ export class StudentAttendanceController {
   }
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.PARENT)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF, UserRole.PARENT)
   @ApiOperation({ summary: 'Get attendance records with filters' })
   @ApiResponse({ status: 200, description: 'Records retrieved successfully' })
   async findAll(
@@ -53,7 +53,7 @@ export class StudentAttendanceController {
   }
 
   @Get('summary')
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF)
   @ApiOperation({ summary: 'Get attendance summary for a class/section on a date' })
   @ApiResponse({ status: 200, description: 'Summary retrieved successfully' })
   async getSummary(
@@ -66,7 +66,7 @@ export class StudentAttendanceController {
   }
 
   @Get('student/:studentId/report')
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.PARENT)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF, UserRole.PARENT)
   @ApiOperation({ summary: 'Get monthly attendance report for a student' })
   @ApiResponse({ status: 200, description: 'Report retrieved successfully' })
   async getStudentReport(

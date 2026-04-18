@@ -130,6 +130,7 @@ export const NAVIGATION_ITEMS = {
         { id: 'classes', label: 'Classes', icon: 'BookOpen', path: '/classes' },
         { id: 'students', label: 'Students', icon: 'Users', path: '/students' },
         { id: 'teachers', label: 'Teachers', icon: 'UserCheck', path: '/teachers' },
+        { id: 'parents', label: 'Parents', icon: 'UserCircle', path: '/parents' },
         { id: 'support_staff', label: 'Support Staff', icon: 'UserCog', path: '/support-staff' },
         { id: 'attendance', label: 'Attendance', icon: 'ClipboardCheck', path: '/attendance' },
         { id: 'teacher_attendance', label: 'Teacher Attendance', icon: 'UserCheck', path: '/teacher-attendance' },

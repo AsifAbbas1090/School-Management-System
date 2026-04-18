@@ -1,15 +1,21 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Users, UserCheck, DollarSign, AlertCircle, ShieldAlert } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { analyticsService } from '../../services/api';
-import { formatCurrency, getRelativeTime } from '../../utils';
-import { useAuthStore } from '../../store';
+import { formatCurrency, getTargetSchoolIdForScopedApi } from '../../utils';
+import { useAuthStore, useSchoolStore } from '../../store';
 import { USER_ROLES } from '../../constants';
-import Loading from '../../components/common/Loading';
 import Breadcrumb from '../../components/common/Breadcrumb';
+import DashboardSkeleton from '../../components/dashboard/DashboardSkeleton';
+import toast from 'react-hot-toast';
 
+/**
+ * Mount API calls:
+ * - GET /school/analytics/dashboard?schoolId=&role=  (analyticsService.getDashboardStats)
+ */
 const AdminDashboard = () => {
     const { user } = useAuthStore();
+    const { currentSchool } = useSchoolStore();
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -37,7 +43,18 @@ const AdminDashboard = () => {
     const loadDashboardData = useCallback(async () => {
         setLoading(true);
         try {
-            const response = await analyticsService.getDashboardStats();
+            const targetSchoolId = getTargetSchoolIdForScopedApi(user, currentSchool);
+            if (!targetSchoolId) {
+                if (user?.role === USER_ROLES.SUPER_ADMIN) {
+                    toast.error('Select a school (e.g. from the Schools page) before opening this dashboard.');
+                }
+                setStats(null);
+                return;
+            }
+            const response = await analyticsService.getDashboardStats({
+                schoolId: targetSchoolId,
+                role: user?.role,
+            });
             if (response.success && response.data) {
                 setStats(response.data);
             } else {
@@ -49,7 +66,7 @@ const AdminDashboard = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [user, currentSchool]);
 
     useEffect(() => {
         if (isAuthorized && user) {
@@ -61,9 +78,8 @@ const AdminDashboard = () => {
         { label: 'Dashboard', path: null },
     ];
 
-    // Show loading state
     if (loading) {
-        return <Loading />;
+        return <DashboardSkeleton breadcrumbItems={breadcrumbItems} />;
     }
 
     // Show empty state if backend is not available

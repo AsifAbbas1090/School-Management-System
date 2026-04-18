@@ -1,8 +1,32 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, BookOpen, Trash2, Edit, Users, Download } from 'lucide-react';
-import { useClassesStore, useStudentsStore, useAuthStore, useSchoolStore } from '../../store';
+import { useClassesStore, useAuthStore, useSchoolStore } from '../../store';
 import { USER_ROLES } from '../../constants';
-import { classesService, sectionsService, studentsService } from '../../services/api';
+import { classesService, sectionsService, studentsService, API_LIST_PAGE_SIZE, formatSettledApiError } from '../../services/api';
+
+/** Paginate through all students in a class (pageSize 50) for capacity checks only. */
+async function fetchAllStudentsForClass(studentsService, { classId, schoolId }) {
+    const all = [];
+    let page = 1;
+    let totalPages = 1;
+    const pageSize = 50;
+    do {
+        const res = await studentsService.getAll({
+            classId,
+            page,
+            pageSize,
+            ...(schoolId ? { schoolId } : {}),
+        });
+        if (!res.success) break;
+        const payload = res.data;
+        const chunk = payload?.data ?? payload;
+        const meta = payload?.meta;
+        if (Array.isArray(chunk)) all.push(...chunk);
+        totalPages = meta?.totalPages ?? 1;
+        page += 1;
+    } while (page <= totalPages);
+    return all;
+}
 import { printTable } from '../../utils/printUtils';
 import { AlertCircle } from 'lucide-react';
 import DeleteWarningModal from '../../components/common/DeleteWarningModal';
@@ -33,11 +57,9 @@ const ClassesManagementPage = () => {
     const canManageClasses = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
 
     const { classes, sections, setClasses, setSections } = useClassesStore();
-    const { students, setStudents } = useStudentsStore();
     const { currentSchool } = useSchoolStore();
     
     const [loading, setLoading] = useState(true);
-    const [studentsLoading, setStudentsLoading] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [editingClass, setEditingClass] = useState(null);
     const [formData, setFormData] = useState({
@@ -49,9 +71,6 @@ const ClassesManagementPage = () => {
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     
-    // Track if students have been loaded
-    const studentsLoadedRef = useRef(false);
-
     // Memoize class sections map for performance
     const classSectionsMap = useMemo(() => {
         const map = new Map();
@@ -66,16 +85,6 @@ const ClassesManagementPage = () => {
         });
         return map;
     }, [sections]);
-
-    // Memoize student count map for performance
-    const studentCountMap = useMemo(() => {
-        const map = new Map();
-        students.forEach(student => {
-            const classId = student.classId;
-            map.set(classId, (map.get(classId) || 0) + 1);
-        });
-        return map;
-    }, [students]);
 
     // Find next available class number (fill gaps)
     const getNextAvailableClassNumber = useCallback((existingClasses) => {
@@ -121,55 +130,46 @@ const ClassesManagementPage = () => {
         return `Class ${nextNumber}`;
     }, [editingClass, getNextAvailableClassNumber]);
 
-    // Lazy load students data only when needed
-    const loadStudentsData = useCallback(async () => {
-        if (studentsLoadedRef.current) return;
-        
-        setStudentsLoading(true);
-        try {
-            const studentsResponse = await studentsService.getAll();
-            if (studentsResponse.success && studentsResponse.data) {
-                const studentsData = studentsResponse.data.data || studentsResponse.data;
-                setStudents(Array.isArray(studentsData) ? studentsData : []);
-                studentsLoadedRef.current = true;
-            }
-        } catch (error) {
-            console.error('Failed to load students:', error);
-        } finally {
-            setStudentsLoading(false);
-        }
-    }, [setStudents]);
-
-    // Optimized data loading - load classes and sections first, students later
+    // Load classes and sections only (student counts come from API _count on each class)
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            // Load classes and sections first (critical data)
+            const listQuery = {
+                page: 1,
+                pageSize: API_LIST_PAGE_SIZE,
+                ...(currentSchool?.id ? { schoolId: currentSchool.id } : {}),
+            };
             const [classesResponse, sectionsResponse] = await Promise.allSettled([
-                classesService.getAll(),
-                sectionsService.getAll()
+                classesService.getAll(listQuery),
+                sectionsService.getAll(listQuery),
             ]);
 
-            // Process classes
-            if (classesResponse.status === 'fulfilled' && classesResponse.value.success && classesResponse.value.data) {
+            const classesErr = classesResponse.status === 'fulfilled' && classesResponse.value.success && classesResponse.value.data != null
+                ? null
+                : formatSettledApiError(classesResponse);
+            const sectionsErr = sectionsResponse.status === 'fulfilled' && sectionsResponse.value.success && sectionsResponse.value.data != null
+                ? null
+                : formatSettledApiError(sectionsResponse);
+
+            if (!classesErr) {
                 const classesData = classesResponse.value.data.data || classesResponse.value.data;
                 setClasses(Array.isArray(classesData) ? classesData : []);
             } else {
-                console.error('Failed to load classes:', classesResponse.reason);
+                console.error('Failed to load classes:', classesErr);
                 setClasses([]);
             }
 
-            // Process sections
-            if (sectionsResponse.status === 'fulfilled' && sectionsResponse.value.success && sectionsResponse.value.data) {
+            if (!sectionsErr) {
                 const sectionsData = sectionsResponse.value.data.data || sectionsResponse.value.data;
                 setSections(Array.isArray(sectionsData) ? sectionsData : []);
             } else {
-                console.error('Failed to load sections:', sectionsResponse.reason);
+                console.error('Failed to load sections:', sectionsErr);
                 setSections([]);
             }
 
-            // Load students in background (non-blocking)
-            loadStudentsData();
+            if (classesErr || sectionsErr) {
+                toast.error(classesErr || sectionsErr || 'Failed to load classes or sections');
+            }
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error('Failed to load classes and sections');
@@ -178,18 +178,11 @@ const ClassesManagementPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [setClasses, setSections, loadStudentsData]);
+    }, [setClasses, setSections, currentSchool?.id]);
 
     useEffect(() => {
         loadData();
-    }, [currentSchool]); // Remove loadData from deps to prevent infinite loops
-
-    // Load students when modal opens (for delete validation)
-    useEffect(() => {
-        if (deleteModal.isOpen || showModal) {
-            loadStudentsData();
-        }
-    }, [deleteModal.isOpen, showModal, loadStudentsData]);
+    }, [currentSchool]);
 
     if (!canManageClasses) {
         return (
@@ -236,13 +229,13 @@ const ClassesManagementPage = () => {
             return;
         }
 
-        const numSections = parseInt(formData.numberOfSections);
+        const numSections = parseInt(formData.numberOfSections, 10);
         if (numSections < 1 || numSections > 26) {
             toast.error('Number of sections must be between 1 and 26', { duration: 2000 });
             return;
         }
 
-        const capacity = parseInt(formData.capacity) || 30;
+        const capacity = parseInt(formData.capacity, 10) || 30;
         if (capacity < 10 || capacity > 100) {
             toast.error('Capacity must be between 10 and 100', { duration: 2000 });
             return;
@@ -250,85 +243,151 @@ const ClassesManagementPage = () => {
 
         setSubmitting(true);
         const loadingToast = toast.loading(editingClass ? 'Updating class...' : 'Creating class...');
+        const schoolId = currentSchool?.id;
 
         try {
-            // Auto-generate class name with next available number
             const className = generateClassName(formData.grade, classes);
 
             if (editingClass) {
-                // Update class details
                 const classData = {
                     grade: formData.grade,
                     name: className,
                     displayName: className,
                 };
-                
+
                 const classResponse = await classesService.update(editingClass.id, classData);
                 if (!classResponse.success) {
                     toast.error(classResponse.error || 'Failed to update class', { id: loadingToast });
                     return;
                 }
 
-                // Handle section addition/removal
                 const existingSections = classSectionsMap.get(editingClass.id) || [];
                 const targetSectionCount = numSections;
                 const currentSectionCount = existingSections.length;
 
                 if (targetSectionCount !== currentSectionCount) {
                     const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-                    
+
                     if (targetSectionCount > currentSectionCount) {
-                        // Add new sections in parallel
                         const sectionPromises = [];
                         for (let i = currentSectionCount; i < targetSectionCount; i++) {
-                            const sectionData = {
-                                classId: editingClass.id,
-                                name: sectionLetters[i],
-                                capacity: capacity,
-                            };
-                            sectionPromises.push(sectionsService.create(sectionData));
+                            sectionPromises.push(
+                                sectionsService.create({
+                                    classId: editingClass.id,
+                                    name: sectionLetters[i],
+                                    capacity,
+                                }),
+                            );
                         }
                         await Promise.all(sectionPromises);
                     } else {
-                        // Delete excess sections (from the end)
                         const sectionsToDelete = [...existingSections]
                             .sort((a, b) => a.name.localeCompare(b.name))
                             .slice(targetSectionCount);
-                        
-                        // Ensure students are loaded for validation
-                        if (!studentsLoadedRef.current) {
-                            await loadStudentsData();
-                        }
-                        
-                        // Check for students in sections to delete
+
                         for (const section of sectionsToDelete) {
-                            const sectionStudents = students.filter(s => s.sectionId === section.id);
-                            if (sectionStudents.length > 0) {
-                                toast.error(`Cannot delete section ${section.name} as it has ${sectionStudents.length} student(s). Please reassign students first.`, { id: loadingToast });
+                            const cntRes = await studentsService.getAll({
+                                sectionId: section.id,
+                                page: 1,
+                                pageSize: 1,
+                                ...(schoolId ? { schoolId } : {}),
+                            });
+                            const totalInSection = cntRes.success ? cntRes.data?.meta?.total ?? 0 : 1;
+                            if (totalInSection > 0) {
+                                toast.error(
+                                    `Cannot delete section ${section.name} as it has student(s). Please reassign students first.`,
+                                    { id: loadingToast },
+                                );
                                 setSubmitting(false);
                                 return;
                             }
                         }
 
-                        // Delete sections in parallel
-                        const deletePromises = sectionsToDelete.map(section => 
-                            sectionsService.delete(section.id)
-                        );
-                        await Promise.all(deletePromises);
+                        await Promise.all(sectionsToDelete.map((section) => sectionsService.delete(section.id)));
                     }
                 }
 
-                toast.success('Class updated successfully!', { id: loadingToast, duration: 2000 });
-                await loadData();
+                const studentRows = await fetchAllStudentsForClass(studentsService, {
+                    classId: editingClass.id,
+                    schoolId,
+                });
+
+                const sectionsRes = await sectionsService.getAll({
+                    classId: editingClass.id,
+                    page: 1,
+                    pageSize: 200,
+                    ...(schoolId ? { schoolId } : {}),
+                });
+                if (!sectionsRes.success) {
+                    toast.error(sectionsRes.error || 'Failed to load sections for capacity update', { id: loadingToast });
+                    setSubmitting(false);
+                    return;
+                }
+                const sectionRows =
+                    (Array.isArray(sectionsRes.data?.data) ? sectionsRes.data.data : sectionsRes.data) || [];
+                const sectionList = Array.isArray(sectionRows) ? sectionRows : [];
+
+                let anyClamped = false;
+                const capUpdates = sectionList.map((sec) => {
+                    const enrolled = studentRows.filter((s) => s.sectionId === sec.id).length;
+                    const effectiveCap = Math.max(capacity, enrolled);
+                    if (effectiveCap > capacity) anyClamped = true;
+                    return sectionsService.update(sec.id, { capacity: effectiveCap });
+                });
+                if (capUpdates.length > 0) {
+                    const settled = await Promise.allSettled(capUpdates);
+                    const failed = settled.find(
+                        (r) =>
+                            r.status === 'rejected' ||
+                            (r.status === 'fulfilled' && r.value && r.value.success === false),
+                    );
+                    if (failed) {
+                        toast.error(
+                            failed.status === 'rejected'
+                                ? failed.reason?.message || 'Failed to update section capacity'
+                                : failed.value?.error || 'Failed to update section capacity',
+                            { id: loadingToast },
+                        );
+                        setSubmitting(false);
+                        return;
+                    }
+                }
+
+                const mergedClass = {
+                    ...editingClass,
+                    ...(classResponse.data || {}),
+                    grade: formData.grade,
+                    name: className,
+                    displayName: className,
+                };
+                setClasses(classes.map((c) => (c.id === editingClass.id ? mergedClass : c)));
+
+                const refreshed = await sectionsService.getAll({
+                    classId: editingClass.id,
+                    page: 1,
+                    pageSize: 200,
+                    ...(schoolId ? { schoolId } : {}),
+                });
+                if (refreshed.success) {
+                    const fresh =
+                        (Array.isArray(refreshed.data?.data) ? refreshed.data.data : refreshed.data) || [];
+                    setSections([...sections.filter((s) => s.classId !== editingClass.id), ...fresh]);
+                }
+
+                toast.success(
+                    anyClamped
+                        ? 'Class updated. Section capacity was set to at least current enrollment where needed.'
+                        : 'Class updated successfully!',
+                    { id: loadingToast, duration: 3000 },
+                );
                 resetForm();
             } else {
-                // Create class
                 const classData = {
                     grade: formData.grade,
                     name: className,
                     displayName: className,
                 };
-                
+
                 const classResponse = await classesService.create(classData);
                 if (!classResponse.success || !classResponse.data) {
                     toast.error(classResponse.error || 'Failed to create class', { id: loadingToast });
@@ -336,22 +395,31 @@ const ClassesManagementPage = () => {
                 }
 
                 const newClass = classResponse.data;
-
-                // Create sections in parallel for better performance
                 const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-                const sectionPromises = [];
-                for (let i = 0; i < numSections; i++) {
-                    const sectionData = {
-                        classId: newClass.id,
-                        name: sectionLetters[i],
-                        capacity: capacity,
-                    };
-                    sectionPromises.push(sectionsService.create(sectionData));
-                }
-                await Promise.all(sectionPromises);
+                const sectionResponses = await Promise.all(
+                    Array.from({ length: numSections }, (_, i) =>
+                        sectionsService.create({
+                            classId: newClass.id,
+                            name: sectionLetters[i],
+                            capacity,
+                        }),
+                    ),
+                );
+                const createdSections = sectionResponses
+                    .filter((r) => r.success && r.data)
+                    .map((r) => r.data);
+
+                const newClassWithCount = {
+                    ...newClass,
+                    _count: {
+                        Student: 0,
+                        Section: createdSections.length || numSections,
+                    },
+                };
+                setClasses([...classes, newClassWithCount]);
+                setSections([...sections, ...createdSections]);
 
                 toast.success(`Class created with ${numSections} section(s)!`, { id: loadingToast, duration: 2000 });
-                await loadData();
                 resetForm();
             }
         } catch (error) {
@@ -360,15 +428,10 @@ const ClassesManagementPage = () => {
         } finally {
             setSubmitting(false);
         }
-    }, [editingClass, formData, classSectionsMap, students, loadData, resetForm, generateClassName, classes, loadStudentsData]);
+    }, [editingClass, formData, classSectionsMap, resetForm, generateClassName, classes, sections, currentSchool?.id, setClasses, setSections]);
 
     const handleDeleteClick = useCallback((classItem) => {
-        // Ensure students are loaded for validation
-        if (!studentsLoadedRef.current) {
-            loadStudentsData();
-        }
-        
-        const studentCount = studentCountMap.get(classItem.id) || 0;
+        const studentCount = classItem._count?.Student ?? 0;
         if (studentCount > 0) {
             toast.error(`Cannot delete class "${classItem.name}" as it has ${studentCount} student(s). Please remove or reassign students first.`, { duration: 3000 });
             return;
@@ -378,45 +441,54 @@ const ClassesManagementPage = () => {
             classId: classItem.id, 
             className: classItem.name 
         });
-    }, [studentCountMap, loadStudentsData]);
+    }, []);
 
     const handleDeleteConfirm = useCallback(async () => {
         if (!deleteModal.classId) return;
 
         setDeleteLoading(true);
         const loadingToast = toast.loading('Deleting class...');
-        
+        const cid = deleteModal.classId;
+        const prevClasses = classes;
+        const prevSections = sections;
+
+        setClasses(classes.filter((x) => x.id !== cid));
+        setSections(sections.filter((x) => x.classId !== cid));
+
         try {
-            const response = await classesService.delete(deleteModal.classId);
+            const response = await classesService.delete(cid);
             if (response.success) {
                 toast.success('Class deleted successfully', { id: loadingToast, duration: 2000 });
                 setDeleteModal({ isOpen: false, classId: null, className: null });
-                await loadData();
             } else {
+                setClasses(prevClasses);
+                setSections(prevSections);
                 toast.error(response.error || 'Failed to delete class', { id: loadingToast });
             }
         } catch (error) {
             console.error('Failed to delete class:', error);
+            setClasses(prevClasses);
+            setSections(prevSections);
             toast.error(error.response?.data?.message || 'Failed to delete class', { id: loadingToast });
         } finally {
             setDeleteLoading(false);
         }
-    }, [deleteModal, loadData]);
+    }, [deleteModal, classes, sections, setClasses, setSections]);
 
     const getClassSections = useCallback((classId) => {
         return classSectionsMap.get(classId) || [];
     }, [classSectionsMap]);
 
-    const getStudentCount = useCallback((classId) => {
-        return studentCountMap.get(classId) || 0;
-    }, [studentCountMap]);
+    const getStudentCount = useCallback((classItem) => {
+        return classItem._count?.Student ?? 0;
+    }, []);
 
     const handleExportReport = useCallback(() => {
         const data = classes.map(cls => ({
             name: cls.name,
             grade: cls.grade,
             sections: getClassSections(cls.id).map(s => s.name).join(', '),
-            students: getStudentCount(cls.id),
+            students: getStudentCount(cls),
             capacity: (getClassSections(cls.id)[0]?.capacity || 30) * getClassSections(cls.id).length
         }));
 
@@ -437,7 +509,7 @@ const ClassesManagementPage = () => {
     const classCards = useMemo(() => {
         return classes.map((classItem) => {
             const classSections = getClassSections(classItem.id);
-            const studentCount = getStudentCount(classItem.id);
+            const studentCount = getStudentCount(classItem);
 
             return (
                 <div key={classItem.id} className="class-card">

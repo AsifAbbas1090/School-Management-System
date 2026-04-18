@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateFeeStructureDto } from '../dto/create-fee-structure.dto';
@@ -27,8 +28,10 @@ export class FeeStructuresService {
 
     return this.prisma.feeStructure.create({
       data: {
+        id: randomUUID(),
         ...createFeeStructureDto,
         schoolId,
+        updatedAt: new Date(),
       } as Prisma.FeeStructureUncheckedCreateInput,
       include: {
         Class: true,

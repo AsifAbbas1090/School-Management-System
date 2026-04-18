@@ -10,4 +10,10 @@ export class UpdateStudentDto extends PartialType(CreateStudentDto) {
   @Min(0)
   @IsOptional()
   monthlyFee?: number;
+
+  @ApiPropertyOptional({ example: 0, description: 'Opening pending dues carried from before enrollment' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  pendingDues?: number;
 }

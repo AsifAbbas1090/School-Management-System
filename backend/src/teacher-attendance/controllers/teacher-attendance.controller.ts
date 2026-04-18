@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -49,7 +50,7 @@ export class TeacherAttendanceController {
   }
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF)
   @ApiOperation({ summary: 'Get teacher attendance records' })
   @ApiResponse({ status: 200, description: 'Attendance records retrieved successfully' })
   async findAll(
@@ -57,15 +58,14 @@ export class TeacherAttendanceController {
     @CurrentUser() user: any,
     @Query() query: TeacherAttendanceQueryDto,
   ) {
-    // Teachers can only see their own attendance
-    if (user.role === UserRole.TEACHER) {
+    if (user.role === UserRole.TEACHER || user.role === UserRole.SUPPORT_STAFF) {
       query.teacherId = user.id;
     }
     return this.teacherAttendanceService.findAll(schoolId, query);
   }
 
   @Get('stats')
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF)
   @ApiOperation({ summary: 'Get teacher attendance statistics' })
   @ApiResponse({ status: 200, description: 'Statistics retrieved successfully' })
   async getStats(
@@ -75,13 +75,13 @@ export class TeacherAttendanceController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    // Teachers can only see their own stats
-    const finalTeacherId = user.role === UserRole.TEACHER ? user.id : teacherId;
+    const finalTeacherId =
+      user.role === UserRole.TEACHER || user.role === UserRole.SUPPORT_STAFF ? user.id : teacherId;
     return this.teacherAttendanceService.getStats(schoolId, finalTeacherId, startDate, endDate);
   }
 
   @Get('teacher/:teacherId/stats')
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF)
   @ApiOperation({ summary: 'Get detailed stats for a specific teacher' })
   @ApiResponse({ status: 200, description: 'Teacher stats retrieved successfully' })
   async getTeacherStats(
@@ -91,15 +91,17 @@ export class TeacherAttendanceController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    // Teachers can only see their own stats
-    if (user.role === UserRole.TEACHER && user.id !== teacherId) {
-      throw new Error('You can only view your own attendance statistics');
+    if (
+      (user.role === UserRole.TEACHER || user.role === UserRole.SUPPORT_STAFF) &&
+      user.id !== teacherId
+    ) {
+      throw new ForbiddenException('You can only view your own attendance statistics');
     }
     return this.teacherAttendanceService.getTeacherStats(schoolId, teacherId, startDate, endDate);
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER, UserRole.SUPPORT_STAFF)
   @ApiOperation({ summary: 'Get a teacher attendance record by ID' })
   @ApiResponse({ status: 200, description: 'Attendance record retrieved successfully' })
   async findOne(
@@ -108,9 +110,11 @@ export class TeacherAttendanceController {
     @CurrentUser() user: any,
   ) {
     const record = await this.teacherAttendanceService.findOne(schoolId, id);
-    // Teachers can only see their own records
-    if (user.role === UserRole.TEACHER && record.teacherId !== user.id) {
-      throw new Error('You can only view your own attendance records');
+    if (
+      (user.role === UserRole.TEACHER || user.role === UserRole.SUPPORT_STAFF) &&
+      record.teacherId !== user.id
+    ) {
+      throw new ForbiddenException('You can only view your own attendance records');
     }
     return record;
   }

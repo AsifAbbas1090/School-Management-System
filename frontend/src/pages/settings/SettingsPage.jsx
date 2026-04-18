@@ -1,418 +1,365 @@
-import React, { useState } from 'react';
-import { Save, School, Calendar, Users, Bell, Lock, Database, ShieldAlert } from 'lucide-react';
-import { SCHOOL_INFO, USER_ROLES } from '../../constants';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Save, School, Bell, Lock, ShieldAlert, Info } from 'lucide-react';
+import { USER_ROLES } from '../../constants';
 import { useAuthStore, useSchoolStore } from '../../store';
 import { schoolsService } from '../../services/api';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import toast from 'react-hot-toast';
 
+const emptySchoolForm = () => ({
+  name: '',
+  principalName: '',
+  ownerName: '',
+  address: '',
+  phone: '',
+  email: '',
+  website: '',
+  logoUrl: '',
+});
+
+function mapSchoolToForm(s) {
+  if (!s) return emptySchoolForm();
+  return {
+    name: s.name ?? '',
+    principalName: s.principalName ?? '',
+    ownerName: s.ownerName ?? '',
+    address: s.address ?? '',
+    phone: s.phone ?? '',
+    email: s.email ?? '',
+    website: s.website ?? '',
+    logoUrl: s.logoUrl ?? s.logo ?? '',
+  };
+}
+
+function formToPayload(form) {
+  return {
+    name: form.name?.trim() || undefined,
+    principalName: form.principalName?.trim() || undefined,
+    ownerName: form.ownerName?.trim() || undefined,
+    address: form.address?.trim() || undefined,
+    phone: form.phone?.trim() || undefined,
+    email: form.email?.trim() || undefined,
+    website: form.website?.trim() || undefined,
+    logoUrl: form.logoUrl?.trim() || undefined,
+  };
+}
+
+const ComingSoonPanel = ({ title, description }) => (
+  <div className="card" style={{ opacity: 0.85 }}>
+    <div className="card-header">
+      <h3 className="card-title">{title}</h3>
+    </div>
+    <div className="settings-form">
+      <div
+        className="p-lg rounded-lg border border-dashed border-gray-300 bg-gray-50 text-center"
+        style={{ pointerEvents: 'none' }}
+      >
+        <Info className="mx-auto mb-md text-gray-400" size={40} />
+        <p className="font-semibold text-gray-700">Coming soon</p>
+        <p className="text-sm text-gray-500 mt-sm max-w-md mx-auto">{description}</p>
+        <p className="text-xs text-gray-400 mt-md">No backend API is available for this section yet.</p>
+      </div>
+    </div>
+  </div>
+);
+
 const SettingsPage = () => {
-    const { user } = useAuthStore();
-    const { currentSchool } = useSchoolStore();
-    const [activeTab, setActiveTab] = useState('school');
-    const [schoolSettings, setSchoolSettings] = useState(SCHOOL_INFO);
+  const { user } = useAuthStore();
+  const { currentSchool, setCurrentSchool } = useSchoolStore();
+  const [activeTab, setActiveTab] = useState('school');
+  const [schoolForm, setSchoolForm] = useState(emptySchoolForm);
+  const [loadingSchool, setLoadingSchool] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-    const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+  const isSuperAdmin = user?.role === USER_ROLES.SUPER_ADMIN;
+  const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN, USER_ROLES.MANAGEMENT].includes(user?.role);
 
-    if (!isAuthorized) {
-        return (
-            <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
-                <ShieldAlert size={64} className="text-error mb-md" />
-                <h1 className="page-title">Access Denied</h1>
-                <p className="text-gray-600 max-w-md">
-                    You do not have permission to view or modify system settings.
-                    Please contact your system administrator if you believe this is an error.
-                </p>
-                <button
-                    className="btn btn-primary mt-lg"
-                    onClick={() => window.history.back()}
-                >
-                    Go Back
-                </button>
-            </div>
-        );
+  const loadSchool = useCallback(async () => {
+    setLoadingSchool(true);
+    try {
+      if (isSuperAdmin) {
+        const id = currentSchool?.id;
+        if (!id) {
+          setSchoolForm(emptySchoolForm());
+          return;
+        }
+        const res = await schoolsService.getById(id);
+        if (res.success && res.data) {
+          setSchoolForm(mapSchoolToForm(res.data));
+        } else {
+          toast.error(res.error || 'Could not load school');
+          setSchoolForm(emptySchoolForm());
+        }
+        return;
+      }
+      const res = await schoolsService.getMySchoolProfile();
+      if (res.success && res.data) {
+        setSchoolForm(mapSchoolToForm(res.data));
+        setCurrentSchool(res.data);
+      } else {
+        toast.error(res.error || 'Could not load school profile');
+        setSchoolForm(emptySchoolForm());
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to load school');
+      setSchoolForm(emptySchoolForm());
+    } finally {
+      setLoadingSchool(false);
+    }
+  }, [isSuperAdmin, currentSchool?.id, setCurrentSchool]);
+
+  useEffect(() => {
+    if (!isAuthorized) return;
+    loadSchool();
+  }, [isAuthorized, loadSchool]);
+
+  if (!isAuthorized) {
+    return (
+      <div className="flex flex-col items-center justify-center min-vh-50 text-center p-xl">
+        <ShieldAlert size={64} className="text-error mb-md" />
+        <h1 className="page-title">Access Denied</h1>
+        <p className="text-gray-600 max-w-md">
+          You do not have permission to view or modify system settings.
+        </p>
+        <button className="btn btn-primary mt-lg" type="button" onClick={() => window.history.back()}>
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  const breadcrumbItems = [
+    { label: 'Dashboard', path: '/dashboard' },
+    { label: 'Settings', path: null },
+  ];
+
+  const handleSaveSchool = async () => {
+    const payload = formToPayload(schoolForm);
+    if (!payload.name) {
+      toast.error('School name is required');
+      return;
     }
 
-    const breadcrumbItems = [
-        { label: 'Dashboard', path: '/dashboard' },
-        { label: 'Settings', path: null },
-    ];
-
-    const handleSave = async () => {
-        const schoolId = currentSchool?.id || user?.schoolId || user?.School?.id;
-
-        try {
-            // Determine API call based on what we are saving. 
-            // For now, let's assume we are saving School Info (activeTab === 'school')
-            let response;
-
-            if (activeTab === 'school') {
-                if (!schoolId) {
-                    toast.error('School ID not found');
-                    return;
-                }
-                response = await schoolsService.update(schoolId, schoolSettings);
-            } else {
-                toast.success('Settings saved');
-                return;
-            }
-
-            if (response && response.success) {
-                toast.success('School settings updated successfully');
-                // updateSchool(response.data); // Update store if method exists
-            } else {
-                toast.error(response?.error || 'Failed to update settings');
-            }
-        } catch (error) {
-            console.error(error);
-            toast.error('An error occurred while saving');
+    setSaving(true);
+    try {
+      let res;
+      if (isSuperAdmin) {
+        const id = currentSchool?.id;
+        if (!id) {
+          toast.error('Select a school first (e.g. set current school from the Schools page or header).');
+          setSaving(false);
+          return;
         }
-    };
+        res = await schoolsService.update(id, payload);
+      } else {
+        res = await schoolsService.updateMySchoolProfile(payload);
+      }
 
-    const tabs = [
-        { id: 'school', label: 'School Info', icon: School },
-        { id: 'academic', label: 'Academic Year', icon: Calendar },
-        { id: 'users', label: 'User Management', icon: Users },
-        { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'security', label: 'Security', icon: Lock },
-        { id: 'backup', label: 'Backup & Restore', icon: Database },
-    ];
+      if (res.success && res.data) {
+        toast.success('School information saved');
+        setSchoolForm(mapSchoolToForm(res.data));
+        if (!isSuperAdmin || (isSuperAdmin && currentSchool?.id === res.data.id)) {
+          setCurrentSchool(res.data);
+        }
+      } else {
+        toast.error(res?.error || 'Failed to save');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('An error occurred while saving');
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    return (
-        <div className="settings-page">
-            <Breadcrumb items={breadcrumbItems} />
+  const tabs = [
+    { id: 'school', label: 'School info', icon: School },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
+    { id: 'security', label: 'Security', icon: Lock },
+  ];
 
-            <div className="page-header">
-                <div>
-                    <h1 className="page-title">Settings</h1>
-                    <p className="text-gray-600">Configure system settings and preferences</p>
-                </div>
+  return (
+    <div className="settings-page">
+      <Breadcrumb items={breadcrumbItems} />
+
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Settings</h1>
+          <p className="text-gray-600">School profile and preferences</p>
+        </div>
+      </div>
+
+      {isSuperAdmin && !currentSchool?.id && (
+        <div className="mb-lg p-md rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+          Select a school (from the Schools list or your session) before editing. Super admins use{' '}
+          <strong>PATCH /super-admin/schools/:id</strong>.
+        </div>
+      )}
+
+      <div className="settings-container">
+        <div className="settings-sidebar">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                <Icon size={18} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="settings-content">
+          {activeTab === 'school' && (
+            <div className="card">
+              <div className="card-header">
+                <h3 className="card-title">School information</h3>
+                <p className="text-sm text-gray-500 mt-xs">
+                  {isSuperAdmin
+                    ? 'Updates this school via super-admin API.'
+                    : 'Updates your school via PATCH /school/profile.'}
+                </p>
+              </div>
+              {loadingSchool ? (
+                <div className="settings-form text-gray-500">Loading…</div>
+              ) : (
+                <form
+                  className="settings-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSaveSchool();
+                  }}
+                >
+                  <div className="form-group">
+                    <label className="form-label">School name *</label>
+                    <input
+                      type="text"
+                      value={schoolForm.name}
+                      onChange={(e) => setSchoolForm({ ...schoolForm, name: e.target.value })}
+                      className="input"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-md">
+                    <div className="form-group">
+                      <label className="form-label">Principal</label>
+                      <input
+                        type="text"
+                        value={schoolForm.principalName}
+                        onChange={(e) => setSchoolForm({ ...schoolForm, principalName: e.target.value })}
+                        className="input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Owner</label>
+                      <input
+                        type="text"
+                        value={schoolForm.ownerName}
+                        onChange={(e) => setSchoolForm({ ...schoolForm, ownerName: e.target.value })}
+                        className="input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Address</label>
+                    <textarea
+                      value={schoolForm.address}
+                      onChange={(e) => setSchoolForm({ ...schoolForm, address: e.target.value })}
+                      className="textarea"
+                      rows="3"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-md">
+                    <div className="form-group">
+                      <label className="form-label">Phone</label>
+                      <input
+                        type="tel"
+                        value={schoolForm.phone}
+                        onChange={(e) => setSchoolForm({ ...schoolForm, phone: e.target.value })}
+                        className="input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Email</label>
+                      <input
+                        type="email"
+                        value={schoolForm.email}
+                        onChange={(e) => setSchoolForm({ ...schoolForm, email: e.target.value })}
+                        className="input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Website</label>
+                    <input
+                      type="text"
+                      value={schoolForm.website}
+                      onChange={(e) => setSchoolForm({ ...schoolForm, website: e.target.value })}
+                      className="input"
+                      placeholder="https://…"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Logo URL</label>
+                    <input
+                      type="text"
+                      value={schoolForm.logoUrl}
+                      onChange={(e) => setSchoolForm({ ...schoolForm, logoUrl: e.target.value })}
+                      className="input"
+                      placeholder="https://…"
+                    />
+                  </div>
+
+                  <button type="submit" className="btn btn-primary" disabled={saving || (isSuperAdmin && !currentSchool?.id)}>
+                    <Save size={18} />
+                    <span>{saving ? 'Saving…' : 'Save changes'}</span>
+                  </button>
+                </form>
+              )}
             </div>
+          )}
 
-            <div className="settings-container">
-                {/* Sidebar Tabs */}
-                <div className="settings-sidebar">
-                    {tabs.map((tab) => {
-                        const Icon = tab.icon;
-                        return (
-                            <button
-                                key={tab.id}
-                                className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
-                                onClick={() => setActiveTab(tab.id)}
-                            >
-                                <Icon size={18} />
-                                <span>{tab.label}</span>
-                            </button>
-                        );
-                    })}
-                </div>
+          {activeTab === 'notifications' && (
+            <ComingSoonPanel
+              title="Notifications"
+              description="Email, SMS, and push preferences will be configurable here once notification settings are implemented in the API."
+            />
+          )}
 
-                {/* Content Area */}
-                <div className="settings-content">
-                    {activeTab === 'school' && (
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">School Information</h3>
-                            </div>
-                            <form className="settings-form">
-                                <div className="form-group">
-                                    <label className="form-label">School Name *</label>
-                                    <input
-                                        type="text"
-                                        value={schoolSettings.name}
-                                        onChange={(e) => setSchoolSettings({ ...schoolSettings, name: e.target.value })}
-                                        className="input"
-                                    />
-                                </div>
+          {activeTab === 'security' && (
+            <ComingSoonPanel
+              title="Security"
+              description="Password policies and session controls will appear here when a security settings API exists."
+            />
+          )}
+        </div>
+      </div>
 
-                                <div className="form-group">
-                                    <label className="form-label">Tagline</label>
-                                    <input
-                                        type="text"
-                                        value={schoolSettings.tagline}
-                                        onChange={(e) => setSchoolSettings({ ...schoolSettings, tagline: e.target.value })}
-                                        className="input"
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Address *</label>
-                                    <textarea
-                                        value={schoolSettings.address}
-                                        onChange={(e) => setSchoolSettings({ ...schoolSettings, address: e.target.value })}
-                                        className="textarea"
-                                        rows="3"
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-2">
-                                    <div className="form-group">
-                                        <label className="form-label">Phone *</label>
-                                        <input
-                                            type="tel"
-                                            value={schoolSettings.phone}
-                                            onChange={(e) => setSchoolSettings({ ...schoolSettings, phone: e.target.value })}
-                                            className="input"
-                                        />
-                                    </div>
-
-                                    <div className="form-group">
-                                        <label className="form-label">Email *</label>
-                                        <input
-                                            type="email"
-                                            value={schoolSettings.email}
-                                            onChange={(e) => setSchoolSettings({ ...schoolSettings, email: e.target.value })}
-                                            className="input"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Website</label>
-                                    <input
-                                        type="url"
-                                        value={schoolSettings.website}
-                                        onChange={(e) => setSchoolSettings({ ...schoolSettings, website: e.target.value })}
-                                        className="input"
-                                    />
-                                </div>
-
-                                <button type="button" className="btn btn-primary" onClick={handleSave}>
-                                    <Save size={18} />
-                                    <span>Save Changes</span>
-                                </button>
-                            </form>
-                        </div>
-                    )}
-
-                    {activeTab === 'academic' && (
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">Academic Year Settings</h3>
-                            </div>
-                            <form className="settings-form">
-                                <div className="grid grid-cols-2">
-                                    <div className="form-group">
-                                        <label className="form-label">Current Academic Year *</label>
-                                        <input type="text" className="input" defaultValue="2024-2025" />
-                                    </div>
-
-                                    <div className="form-group">
-                                        <label className="form-label">Session Start Date *</label>
-                                        <input type="date" className="input" defaultValue="2024-04-01" />
-                                    </div>
-
-                                    <div className="form-group">
-                                        <label className="form-label">Session End Date *</label>
-                                        <input type="date" className="input" defaultValue="2025-03-31" />
-                                    </div>
-
-                                    <div className="form-group">
-                                        <label className="form-label">Total Working Days</label>
-                                        <input type="number" className="input" defaultValue="220" />
-                                    </div>
-                                </div>
-
-                                <button type="button" className="btn btn-primary" onClick={handleSave}>
-                                    <Save size={18} />
-                                    <span>Save Changes</span>
-                                </button>
-                            </form>
-                        </div>
-                    )}
-
-                    {activeTab === 'users' && (
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">User Management Settings</h3>
-                            </div>
-                            <div className="settings-form">
-                                <div className="setting-item">
-                                    <div>
-                                        <h4 className="setting-title">Allow Self Registration</h4>
-                                        <p className="setting-description">Allow users to register themselves</p>
-                                    </div>
-                                    <label className="toggle">
-                                        <input type="checkbox" />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                </div>
-
-                                <div className="setting-item">
-                                    <div>
-                                        <h4 className="setting-title">Email Verification Required</h4>
-                                        <p className="setting-description">Require email verification for new accounts</p>
-                                    </div>
-                                    <label className="toggle">
-                                        <input type="checkbox" defaultChecked />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                </div>
-
-                                <div className="setting-item">
-                                    <div>
-                                        <h4 className="setting-title">Two-Factor Authentication</h4>
-                                        <p className="setting-description">Enable 2FA for enhanced security</p>
-                                    </div>
-                                    <label className="toggle">
-                                        <input type="checkbox" />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                </div>
-
-                                <button type="button" className="btn btn-primary" onClick={handleSave}>
-                                    <Save size={18} />
-                                    <span>Save Changes</span>
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'notifications' && (
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">Notification Settings</h3>
-                            </div>
-                            <div className="settings-form">
-                                <div className="setting-item">
-                                    <div>
-                                        <h4 className="setting-title">Email Notifications</h4>
-                                        <p className="setting-description">Send email notifications for important events</p>
-                                    </div>
-                                    <label className="toggle">
-                                        <input type="checkbox" defaultChecked />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                </div>
-
-                                <div className="setting-item">
-                                    <div>
-                                        <h4 className="setting-title">SMS Notifications</h4>
-                                        <p className="setting-description">Send SMS for urgent notifications</p>
-                                    </div>
-                                    <label className="toggle">
-                                        <input type="checkbox" />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                </div>
-
-                                <div className="setting-item">
-                                    <div>
-                                        <h4 className="setting-title">Push Notifications</h4>
-                                        <p className="setting-description">Browser push notifications</p>
-                                    </div>
-                                    <label className="toggle">
-                                        <input type="checkbox" defaultChecked />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                </div>
-
-                                <button type="button" className="btn btn-primary" onClick={handleSave}>
-                                    <Save size={18} />
-                                    <span>Save Changes</span>
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'security' && (
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">Security Settings</h3>
-                            </div>
-                            <form className="settings-form">
-                                <div className="form-group">
-                                    <label className="form-label">Password Minimum Length</label>
-                                    <input type="number" className="input" defaultValue="8" min="6" max="20" />
-                                </div>
-
-                                <div className="setting-item">
-                                    <div>
-                                        <h4 className="setting-title">Require Special Characters</h4>
-                                        <p className="setting-description">Passwords must contain special characters</p>
-                                    </div>
-                                    <label className="toggle">
-                                        <input type="checkbox" defaultChecked />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Session Timeout (minutes)</label>
-                                    <input type="number" className="input" defaultValue="30" />
-                                </div>
-
-                                <button type="button" className="btn btn-primary" onClick={handleSave}>
-                                    <Save size={18} />
-                                    <span>Save Changes</span>
-                                </button>
-                            </form>
-                        </div>
-                    )}
-
-                    {activeTab === 'backup' && (
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">Backup & Restore</h3>
-                            </div>
-                            <div className="settings-form">
-                                <div className="backup-section">
-                                    <h4 className="section-title">Database Backup</h4>
-                                    <p className="section-description">Create a backup of your database</p>
-                                    <button className="btn btn-primary">
-                                        <Database size={18} />
-                                        <span>Create Backup</span>
-                                    </button>
-                                </div>
-
-                                <div className="backup-section">
-                                    <h4 className="section-title">Restore Database</h4>
-                                    <p className="section-description">Restore from a previous backup</p>
-                                    <input type="file" className="input" accept=".sql,.zip" />
-                                    <button className="btn btn-outline">
-                                        <Database size={18} />
-                                        <span>Restore Backup</span>
-                                    </button>
-                                </div>
-
-                                <div className="setting-item">
-                                    <div>
-                                        <h4 className="setting-title">Automatic Backups</h4>
-                                        <p className="setting-description">Schedule automatic daily backups</p>
-                                    </div>
-                                    <label className="toggle">
-                                        <input type="checkbox" defaultChecked />
-                                        <span className="toggle-slider"></span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <style>{`
-        .settings-page {
-          animation: fadeIn 0.3s ease-in-out;
-        }
-
-        .page-header {
-          margin-bottom: var(--spacing-xl);
-        }
-
+      <style>{`
+        .settings-page { animation: fadeIn 0.3s ease-in-out; }
+        .page-header { margin-bottom: var(--spacing-xl); }
         .page-header h1 {
           font-size: 2rem;
           font-weight: 700;
           color: var(--text-primary);
           margin-bottom: var(--spacing-xs);
         }
-
         .settings-container {
           display: grid;
           grid-template-columns: 250px 1fr;
           gap: var(--spacing-xl);
         }
-
         .settings-sidebar {
           background: var(--bg-card);
           border-radius: var(--radius-lg);
@@ -420,7 +367,6 @@ const SettingsPage = () => {
           box-shadow: var(--shadow-sm);
           height: fit-content;
         }
-
         .tab-button {
           width: 100%;
           display: flex;
@@ -436,127 +382,26 @@ const SettingsPage = () => {
           color: var(--text-primary);
           text-align: left;
         }
-
-        .tab-button:hover {
-          background: var(--gray-50);
-        }
-
+        .tab-button:hover { background: var(--gray-50); }
         .tab-button.active {
           background: var(--primary-50);
           color: var(--primary-700);
           font-weight: 600;
         }
-
-        .settings-content {
-          min-height: 500px;
-        }
-
+        .settings-content { min-height: 400px; }
         .settings-form {
           padding: var(--spacing-xl);
           display: flex;
           flex-direction: column;
           gap: var(--spacing-lg);
         }
-
-        .setting-item {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: var(--spacing-lg);
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
-        }
-
-        .setting-title {
-          font-size: 0.9375rem;
-          font-weight: 600;
-          color: var(--text-primary);
-          margin-bottom: 0.25rem;
-        }
-
-        .setting-description {
-          font-size: 0.8125rem;
-          color: var(--text-secondary);
-          margin: 0;
-        }
-
-        .toggle {
-          position: relative;
-          display: inline-block;
-          width: 48px;
-          height: 24px;
-        }
-
-        .toggle input {
-          opacity: 0;
-          width: 0;
-          height: 0;
-        }
-
-        .toggle-slider {
-          position: absolute;
-          cursor: pointer;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: var(--gray-300);
-          transition: 0.3s;
-          border-radius: 24px;
-        }
-
-        .toggle-slider:before {
-          position: absolute;
-          content: "";
-          height: 18px;
-          width: 18px;
-          left: 3px;
-          bottom: 3px;
-          background-color: white;
-          transition: 0.3s;
-          border-radius: 50%;
-        }
-
-        .toggle input:checked + .toggle-slider {
-          background-color: var(--primary-500);
-        }
-
-        .toggle input:checked + .toggle-slider:before {
-          transform: translateX(24px);
-        }
-
-        .backup-section {
-          padding: var(--spacing-lg);
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
-        }
-
-        .section-title {
-          font-size: 1rem;
-          font-weight: 600;
-          color: var(--text-primary);
-          margin-bottom: 0.5rem;
-        }
-
-        .section-description {
-          font-size: 0.875rem;
-          color: var(--text-secondary);
-          margin-bottom: var(--spacing-md);
-        }
-
         @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 };
 
 export default SettingsPage;

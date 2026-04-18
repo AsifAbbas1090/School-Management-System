@@ -4,9 +4,12 @@ import {
   Body,
   UseGuards,
   Get,
-  Query,
   Param,
   Patch,
+  Delete,
+  HttpCode,
+  HttpStatus,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -17,12 +20,16 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
-import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { SchoolContext } from '../../academic/decorators/school-context.decorator';
 import { SchoolGuard } from '../../academic/guards/school-guard.guard';
-import { UserRole, UserStatus } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { UsersService } from '../services/users.service';
-import { CreateParentDto, CreateTeacherDto, CreateManagementDto } from '../dto/create-user.dto';
+import {
+  CreateParentDto,
+  CreateTeacherDto,
+  CreateManagementDto,
+  UpdateUserDto,
+} from '../dto/create-user.dto';
 
 @ApiTags('Users')
 @Controller('school/users')
@@ -64,11 +71,41 @@ export class UsersController {
     return this.usersService.createManagement(schoolId, createManagementDto);
   }
 
+  @Get('parents/count')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @ApiOperation({ summary: 'Count parent users in the current school' })
+  async countParents(@SchoolContext() schoolId: string) {
+    return this.usersService.countUsersByRole(schoolId, UserRole.PARENT);
+  }
+
+  @Get('teachers/count')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @ApiOperation({ summary: 'Count teacher users in the current school' })
+  async countTeachers(@SchoolContext() schoolId: string) {
+    return this.usersService.countUsersByRole(schoolId, UserRole.TEACHER);
+  }
+
   @Get('parents')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
-  @ApiOperation({ summary: 'List all parent users' })
-  async getParents(@SchoolContext() schoolId: string) {
-    return this.usersService.getUsersByRole(schoolId, UserRole.PARENT);
+  @ApiOperation({ summary: 'List parent users (always paginated; defaults page=1, pageSize=25)' })
+  async getParents(
+    @SchoolContext() schoolId: string,
+    @Query('page') pageStr?: string,
+    @Query('pageSize') pageSizeStr?: string,
+    @Query('limit') limitStr?: string,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+  ) {
+    const page = pageStr != null && pageStr !== '' ? parseInt(pageStr, 10) : 1;
+    const fromLimit = limitStr != null && limitStr !== '' ? parseInt(limitStr, 10) : NaN;
+    const fromPageSize = pageSizeStr != null && pageSizeStr !== '' ? parseInt(pageSizeStr, 10) : NaN;
+    const pageSizeRaw = Number.isFinite(fromLimit) ? fromLimit : Number.isFinite(fromPageSize) ? fromPageSize : 25;
+    return this.usersService.getUsersByRole(schoolId, UserRole.PARENT, {
+      page: Number.isFinite(page) && page > 0 ? page : 1,
+      pageSize: Number.isFinite(pageSizeRaw) && pageSizeRaw > 0 ? Math.min(100, pageSizeRaw) : 25,
+      search: search ?? undefined,
+      status: status ?? undefined,
+    });
   }
 
   @Get('teachers')
@@ -92,30 +129,18 @@ export class UsersController {
   async updateUser(
     @SchoolContext() schoolId: string,
     @Param('id') userId: string,
-    @Body() updateData: { name?: string; email?: string; phone?: string; password?: string; status?: string; employeeId?: string; salary?: number },
+    @Body() body: UpdateUserDto,
   ) {
-    const processedData: {
-      name?: string;
-      email?: string;
-      phone?: string;
-      password?: string;
-      status?: UserStatus;
-      employeeId?: string;
-      salary?: number;
-    } = {
-      name: updateData.name,
-      email: updateData.email,
-      phone: updateData.phone,
-      password: updateData.password,
-      employeeId: updateData.employeeId,
-      salary: updateData.salary,
-    };
+    return this.usersService.updateUser(userId, schoolId, body);
+  }
 
-    if (updateData.status) {
-      processedData.status = updateData.status as UserStatus;
-    }
-
-    return this.usersService.updateUser(userId, schoolId, processedData);
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
+  @ApiOperation({ summary: 'Soft-delete a user in the current school' })
+  @ApiResponse({ status: 200, description: 'User deleted successfully' })
+  async deleteUser(@SchoolContext() schoolId: string, @Param('id') userId: string) {
+    return this.usersService.deleteUser(userId, schoolId);
   }
 }
 

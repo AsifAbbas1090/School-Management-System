@@ -5,6 +5,27 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+/** Client-side fetch timeout (ms). Short timeouts falsely report "backend not running" when the API is slow or cold. */
+const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000;
+
+/** Default page size for list endpoints (keep small for fast responses; backend max is 1000). */
+export const API_LIST_PAGE_SIZE = 50;
+
+/**
+ * Human-readable error from Promise.allSettled + apiRequest result.
+ * Use this instead of `.reason` — that is only set when the promise rejects, not when the API returns { success: false }.
+ */
+export function formatSettledApiError(settled) {
+  if (settled.status === 'rejected') {
+    const r = settled.reason;
+    if (r == null) return 'Unknown error';
+    return typeof r === 'string' ? r : r.message || String(r);
+  }
+  const v = settled.value;
+  if (v?.success) return null;
+  return v?.error || 'Request failed';
+}
+
 /**
  * Get auth token from localStorage
  */
@@ -20,6 +41,81 @@ const getAuthToken = () => {
   }
   return null;
 };
+
+const getRefreshToken = () => {
+  const authStorage = localStorage.getItem('auth-storage');
+  if (authStorage) {
+    try {
+      const parsed = JSON.parse(authStorage);
+      return parsed?.state?.user?.refreshToken || parsed?.user?.refreshToken;
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+};
+
+/** Update persisted Zustand user.accessToken after a successful /auth/refresh. */
+function persistAccessToken(accessToken) {
+  const raw = localStorage.getItem('auth-storage');
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.state?.user) {
+      parsed.state.user.accessToken = accessToken;
+    } else if (parsed.user) {
+      parsed.user.accessToken = accessToken;
+    }
+    localStorage.setItem('auth-storage', JSON.stringify(parsed));
+  } catch (e) {
+    // ignore
+  }
+}
+
+function redirectToLoginClearingAuth() {
+  const currentPath = window.location.pathname;
+  if (currentPath !== '/login' && currentPath !== '/super-admin/login' && !currentPath.includes('/signin')) {
+    localStorage.removeItem('auth-storage');
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 100);
+  }
+}
+
+/** Single in-flight refresh so parallel 401s share one token rotation. */
+let refreshInFlight = null;
+
+async function refreshAccessTokenOnce() {
+  if (refreshInFlight) return refreshInFlight;
+  const rt = getRefreshToken();
+  if (!rt) return false;
+
+  refreshInFlight = (async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: rt }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data?.accessToken) return false;
+      persistAccessToken(data.accessToken);
+      return true;
+    } catch {
+      clearTimeout(timeoutId);
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}
 
 /**
  * Get school ID from auth storage
@@ -54,39 +150,42 @@ const apiRequest = async (endpoint, options = {}) => {
   };
 
   try {
-    // Use AbortController to handle timeouts and connection errors gracefully
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     const response = await fetch(url, {
       ...config,
       signal: controller.signal,
     }).catch((fetchError) => {
       clearTimeout(timeoutId);
-      // Immediately catch and handle ALL network errors silently
-      const isNetworkError =
+      if (fetchError.name === 'AbortError') {
+        return {
+          success: false,
+          error:
+            'Request timed out. The server may be busy—try again. If this persists, confirm the API URL (VITE_API_URL) matches your backend port.',
+          data: null,
+        };
+      }
+      const isUnreachable =
         fetchError.name === 'TypeError' ||
-        fetchError.name === 'AbortError' ||
         fetchError.message?.includes('Failed to fetch') ||
         fetchError.message?.includes('ERR_CONNECTION_REFUSED') ||
         fetchError.message?.includes('ERR_NETWORK_CHANGED') ||
         fetchError.message?.includes('NetworkError') ||
-        fetchError.message === 'CONNECTION_REFUSED' ||
-        fetchError.message?.includes('aborted');
+        fetchError.message === 'CONNECTION_REFUSED';
 
-      if (isNetworkError) {
-        // Return error response silently - no console logging
+      if (isUnreachable) {
         return {
           success: false,
-          error: 'Backend server is not running. Please start the backend server.',
-          data: null
+          error:
+            'Cannot reach the API. Start the backend and ensure VITE_API_URL points to it (e.g. http://localhost:3001/api).',
+          data: null,
         };
       }
-      // For other errors, return them silently too
       return {
         success: false,
         error: fetchError.message || 'An error occurred',
-        data: null
+        data: null,
       };
     });
 
@@ -97,33 +196,40 @@ const apiRequest = async (endpoint, options = {}) => {
       return response;
     }
 
-    // Handle network errors (backend not running)
     if (!response || !response.ok) {
       if (response && response.status === 0) {
-        return { success: false, error: 'Backend server is not running. Please start the backend server.', data: null };
+        return {
+          success: false,
+          error:
+            'Cannot reach the API. Start the backend and ensure VITE_API_URL matches the server (e.g. http://localhost:3001/api).',
+          data: null,
+        };
       }
 
-      // Handle 401 Unauthorized - user needs to login
+      // Handle 401: try refresh once, then clear session and redirect to login
       if (response && response.status === 401) {
-        // Silently handle 401 - don't log to console
-        // Clear invalid token and redirect to login
+        const skipRefresh =
+          options._authRetry ||
+          options.skipAuthRefresh ||
+          endpoint === '/auth/login' ||
+          endpoint === '/auth/refresh';
+
+        if (!skipRefresh) {
+          const refreshed = await refreshAccessTokenOnce();
+          if (refreshed) {
+            return apiRequest(endpoint, { ...options, _authRetry: true });
+          }
+        }
+
         const authStorage = localStorage.getItem('auth-storage');
         if (authStorage) {
           try {
             const parsed = JSON.parse(authStorage);
             if (parsed?.state?.user || parsed?.user) {
-              // Clear auth and redirect (only if not already on login page)
-              const currentPath = window.location.pathname;
-              if (currentPath !== '/login' && currentPath !== '/super-admin/login' && !currentPath.includes('/signin')) {
-                localStorage.removeItem('auth-storage');
-                // Use setTimeout to avoid navigation during render
-                setTimeout(() => {
-                  window.location.href = '/login';
-                }, 100);
-              }
+              redirectToLoginClearingAuth();
             }
           } catch (e) {
-            // Silently handle parse errors
+            // ignore parse errors
           }
         }
         return { success: false, error: 'Unauthorized. Please login again.', data: null };
@@ -141,8 +247,15 @@ const apiRequest = async (endpoint, options = {}) => {
     const data = await response.json();
     return { success: true, data };
   } catch (error) {
-    // Silently handle ALL errors - no console logging
-    const isNetworkError =
+    if (error.name === 'AbortError') {
+      return {
+        success: false,
+        error:
+          'Request timed out. The server may be busy—try again. Confirm VITE_API_URL matches your backend.',
+        data: null,
+      };
+    }
+    const isUnreachable =
       error.message === 'CONNECTION_REFUSED' ||
       error.name === 'TypeError' ||
       error.message?.includes('Failed to fetch') ||
@@ -150,11 +263,15 @@ const apiRequest = async (endpoint, options = {}) => {
       error.message?.includes('ERR_NETWORK_CHANGED') ||
       error.message?.includes('NetworkError');
 
-    if (isNetworkError) {
-      return { success: false, error: 'Backend server is not running. Please start the backend server.', data: null };
+    if (isUnreachable) {
+      return {
+        success: false,
+        error:
+          'Cannot reach the API. Start the backend and ensure VITE_API_URL points to it (e.g. http://localhost:3001/api).',
+        data: null,
+      };
     }
 
-    // Return error silently - no console logging
     return { success: false, error: error.message || 'An error occurred', data: null };
   }
 };
@@ -169,6 +286,15 @@ export const authService = {
       body: JSON.stringify({ email, password, schoolId }),
     });
     return response;
+  },
+
+  /** Exchange refresh token for a new access token (uses skipAuthRefresh to avoid 401 retry loops). */
+  refreshToken: async (refreshToken) => {
+    return apiRequest('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+      skipAuthRefresh: true,
+    });
   },
 
   getMe: async () => {
@@ -189,6 +315,19 @@ export const schoolsService = {
     return apiRequest(`/super-admin/schools/${id}`);
   },
 
+  /** School admin / management: current school from JWT (GET /school/profile). */
+  getMySchoolProfile: async () => {
+    return apiRequest('/school/profile');
+  },
+
+  /** School admin / management: PATCH /school/profile */
+  updateMySchoolProfile: async (data) => {
+    return apiRequest('/school/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   create: async (data) => {
     return apiRequest('/super-admin/schools', {
       method: 'POST',
@@ -196,6 +335,7 @@ export const schoolsService = {
     });
   },
 
+  /** Super admin only: PATCH /super-admin/schools/:id */
   update: async (id, data) => {
     return apiRequest(`/super-admin/schools/${id}`, {
       method: 'PATCH',
@@ -219,6 +359,20 @@ export const studentsService = {
     return apiRequest(`/school/students?${params}`);
   },
 
+  getMyChildren: async () => {
+    return apiRequest('/school/students/my-children');
+  },
+
+  /** Lightweight school-wide student total (allowed for TEACHER; avoids GET /students list). */
+  getSchoolStudentCount: async () => {
+    return apiRequest('/school/students/count');
+  },
+
+  /** Slim student rows for Parents page (names + parent links). */
+  getForParentsUi: async () => {
+    return apiRequest('/school/students/for-parents-ui');
+  },
+
   getById: async (id) => {
     return apiRequest(`/school/students/${id}`);
   },
@@ -232,6 +386,13 @@ export const studentsService = {
 
   update: async (id, data) => {
     return apiRequest(`/school/students/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  bulkUpdateParent: async (data) => {
+    return apiRequest('/school/students/bulk-update-parent', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
@@ -260,9 +421,18 @@ export const studentsService = {
       body: formData,
     });
 
-    const data = await response.json();
+    let data = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
     if (!response.ok) {
-      throw new Error(data.message || 'Import failed');
+      return {
+        success: false,
+        error: data?.message || data?.error || `Import failed (HTTP ${response.status})`,
+        data: null,
+      };
     }
     return { success: true, data };
   },
@@ -395,8 +565,22 @@ export const usersService = {
     });
   },
 
-  getParents: async () => {
-    return apiRequest('/school/users/parents');
+  getParents: async ({ page = 1, limit = 25, search = '', status } = {}) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    if (search && search.trim()) params.set('search', search.trim());
+    if (status && String(status).trim()) params.set('status', String(status).trim());
+    return apiRequest(`/school/users/parents?${params}`);
+  },
+
+  getParentsCount: async () => {
+    return apiRequest('/school/users/parents/count');
+  },
+
+  getTeachersCount: async () => {
+    return apiRequest('/school/users/teachers/count');
   },
 
   getTeachers: async () => {
@@ -411,6 +595,12 @@ export const usersService = {
     return apiRequest(`/school/users/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+  },
+
+  deleteUser: async (id) => {
+    return apiRequest(`/school/users/${id}`, {
+      method: 'DELETE',
     });
   },
 };
@@ -451,6 +641,15 @@ export const feesService = {
     return apiRequest(`/school/fees/invoices?${params}`);
   },
 
+  /** Parent: school-scoped list for one child (backend requires studentId for PARENT). */
+  getInvoicesByStudent: async (studentId, query = {}) => {
+    const params = new URLSearchParams({
+      studentId,
+      pageSize: String(query.pageSize || 100),
+    });
+    return apiRequest(`/school/fees/invoices?${params}`);
+  },
+
   createFeeInvoice: async (data) => {
     return apiRequest('/school/fees/invoices', {
       method: 'POST',
@@ -471,6 +670,41 @@ export const feesService = {
     });
   },
 
+  /** Top-up or correct amount for an existing month record (parents: amountPaid + method + remarks only). */
+  updateFeePayment: async (id, data) => {
+    return apiRequest(`/school/fees/payments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  bulkImportFeePayments: async (file) => {
+    const token = getAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE_URL}/school/fees/payments/bulk-import`, {
+      method: 'POST',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: formData,
+    });
+    let data = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data?.message || data?.error || `Import failed (HTTP ${response.status})`,
+        data: null,
+      };
+    }
+    return { success: true, data };
+  },
+
   // Get revenue statistics (expected, collected, pending)
   getRevenueStats: async (month, year) => {
     const params = new URLSearchParams();
@@ -481,6 +715,10 @@ export const feesService = {
 
   // Get student fee summary
   getStudentFeeSummary: async (studentId) => {
+    return apiRequest(`/school/fees/payments/student/${studentId}/summary`);
+  },
+
+  getStudentSummary: async (studentId) => {
     return apiRequest(`/school/fees/payments/student/${studentId}/summary`);
   },
 
@@ -508,68 +746,39 @@ export const feesService = {
 };
 
 /**
- * Attendance Service
- */
-export const attendanceService = {
-  getAll: async (query = {}) => {
-    const params = new URLSearchParams(query);
-    return apiRequest(`/school/attendance?${params}`);
-  },
-
-  getById: async (id) => {
-    return apiRequest(`/school/attendance/${id}`);
-  },
-
-  create: async (data) => {
-    return apiRequest('/school/attendance', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  update: async (id, data) => {
-    return apiRequest(`/school/attendance/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  },
-
-  delete: async (id) => {
-    return apiRequest(`/school/attendance/${id}`, {
-      method: 'DELETE',
-    });
-  },
-
-  getByStudent: async (studentId, query = {}) => {
-    const params = new URLSearchParams(query);
-    return apiRequest(`/school/attendance/student/${studentId}?${params}`);
-  },
-};
-
-/**
- * Leave Service
+ * Leave Service (matches backend LeaveController)
  */
 export const leaveService = {
-  getAll: async (query = {}) => {
+  getMyLeave: async (query = {}) => {
     const params = new URLSearchParams(query);
-    return apiRequest(`/school/leave?${params}`);
+    return apiRequest(`/school/leave/my?${params}`);
   },
 
-  getById: async (id) => {
+  getPendingLeave: async (query = {}) => {
+    const params = new URLSearchParams(query);
+    return apiRequest(`/school/leave/pending?${params}`);
+  },
+
+  getLeaveById: async (id) => {
     return apiRequest(`/school/leave/${id}`);
   },
 
-  create: async (data) => {
+  createLeave: async (data) => {
     return apiRequest('/school/leave', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  update: async (id, data) => {
-    return apiRequest(`/school/leave/${id}`, {
+  approveLeave: async (id) => {
+    return apiRequest(`/school/leave/${id}/approve`, {
       method: 'PATCH',
-      body: JSON.stringify(data),
+    });
+  },
+
+  rejectLeave: async (id) => {
+    return apiRequest(`/school/leave/${id}/reject`, {
+      method: 'PATCH',
     });
   },
 };
@@ -759,17 +968,11 @@ export const examsService = {
     });
   },
 
-  update: async (id, data) => {
-    return apiRequest(`/school/exams/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
-  },
+  // No PATCH/DELETE /school/exams/:id in backend — removed to avoid 404s if called.
 
-  delete: async (id) => {
-    return apiRequest(`/school/exams/${id}`, {
-      method: 'DELETE',
-    });
+  getStudentResults: async (params = {}) => {
+    const q = new URLSearchParams(params);
+    return apiRequest(`/school/exams/results?${q}`);
   },
 
   addBulkResults: async (examId, data) => {
@@ -818,8 +1021,13 @@ export const expensesService = {
  * Analytics Service
  */
 export const analyticsService = {
-  getDashboardStats: async () => {
-    return apiRequest('/school/analytics/dashboard');
+  getDashboardStats: async (query = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(query).forEach(([k, v]) => {
+      if (v != null && v !== '') params.append(k, String(v));
+    });
+    const qs = params.toString();
+    return apiRequest(`/school/analytics/dashboard${qs ? `?${qs}` : ''}`);
   },
 
   getSuperAdminStats: async () => {
@@ -831,10 +1039,11 @@ export const analyticsService = {
  * File Upload Service
  */
 export const fileUploadService = {
-  uploadExpenseReceipt: async (file) => {
+  uploadExpenseReceipt: async (file, schoolId) => {
     const token = getAuthToken();
     const formData = new FormData();
     formData.append('file', file);
+    if (schoolId) formData.append('schoolId', schoolId);
 
     const response = await fetch(`${API_BASE_URL}/files/expense-receipt`, {
       method: 'POST',
@@ -851,10 +1060,11 @@ export const fileUploadService = {
     return { success: true, data };
   },
 
-  uploadSchoolLogo: async (file) => {
+  uploadSchoolLogo: async (file, schoolId) => {
     const token = getAuthToken();
     const formData = new FormData();
     formData.append('file', file);
+    if (schoolId) formData.append('schoolId', schoolId);
 
     const response = await fetch(`${API_BASE_URL}/files/school-logo`, {
       method: 'POST',

@@ -79,7 +79,7 @@ export class SectionsService {
   }
 
   async findAll(schoolId: string, query: AcademicQueryDto) {
-    const { search, classId, page = 1, pageSize = 10 } = query;
+    const { search, classId, page = 1, pageSize = 50 } = query;
     const skip = (page - 1) * pageSize;
 
     const where: any = {
@@ -225,6 +225,17 @@ export class SectionsService {
 
       if (!teacher) {
         throw new NotFoundException('Class teacher not found or invalid');
+      }
+    }
+
+    if (updateSectionDto.capacity !== undefined && updateSectionDto.capacity !== null) {
+      const enrolled = await this.prisma.student.count({
+        where: { sectionId: id },
+      });
+      if (updateSectionDto.capacity < enrolled) {
+        throw new BadRequestException(
+          `Capacity cannot be lower than current enrollment (${enrolled} student(s) in this section)`,
+        );
       }
     }
 

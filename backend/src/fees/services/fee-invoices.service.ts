@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateFeeInvoiceDto } from '../dto/create-fee-invoice.dto';
 import { UpdateFeeInvoiceDto } from '../dto/update-fee-invoice.dto';
 import { FeeQueryDto } from '../dto/fee-query.dto';
-import { FeeInvoiceStatus, Prisma } from '@prisma/client';
+import { FeeInvoiceStatus, Prisma, UserRole } from '@prisma/client';
+import { assertParentOwnsStudent } from '../../common/assert-parent-owns-student';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class FeeInvoicesService {
@@ -50,12 +52,14 @@ export class FeeInvoicesService {
 
     return this.prisma.feeInvoice.create({
       data: {
+        id: randomUUID(),
         schoolId,
         studentId: createFeeInvoiceDto.studentId,
         feeStructureId: createFeeInvoiceDto.feeStructureId,
         amount,
         dueDate,
         status,
+        updatedAt: new Date(),
       } as Prisma.FeeInvoiceUncheckedCreateInput,
       include: {
         Student: {
@@ -73,9 +77,20 @@ export class FeeInvoicesService {
     });
   }
 
-  async findAll(schoolId: string, query: FeeQueryDto) {
+  async findAll(
+    schoolId: string,
+    query: FeeQueryDto,
+    user?: { id: string; role: UserRole },
+  ) {
     const { search, studentId, classId, status, page = 1, pageSize = 10 } = query;
     const skip = (page - 1) * pageSize;
+
+    if (user?.role === UserRole.PARENT) {
+      if (!studentId) {
+        throw new BadRequestException('studentId is required for parents');
+      }
+      await assertParentOwnsStudent(this.prisma, schoolId, user.id, studentId);
+    }
 
     const where: any = {
       schoolId,
@@ -181,7 +196,11 @@ export class FeeInvoicesService {
     };
   }
 
-  async findOne(schoolId: string, id: string) {
+  async findOne(
+    schoolId: string,
+    id: string,
+    user?: { id: string; role: UserRole },
+  ) {
     const invoice = await this.prisma.feeInvoice.findFirst({
       where: {
         id,
@@ -211,6 +230,12 @@ export class FeeInvoicesService {
 
     if (!invoice) {
       throw new NotFoundException(`Fee invoice with ID ${id} not found`);
+    }
+
+    if (user?.role === UserRole.PARENT) {
+      if (!invoice.Student || invoice.Student.parentId !== user.id) {
+        throw new ForbiddenException('You do not have access to this invoice');
+      }
     }
 
     const totalPaid = invoice.FeePayment?.reduce((sum, p) => sum + p.amountPaid, 0) || 0;

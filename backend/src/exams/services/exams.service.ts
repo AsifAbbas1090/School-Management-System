@@ -1,5 +1,8 @@
+import { randomUUID } from 'crypto';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UserRole } from '@prisma/client';
+import { assertParentOwnsStudent } from '../../common/assert-parent-owns-student';
 import { CreateExamDto } from '../dto/create-exam.dto';
 import { BulkResultsDto } from '../dto/bulk-results.dto';
 
@@ -48,8 +51,10 @@ export class ExamsService {
       throw new NotFoundException(`Subject with ID ${createExamDto.subjectId} not found`);
     }
 
+    const now = new Date();
     return this.prisma.exam.create({
       data: {
+        id: randomUUID(),
         schoolId,
         name: createExamDto.name,
         type: createExamDto.type,
@@ -58,6 +63,7 @@ export class ExamsService {
         subjectId: createExamDto.subjectId,
         date: new Date(createExamDto.date),
         totalMarks: createExamDto.totalMarks,
+        updatedAt: now,
       } as any,
       include: {
         Class: true,
@@ -174,13 +180,16 @@ export class ExamsService {
           obtainedMarks: resultData.obtainedMarks,
           grade: resultData.grade || null,
           remarks: resultData.remarks || null,
+          updatedAt: new Date(),
         },
         create: {
+          id: randomUUID(),
           examId,
           studentId: resultData.studentId,
           obtainedMarks: resultData.obtainedMarks,
           grade: resultData.grade || null,
           remarks: resultData.remarks || null,
+          updatedAt: new Date(),
         } as any,
         include: {
           Student: {
@@ -202,7 +211,11 @@ export class ExamsService {
     };
   }
 
-  async getStudentResults(schoolId: string, studentId: string) {
+  async getStudentResults(
+    schoolId: string,
+    studentId: string,
+    user?: { id: string; role: UserRole },
+  ) {
     const student = await this.prisma.student.findFirst({
       where: {
         id: studentId,
@@ -212,6 +225,10 @@ export class ExamsService {
 
     if (!student) {
       throw new NotFoundException(`Student with ID ${studentId} not found`);
+    }
+
+    if (user?.role === UserRole.PARENT) {
+      await assertParentOwnsStudent(this.prisma, schoolId, user.id, studentId);
     }
 
     const results = await this.prisma.examResult.findMany({
