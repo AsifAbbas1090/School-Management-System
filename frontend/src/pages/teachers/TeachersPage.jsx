@@ -56,6 +56,10 @@ const TeachersPage = () => {
         salary: '',
         joiningDate: '',
         status: 'ACTIVE',
+        department: '',
+        qualification: '',
+        experience: '',
+        emergencyContact: '',
     });
 
     const [customSubject, setCustomSubject] = useState('');
@@ -101,7 +105,7 @@ const TeachersPage = () => {
             setFormData({
                 name: teacher.name || '',
                 email: teacher.email || '',
-                password: '', // Don't pre-fill password for security
+                password: '',
                 employeeId: teacher.employeeId || '',
                 phone: teacher.phone || '',
                 gender: teacher.gender || 'MALE',
@@ -111,6 +115,10 @@ const TeachersPage = () => {
                 salary: teacher.salary ? teacher.salary.toString() : '',
                 joiningDate: teacher.joiningDate ? formatDate(teacher.joiningDate, 'yyyy-MM-dd') : '',
                 status: teacher.status || 'ACTIVE',
+                department: teacher.department || '',
+                qualification: teacher.qualification || '',
+                experience: teacher.experience != null ? String(teacher.experience) : '',
+                emergencyContact: teacher.emergencyContact || '',
             });
         } else {
             resetForm();
@@ -132,6 +140,10 @@ const TeachersPage = () => {
             salary: '',
             joiningDate: '',
             status: 'ACTIVE',
+            department: '',
+            qualification: '',
+            experience: '',
+            emergencyContact: '',
         });
         setCustomSubject('');
         setErrors({});
@@ -206,6 +218,11 @@ const TeachersPage = () => {
         try {
             const subjectIds = Array.isArray(formData.subjectIds) ? formData.subjectIds : [];
 
+            const experienceNum =
+                formData.experience !== '' && formData.experience != null
+                    ? Number.parseInt(formData.experience, 10)
+                    : undefined;
+
             const teacherData = {
                 name: formData.name.trim(),
                 email: formData.email.trim(),
@@ -218,6 +235,10 @@ const TeachersPage = () => {
                 address: formData.address.trim(),
                 joiningDate: formData.joiningDate,
                 subjectIds,
+                department: formData.department.trim() || undefined,
+                qualification: formData.qualification.trim() || undefined,
+                experience: Number.isFinite(experienceNum) ? experienceNum : undefined,
+                emergencyContact: formData.emergencyContact.trim() || undefined,
             };
 
             let succeeded = false;
@@ -244,6 +265,10 @@ const TeachersPage = () => {
                     joiningDate: formData.joiningDate,
                     subjectIds,
                     status: (formData.status || 'ACTIVE').toUpperCase(),
+                    department: formData.department.trim(),
+                    qualification: formData.qualification.trim(),
+                    experience: Number.isFinite(experienceNum) ? experienceNum : null,
+                    emergencyContact: formData.emergencyContact.trim(),
                 };
 
                 if (formData.password && formData.password.trim()) {
@@ -692,6 +717,58 @@ const TeachersPage = () => {
                             rows="2"
                         />
                         {errors.address && <span className="form-error">{errors.address}</span>}
+                    </div>
+
+                    <div className="grid-2 mt-md">
+                        <div className="form-group">
+                            <label className="form-label">Department</label>
+                            <input
+                                type="text"
+                                name="department"
+                                value={formData.department}
+                                onChange={handleChange}
+                                className="input"
+                                placeholder="e.g. Mathematics, Science"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Qualification</label>
+                            <input
+                                type="text"
+                                name="qualification"
+                                value={formData.qualification}
+                                onChange={handleChange}
+                                className="input"
+                                placeholder="e.g. M.Sc Mathematics, B.Ed"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid-2">
+                        <div className="form-group">
+                            <label className="form-label">Experience (years)</label>
+                            <input
+                                type="number"
+                                name="experience"
+                                value={formData.experience}
+                                onChange={handleChange}
+                                className="input"
+                                min="0"
+                                max="60"
+                                placeholder="0"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Emergency Contact</label>
+                            <input
+                                type="tel"
+                                name="emergencyContact"
+                                value={formData.emergencyContact}
+                                onChange={handleChange}
+                                className="input"
+                                placeholder="+92 300 0000000"
+                            />
+                        </div>
                     </div>
                 </form>
             </Modal>

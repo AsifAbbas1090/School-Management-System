@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 const FEES_STUDENTS_PAGE_SIZE = 50;
-const FEE_PAYMENTS_PAGE_SIZE = 25;
 const MONEY_EPS = 0.01;
 
 /** Fee is due from the student's admission month onward (calendar month periods). */
@@ -48,32 +47,16 @@ function feeRowStatus(student, payment, month, year) {
     return { kind: 'paid', liable: true, expected, paid: paidNum, remaining: 0, payment };
 }
 
-/** Merge all payment pages for a month/year (parents must pass studentId for API). */
-async function fetchAllFeePaymentsForMonth(feesService, month, year, studentId) {
-    let page = 1;
-    const all = [];
-    let totalPages = 1;
-    do {
-        const res = await feesService.getFeePayments({
-            month,
-            year,
-            page,
-            pageSize: FEE_PAYMENTS_PAGE_SIZE,
-            ...(studentId ? { studentId } : {}),
-        });
-        if (!res.success) break;
-        const body = res.data;
-        const chunk = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
-        const meta = body?.meta;
-        all.push(...chunk);
-        totalPages = meta?.totalPages ?? 1;
-        page += 1;
-    } while (page <= totalPages);
-    return all;
+/** Single round-trip fetch of all (student, month, year) payment rows for the Fees list view. */
+async function fetchFeePaymentsForMonth(feesService, month, year, studentId) {
+    const res = await feesService.getFeePaymentsByMonthMap(month, year, studentId);
+    if (!res.success) return [];
+    const body = res.data;
+    return Array.isArray(body?.rows) ? body.rows : [];
 }
 import { DollarSign, Download, Receipt, Search, CheckCircle, AlertCircle, TrendingUp, Plus, Printer, Upload } from 'lucide-react';
 import { feesService, studentsService, classesService } from '../../services/api';
-import { formatCurrency, formatDate } from '../../utils';
+import { formatCurrency, formatDate, formatDateTime } from '../../utils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import CSVImport from '../../components/common/CSVImport';
@@ -128,6 +111,12 @@ const FeesPage = () => {
     const [paymentYear, setPaymentYear] = useState(() => new Date().getFullYear());
     /** When set, PUT top-up / correct total for that month instead of POST. */
     const [editingPaymentId, setEditingPaymentId] = useState(null);
+    /** True while the POST/PUT is in flight — disables the submit button and shows a spinner. */
+    const [submittingPayment, setSubmittingPayment] = useState(false);
+    /** True when the modal was opened via the "Pay Advance" button — forces a future month + advance flag. */
+    const [isAdvanceMode, setIsAdvanceMode] = useState(false);
+    /** Per-class advance-payment policy keyed by classId, fetched once on mount for staff. */
+    const [advancePolicy, setAdvancePolicy] = useState({}); // { [classId]: { allowAdvancePayment, advanceMonths } }
 
     // For parents: selected child
     const [selectedChildId, setSelectedChildId] = useState(null);
@@ -145,6 +134,7 @@ const FeesPage = () => {
     const [handoverAmount, setHandoverAmount] = useState('');
     const [submittingHandover, setSubmittingHandover] = useState(false);
     const [showFeeImportModal, setShowFeeImportModal] = useState(false);
+    const [managersOverview, setManagersOverview] = useState([]);
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
@@ -178,67 +168,181 @@ const FeesPage = () => {
         };
     }, [isAdmin, debouncedPickerQuery]);
 
-    // Load core: classes, students (paginated / my-children), all payment rows for month (chunked)
-    const loadData = useCallback(async () => {
+    /**
+     * Split the previous monolithic `loadData` into three independent loaders so typing a
+     * search query no longer retriggers the whole-school payments fetch, and changing the
+     * month filter no longer retriggers the students fetch.
+     */
+
+    // Parents: children list + this-month payments for the active child (tiny payload)
+    const loadParentData = useCallback(async () => {
         setLoading(true);
         try {
-            const classesRes = await classesService.getAll();
-            if (classesRes.success) setClasses(classesRes.data.data || classesRes.data || []);
-
-            if (isParent) {
-                const ch = await studentsService.getMyChildren();
-                if (ch.success) {
-                    const list = Array.isArray(ch.data) ? ch.data : [];
-                    setStudents(list);
-                    setStudentsMeta({
-                        total: list.length,
-                        page: 1,
-                        pageSize: FEES_STUDENTS_PAGE_SIZE,
-                        totalPages: 1,
-                    });
-                    const childId = selectedChildId || list[0]?.id || null;
-                    if (list.length > 0 && !selectedChildId) {
-                        setSelectedChildId(list[0].id);
-                    }
-                    const payAll = childId
-                        ? await fetchAllFeePaymentsForMonth(feesService, filterMonth, filterYear, childId)
-                        : [];
-                    setFeePayments(payAll);
-                } else {
-                    setFeePayments([]);
-                }
-            } else {
-                const searchQ = debouncedSearchTerm.trim();
-                const searchParam = searchQ.length >= 2 ? searchQ : undefined;
-                const studentsRes = await studentsService.getAll({
-                    page: studentsPage,
-                    pageSize: FEES_STUDENTS_PAGE_SIZE,
-                    ...(searchParam && { search: searchParam }),
-                    ...(filterClass && { classId: filterClass }),
-                });
-                if (studentsRes.success) {
-                    const payload = studentsRes.data;
-                    const list = payload?.data ?? payload;
-                    const meta = payload?.meta;
-                    setStudents(Array.isArray(list) ? list : []);
-                    if (meta && typeof meta.total === 'number') {
-                        setStudentsMeta(meta);
-                    }
-                }
-                const payAll = await fetchAllFeePaymentsForMonth(feesService, filterMonth, filterYear);
-                setFeePayments(payAll);
+            const ch = await studentsService.getMyChildren();
+            if (!ch.success) {
+                setFeePayments([]);
+                return;
             }
+            const list = Array.isArray(ch.data) ? ch.data : [];
+            setStudents(list);
+            setStudentsMeta({
+                total: list.length,
+                page: 1,
+                pageSize: FEES_STUDENTS_PAGE_SIZE,
+                totalPages: 1,
+            });
+            const childId = selectedChildId || list[0]?.id || null;
+            if (list.length > 0 && !selectedChildId) {
+                setSelectedChildId(list[0].id);
+            }
+            const payAll = childId
+                ? await fetchFeePaymentsForMonth(feesService, filterMonth, filterYear, childId)
+                : [];
+            setFeePayments(payAll);
         } catch (error) {
-            console.error('Failed to load data:', error);
+            console.error('Failed to load parent fee data:', error);
             toast.error('Failed to load fee data');
         } finally {
             setLoading(false);
         }
-    }, [isParent, filterMonth, filterYear, debouncedSearchTerm, studentsPage, filterClass, selectedChildId]);
+    }, [filterMonth, filterYear, selectedChildId]);
 
+    // Staff: classes list + fee-structure advance policy — static per page lifetime (loaded once)
+    const loadClasses = useCallback(async () => {
+        try {
+            const [classesRes, structuresRes] = await Promise.all([
+                classesService.getAll(),
+                feesService.getFeeStructures({ pageSize: 500 }),
+            ]);
+            if (classesRes.success) setClasses(classesRes.data.data || classesRes.data || []);
+            if (structuresRes.success) {
+                const list =
+                    (Array.isArray(structuresRes.data?.data) && structuresRes.data.data) ||
+                    (Array.isArray(structuresRes.data) && structuresRes.data) ||
+                    [];
+                /** Build a policy lookup: `__global__` covers classId=null structures, else by classId.
+                 *  Class-specific entries win over the global one when both exist. */
+                const policy = {};
+                for (const s of list) {
+                    const key = s.classId || '__global__';
+                    policy[key] = {
+                        allowAdvancePayment: Boolean(s.allowAdvancePayment),
+                        advanceMonths: Number(s.advanceMonths) || 3,
+                    };
+                }
+                setAdvancePolicy(policy);
+            }
+        } catch (error) {
+            console.error('Failed to load classes/structures:', error);
+        }
+    }, []);
+
+    /** Return the effective advance-payment policy for a student's class (class-specific -> global -> none). */
+    const getAdvancePolicyFor = useCallback(
+        (student) => {
+            if (!student) return { allowAdvancePayment: false, advanceMonths: 0 };
+            const byClass = student.classId ? advancePolicy[student.classId] : null;
+            if (byClass?.allowAdvancePayment) return byClass;
+            const global = advancePolicy['__global__'];
+            if (global?.allowAdvancePayment) return global;
+            return { allowAdvancePayment: false, advanceMonths: 0 };
+        },
+        [advancePolicy],
+    );
+
+    // Staff: students — depends on search/class/page only
+    const loadStudents = useCallback(async () => {
+        try {
+            const searchQ = debouncedSearchTerm.trim();
+            const searchParam = searchQ.length >= 2 ? searchQ : undefined;
+            const studentsRes = await studentsService.getAll({
+                page: studentsPage,
+                pageSize: FEES_STUDENTS_PAGE_SIZE,
+                ...(searchParam && { search: searchParam }),
+                ...(filterClass && { classId: filterClass }),
+            });
+            if (studentsRes.success) {
+                const payload = studentsRes.data;
+                const list = payload?.data ?? payload;
+                const meta = payload?.meta;
+                setStudents(Array.isArray(list) ? list : []);
+                if (meta && typeof meta.total === 'number') {
+                    setStudentsMeta(meta);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load students:', error);
+        }
+    }, [debouncedSearchTerm, studentsPage, filterClass]);
+
+    // Staff: payments for the selected month — depends on filterMonth/filterYear only
+    const loadPaymentsMap = useCallback(async () => {
+        try {
+            const payAll = await fetchFeePaymentsForMonth(feesService, filterMonth, filterYear);
+            setFeePayments(payAll);
+        } catch (error) {
+            console.error('Failed to load payments:', error);
+        }
+    }, [filterMonth, filterYear]);
+
+    // Staff: revenue + manager handover summary — depends on filterMonth/filterYear/role only
+    const loadStats = useCallback(async () => {
+        try {
+            const [statsRes, mgmtSum] = await Promise.all([
+                isAdmin ? feesService.getRevenueStats(filterMonth, filterYear) : Promise.resolve({ success: false }),
+                user?.role === USER_ROLES.MANAGEMENT
+                    ? feesService.getHandoverSummary()
+                    : Promise.resolve({ success: false }),
+            ]);
+            if (isAdmin && statsRes.success) setRevenueStats(statsRes.data);
+            else if (!isAdmin) setRevenueStats(null);
+            if (user?.role === USER_ROLES.MANAGEMENT && mgmtSum.success) setHandoverSummary(mgmtSum.data);
+        } catch (error) {
+            console.error('Failed to load stats:', error);
+        }
+    }, [isAdmin, user?.role, filterMonth, filterYear]);
+
+    /** Convenience wrapper kept for "Refresh" button and the CSV-import callback. */
+    const loadData = useCallback(async () => {
+        if (isParent) {
+            await loadParentData();
+            return;
+        }
+        setLoading(true);
+        try {
+            await Promise.all([loadClasses(), loadStudents(), loadPaymentsMap(), loadStats()]);
+        } finally {
+            setLoading(false);
+        }
+    }, [isParent, loadParentData, loadClasses, loadStudents, loadPaymentsMap, loadStats]);
+
+    // Initial mount: one parallel fan-out
     useEffect(() => {
-        loadData();
-    }, [loadData]);
+        if (isParent) {
+            loadParentData();
+            return;
+        }
+        setLoading(true);
+        Promise.all([loadClasses(), loadStudents(), loadPaymentsMap(), loadStats()]).finally(() => {
+            setLoading(false);
+        });
+    }, [isParent]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Search/class/page change → only refetch students (payments map is not tied to search)
+    useEffect(() => {
+        if (isParent) return;
+        loadStudents();
+    }, [isParent, loadStudents]);
+
+    // Month/year change → refetch payments map + stats (students stay)
+    useEffect(() => {
+        if (isParent) {
+            loadParentData();
+            return;
+        }
+        loadPaymentsMap();
+        loadStats();
+    }, [filterMonth, filterYear, isParent, loadParentData, loadPaymentsMap, loadStats]);
 
     const handleFeeImportResult = useCallback(
         (result) => {
@@ -263,36 +367,22 @@ const FeesPage = () => {
         [loadData],
     );
 
-    // Revenue stats after main fee data is ready (not blocking first paint of the table)
-    useEffect(() => {
-        if (!isAdmin || loading) return;
-        let cancelled = false;
-        (async () => {
-            try {
-                const statsRes = await feesService.getRevenueStats(filterMonth, filterYear);
-                if (!cancelled && statsRes.success) setRevenueStats(statsRes.data);
-            } catch (e) {
-                console.error(e);
-            }
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [isAdmin, loading, filterMonth, filterYear]);
-
-    // Handovers: load only when admin opens that tab
+    // Handovers: load when staff opens that tab
     useEffect(() => {
         if (!isAdmin || activeTab !== 'handovers') return;
         let cancelled = false;
         (async () => {
             try {
-                const [handoverSummaryRes, handoversRes] = await Promise.all([
+                const isSchoolAdmin = user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN;
+                const [handoverSummaryRes, handoversRes, mgrRes] = await Promise.all([
                     feesService.getHandoverSummary(),
-                    feesService.getFeeHandovers({ pageSize: 50 }),
+                    feesService.getFeeHandovers({ pageSize: 100 }),
+                    isSchoolAdmin ? feesService.getHandoverManagersOverview() : Promise.resolve({ success: false }),
                 ]);
                 if (cancelled) return;
                 if (handoverSummaryRes.success) setHandoverSummary(handoverSummaryRes.data);
                 if (handoversRes.success) setHandovers(handoversRes.data?.data || []);
+                if (isSchoolAdmin && mgrRes.success) setManagersOverview(Array.isArray(mgrRes.data) ? mgrRes.data : []);
             } catch (e) {
                 console.error(e);
             }
@@ -300,7 +390,7 @@ const FeesPage = () => {
         return () => {
             cancelled = true;
         };
-    }, [isAdmin, activeTab]);
+    }, [isAdmin, activeTab, user?.role]);
 
     // Per-period fee status (partial vs paid uses amountPaid vs expected after discount)
     const getStudentFeeStatus = useCallback((studentId) => {
@@ -387,6 +477,37 @@ const FeesPage = () => {
             (p) => p.studentId === selectedStudent.id && p.month === paymentMonth && p.year === paymentYear,
         );
 
+        /** Close the modal and clear form state immediately so the UI never feels frozen. */
+        const closeAndReset = () => {
+            setShowPaymentModal(false);
+            setSelectedStudent(null);
+            setEditingPaymentId(null);
+            setDiscountPercentage(0);
+            setAmountReceived('');
+            setPaymentMethod('CASH');
+            setRemarks('');
+        };
+
+        /** Merge the server response into local feePayments so the row re-renders "Paid" instantly. */
+        const mergePaymentRow = (row) => {
+            if (!row) return;
+            setFeePayments((prev) => {
+                const idx = prev.findIndex((p) => p.id === row.id);
+                if (idx >= 0) {
+                    const next = prev.slice();
+                    next[idx] = { ...prev[idx], ...row };
+                    return next;
+                }
+                /** New create: strip any stale row for the same (student, month, year) just in case. */
+                const filtered = prev.filter(
+                    (p) =>
+                        !(p.studentId === row.studentId && p.month === row.month && p.year === row.year),
+                );
+                return [row, ...filtered];
+            });
+        };
+
+        setSubmittingPayment(true);
         try {
             if (editingPaymentId) {
                 const response = await feesService.updateFeePayment(editingPaymentId, {
@@ -396,14 +517,10 @@ const FeesPage = () => {
                 });
                 if (response.success) {
                     toast.success('Payment updated successfully');
-                    setShowPaymentModal(false);
-                    setSelectedStudent(null);
-                    setEditingPaymentId(null);
-                    setDiscountPercentage(0);
-                    setAmountReceived('');
-                    setPaymentMethod('CASH');
-                    setRemarks('');
-                    await loadData();
+                    mergePaymentRow(response.data);
+                    closeAndReset();
+                    /** Stats refresh is cheap but non-blocking — don't make the user wait. */
+                    loadStats();
                 } else {
                     toast.error(response.error || 'Failed to update payment');
                 }
@@ -417,7 +534,7 @@ const FeesPage = () => {
                 return;
             }
 
-            const discountAmount = (monthlyFee * (isParent ? 0 : discountPercentage)) / 100;
+            const discountAmount = (monthlyFee * discountPercentage) / 100;
             const calculatedAmount = monthlyFee - discountAmount;
             const actualAmountPaid = amountValue;
 
@@ -426,10 +543,15 @@ const FeesPage = () => {
                 month: paymentMonth,
                 year: paymentYear,
                 originalAmount: monthlyFee,
-                discountPercentage: isParent ? 0 : discountPercentage,
+                discountPercentage,
                 amountPaid: actualAmountPaid,
                 paymentMethod,
                 remarks: remarks || null,
+                ...(isAdvanceMode && {
+                    isAdvance: true,
+                    advanceForMonth: paymentMonth,
+                    advanceForYear: paymentYear,
+                }),
             };
 
             const response = await feesService.createFeePayment(paymentData);
@@ -446,54 +568,101 @@ const FeesPage = () => {
                 } else {
                     toast.success(`Payment of ${formatCurrency(actualAmountPaid)} recorded successfully`);
                 }
-                setShowPaymentModal(false);
-                setSelectedStudent(null);
-                setEditingPaymentId(null);
-                setDiscountPercentage(0);
-                setAmountReceived('');
-                setPaymentMethod('CASH');
-                setRemarks('');
+                mergePaymentRow(response.data);
+                closeAndReset();
+                setIsAdvanceMode(false);
                 const nAfterPay = new Date();
                 setPaymentMonth(nAfterPay.getMonth() + 1);
                 setPaymentYear(nAfterPay.getFullYear());
-                await loadData();
+                /** Only the payment row for the currently filtered month lives in feePayments.
+                 *  If the new payment was for a different month, reload the map for *that* month so
+                 *  the stats update correctly and the user can see it if they switch. */
+                if (paymentMonth !== filterMonth || paymentYear !== filterYear) {
+                    loadPaymentsMap();
+                }
+                loadStats();
             } else {
                 toast.error(response.error || 'Failed to record payment');
             }
         } catch (error) {
             console.error('Payment error:', error);
             toast.error('Failed to record payment');
+        } finally {
+            setSubmittingPayment(false);
         }
     };
 
-    // Submit fee handover
+    /** Cash available to hand over = collected − submitted to admin − your expenses */
+    const managerCashOnHand = (s) => {
+        if (!s) return 0;
+        if (typeof s.remainingOnHand === 'number') return Math.max(0, s.remainingOnHand);
+        return Math.max(0, s.availableAmount ?? s.unsubmittedTotal ?? 0);
+    };
+
+    // Submit partial or full handover (amount ≤ cash on hand)
     const handleHandoverSubmit = async () => {
-        const amount = parseFloat(handoverAmount);
-        if (isNaN(amount) || amount <= 0) { toast.error('Enter a valid amount'); return; }
-        if (handoverSummary && amount > handoverSummary.availableAmount) {
-            toast.error(`Cannot exceed available amount: ${formatCurrency(handoverSummary.availableAmount)}`);
+        const maxOnHand = managerCashOnHand(handoverSummary);
+        if (maxOnHand <= 0) {
+            toast.error('No cash on hand to submit. Collect fees, or reduce expenses first.');
+            return;
+        }
+        const amt = parseFloat(String(handoverAmount).replace(/,/g, ''));
+        if (!Number.isFinite(amt) || amt <= 0) {
+            toast.error('Enter a valid amount to submit');
+            return;
+        }
+        if (amt > maxOnHand + MONEY_EPS) {
+            toast.error(`Amount cannot exceed cash on hand (${formatCurrency(maxOnHand)})`);
             return;
         }
         setSubmittingHandover(true);
         try {
-            const res = await feesService.createFeeHandover({ amountSubmitted: amount });
+            const res = await feesService.createFeeHandover({ amountSubmitted: amt });
             if (res.success) {
-                toast.success('Handover recorded successfully');
+                const submitted = res.data?.amountSubmitted ?? amt;
+                toast.success(
+                    `Handover submitted. Rs. ${typeof submitted === 'number' ? submitted.toFixed(0) : submitted} pending admin verification.`,
+                );
                 setShowHandoverModal(false);
                 setHandoverAmount('');
-                await loadData();
-                if (isAdmin) {
-                    const [handoverSummaryRes, handoversRes] = await Promise.all([
-                        feesService.getHandoverSummary(),
-                        feesService.getFeeHandovers({ pageSize: 50 }),
-                    ]);
-                    if (handoverSummaryRes.success) setHandoverSummary(handoverSummaryRes.data);
-                    if (handoversRes.success) setHandovers(handoversRes.data?.data || []);
-                }
+                /** Targeted refresh: handover summary + list + manager overview. No need to re-fetch
+                 *  students or the month-wide payments map. */
+                const isSchoolAdmin = user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN;
+                const [handoverSummaryRes, handoversRes, mgrRes] = await Promise.all([
+                    feesService.getHandoverSummary(),
+                    feesService.getFeeHandovers({ pageSize: 100 }),
+                    isSchoolAdmin ? feesService.getHandoverManagersOverview() : Promise.resolve({ success: false }),
+                ]);
+                if (handoverSummaryRes.success) setHandoverSummary(handoverSummaryRes.data);
+                if (handoversRes.success) setHandovers(handoversRes.data?.data || []);
+                if (isSchoolAdmin && mgrRes.success) setManagersOverview(Array.isArray(mgrRes.data) ? mgrRes.data : []);
             } else {
                 toast.error(res.error || 'Failed to record handover');
             }
-        } finally { setSubmittingHandover(false); }
+        } finally {
+            setSubmittingHandover(false);
+        }
+    };
+
+    const handleVerifyHandover = async (id) => {
+        const res = await feesService.verifyFeeHandover(id);
+        if (res.success) {
+            toast.success('Handover verified');
+            setHandovers((rows) =>
+                rows.map((h) =>
+                    h.id === id ? { ...h, status: 'VERIFIED', verifiedAt: res.data?.verifiedAt || new Date().toISOString() } : h,
+                ),
+            );
+            const isSchoolAdmin = user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN;
+            const [handoverSummaryRes, mgrRes] = await Promise.all([
+                feesService.getHandoverSummary(),
+                isSchoolAdmin ? feesService.getHandoverManagersOverview() : Promise.resolve({ success: false }),
+            ]);
+            if (handoverSummaryRes.success) setHandoverSummary(handoverSummaryRes.data);
+            if (isSchoolAdmin && mgrRes.success) setManagersOverview(Array.isArray(mgrRes.data) ? mgrRes.data : []);
+        } else {
+            toast.error(res.error || 'Verification failed');
+        }
     };
 
     // View receipt modal
@@ -518,6 +687,7 @@ const FeesPage = () => {
         if (!receiptPayload) return;
         const { payment, student, school } = receiptPayload;
         const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const { balance } = receiptPayload;
         const result = await generatePaymentReceipt(
             {
                 receiptNumber: payment.receiptNumber,
@@ -527,12 +697,22 @@ const FeesPage = () => {
                 discountAmount: payment.discountAmount,
                 paidDate: payment.paidDate,
                 paymentMethod: payment.paymentMethod,
+                month: payment.month,
+                year: payment.year,
                 feeType: `Tuition Fee — ${months[(payment.month || 1) - 1]} ${payment.year}`,
                 transactionId: payment.transactionId,
                 remarks: payment.remarks,
+                collectedByName: payment.collectedByName,
+                balance: balance || null,
             },
-            student,
-            school
+            {
+                ...student,
+                monthlyFee: student.monthlyFee,
+                sectionName: student.sectionName,
+                classLabel: student.classLabel,
+                parentName: student.parentName,
+            },
+            school,
         );
         if (result.success) {
             toast.success('Receipt downloaded');
@@ -543,6 +723,7 @@ const FeesPage = () => {
 
     // Open payment modal — modal month/year default to table filter; change there to pay a future month early
     const handleOpenPaymentModal = (student) => {
+        if (!isAdmin) return;
         const st = getStudentFeeStatus(student.id);
         if (st.row.kind === 'na') {
             toast.error('No fee for this calendar month (student was not yet admitted).');
@@ -576,6 +757,33 @@ const FeesPage = () => {
             setPaymentMethod('CASH');
             setRemarks('');
         }
+        setIsAdvanceMode(false);
+        setShowPaymentModal(true);
+    };
+
+    /** Open payment modal in "advance" mode — defaults to the next calendar month, locked to the
+     *  allowed window (up to `advanceMonths` ahead) and forces the backend advance flags on submit. */
+    const handleOpenAdvanceModal = (student) => {
+        if (!isAdmin) return;
+        const policy = getAdvancePolicyFor(student);
+        if (!policy.allowAdvancePayment) {
+            toast.error('Advance payments are not enabled for this fee structure.');
+            return;
+        }
+        const today = new Date();
+        const nextMonth = today.getMonth() + 2; // +1 for 1-indexed, +1 to roll forward
+        const nextYear = today.getFullYear() + (nextMonth > 12 ? 1 : 0);
+        const monthNum = ((nextMonth - 1) % 12) + 1;
+
+        setSelectedStudent(student);
+        setPaymentMonth(monthNum);
+        setPaymentYear(nextYear);
+        setEditingPaymentId(null);
+        setDiscountPercentage(0);
+        setAmountReceived(String(student.monthlyFee || 0));
+        setPaymentMethod('CASH');
+        setRemarks('Advance payment');
+        setIsAdvanceMode(true);
         setShowPaymentModal(true);
     };
 
@@ -645,7 +853,14 @@ const FeesPage = () => {
                         </button>
                     )}
                     {isAdmin && user?.role === USER_ROLES.MANAGEMENT && activeTab === 'handovers' && (
-                        <button className="btn btn-primary" onClick={() => setShowHandoverModal(true)}>
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => {
+                                const m = managerCashOnHand(handoverSummary);
+                                setHandoverAmount(m > 0 ? m.toFixed(2) : '');
+                                setShowHandoverModal(true);
+                            }}
+                        >
                             <Plus size={18} /> <span>New Handover</span>
                         </button>
                     )}
@@ -681,6 +896,50 @@ const FeesPage = () => {
             )}
 
             {activeTab === 'payments' && (<>
+            {user?.role === USER_ROLES.MANAGEMENT && handoverSummary && (
+                <div className="card mb-lg">
+                    <h3 className="font-semibold mb-md">Your cash ledger</h3>
+                    <p className="text-xs text-gray-500 mb-md">
+                        Collected fees − submitted to admin − expenses you logged = cash on hand. You can submit a partial or full amount up to cash on hand.
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-md mb-md">
+                        <div>
+                            <p className="text-sm text-gray-600">Fees collected</p>
+                            <p className="text-xl font-bold">{formatCurrency(handoverSummary.totalCollected ?? 0)}</p>
+                            <p className="text-xs text-gray-400">{handoverSummary.feePaymentsCount ?? 0} payment(s)</p>
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-600">Submitted to admin</p>
+                            <p className="text-xl font-bold">{formatCurrency(handoverSummary.totalSubmittedToAdmin ?? 0)}</p>
+                            <p className="text-xs text-gray-400">All batches</p>
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-600">Your expenses</p>
+                            <p className="text-xl font-bold">{formatCurrency(handoverSummary.totalExpensesFromFloat ?? 0)}</p>
+                            <p className="text-xs text-gray-400">From your float</p>
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-600">Cash on hand</p>
+                            <p className="text-xl font-bold text-primary-700">{formatCurrency(managerCashOnHand(handoverSummary))}</p>
+                            <p className="text-xs text-gray-400">Max you can submit now</p>
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap justify-end">
+                        <button
+                            type="button"
+                            className="btn btn-primary"
+                            disabled={managerCashOnHand(handoverSummary) <= 0}
+                            onClick={() => {
+                                const m = managerCashOnHand(handoverSummary);
+                                setHandoverAmount(m > 0 ? m.toFixed(2) : '');
+                                setShowHandoverModal(true);
+                            }}
+                        >
+                            Submit handover
+                        </button>
+                    </div>
+                </div>
+            )}
             {/* Revenue Dashboard (Admin/Management only) */}
             {isAdmin && revenueStats && (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-md mb-lg">
@@ -829,7 +1088,7 @@ const FeesPage = () => {
 
                 {isParent && (
                     <p className="text-xs text-gray-500 mt-md">
-                        Fees are tracked by <strong>calendar month</strong>. The student owes from their <strong>admission month</strong> onward. Use Fee month/Year to see or pay any period — including paying next month early (same record is kept under that future month).
+                        Fees are tracked by <strong>calendar month</strong>. The student owes from their <strong>admission month</strong> onward. Use Fee month/Year to review any period. Payments are recorded by the school office.
                     </p>
                 )}
 
@@ -993,16 +1252,31 @@ const FeesPage = () => {
                                             {(isAdmin || isParent) && (
                                                 <td>
                                                     <div className="flex flex-wrap gap-xs">
-                                                        {(row.kind === 'unpaid' || row.kind === 'partial') && row.liable && (
-                                                            <button
-                                                                type="button"
-                                                                className="btn btn-sm btn-primary"
-                                                                onClick={() => handleOpenPaymentModal(student)}
-                                                            >
-                                                                <Plus size={14} />
-                                                                <span>{row.kind === 'partial' ? 'Pay remainder' : 'Add payment'}</span>
-                                                            </button>
-                                                        )}
+                                                        {isAdmin &&
+                                                            (row.kind === 'unpaid' || row.kind === 'partial') &&
+                                                            row.liable && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-sm btn-primary"
+                                                                    onClick={() => handleOpenPaymentModal(student)}
+                                                                >
+                                                                    <Plus size={14} />
+                                                                    <span>{row.kind === 'partial' ? 'Pay remainder' : 'Add payment'}</span>
+                                                                </button>
+                                                            )}
+                                                        {isAdmin &&
+                                                            (row.kind === 'paid' || row.kind === 'overpaid') &&
+                                                            getAdvancePolicyFor(student).allowAdvancePayment && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-sm btn-outline"
+                                                                    onClick={() => handleOpenAdvanceModal(student)}
+                                                                    title="Record a payment for a future month"
+                                                                >
+                                                                    <Plus size={14} />
+                                                                    <span>Pay Advance</span>
+                                                                </button>
+                                                            )}
                                                         {status.payment && (
                                                             <button
                                                                 type="button"
@@ -1056,47 +1330,130 @@ const FeesPage = () => {
             {/* Fee Handovers Tab */}
             {activeTab === 'handovers' && isAdmin && (
                 <>
-                    {/* Handover Summary Cards */}
                     {handoverSummary && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-md mb-lg">
-                            <div className="card" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
-                                <p className="text-sm opacity-90">Total Collected</p>
-                                <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalCollected)}</h3>
-                                <p className="text-xs opacity-75 mt-xs">All time fee payments</p>
-                            </div>
-                            <div className="card" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', color: 'white' }}>
-                                <p className="text-sm opacity-90">Total Handed Over</p>
-                                <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalHandedOver)}</h3>
-                                <p className="text-xs opacity-75 mt-xs">Submitted to admin</p>
-                            </div>
-                            <div className="card" style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: 'white' }}>
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-sm opacity-90">Available for Handover</p>
-                                        <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.availableAmount)}</h3>
-                                        <p className="text-xs opacity-75 mt-xs">Ready to submit</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-md mb-lg">
+                            {user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN ? (
+                                <>
+                                    <div className="card" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+                                        <p className="text-sm opacity-90">Total Collected (school)</p>
+                                        <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalCollected)}</h3>
+                                        <p className="text-xs opacity-75 mt-xs">All recorded fee payments</p>
                                     </div>
-                                    {user?.role === USER_ROLES.MANAGEMENT && handoverSummary.availableAmount > 0 && (
-                                        <button
-                                            className="btn btn-sm"
-                                            style={{ background: 'rgba(255,255,255,0.25)', color: 'white', border: '1px solid rgba(255,255,255,0.5)' }}
-                                            onClick={() => { setHandoverAmount(handoverSummary.availableAmount.toFixed(2)); setShowHandoverModal(true); }}
-                                        >
-                                            Submit
-                                        </button>
-                                    )}
-                                </div>
+                                    <div className="card" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', color: 'white' }}>
+                                        <p className="text-sm opacity-90">Verified handovers</p>
+                                        <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalHandedOver)}</h3>
+                                        <p className="text-xs opacity-75 mt-xs">Confirmed by admin</p>
+                                    </div>
+                                    <div className="card" style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white' }}>
+                                        <p className="text-sm opacity-90">Pending verification</p>
+                                        <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.pendingVerificationAmount ?? 0)}</h3>
+                                        <p className="text-xs opacity-75 mt-xs">Awaiting confirmation</p>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="card" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+                                        <p className="text-sm opacity-90">Fees collected</p>
+                                        <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalCollected ?? 0)}</h3>
+                                        <p className="text-xs opacity-75 mt-xs">You recorded</p>
+                                    </div>
+                                    <div className="card" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', color: 'white' }}>
+                                        <p className="text-sm opacity-90">Submitted to admin</p>
+                                        <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalSubmittedToAdmin ?? 0)}</h3>
+                                        <p className="text-xs opacity-75 mt-xs">All handover batches</p>
+                                    </div>
+                                    <div className="card" style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: 'white' }}>
+                                        <p className="text-sm opacity-90">Your expenses</p>
+                                        <h3 className="text-2xl font-bold mt-xs">{formatCurrency(handoverSummary.totalExpensesFromFloat ?? 0)}</h3>
+                                        <p className="text-xs opacity-75 mt-xs">From your float</p>
+                                    </div>
+                                    <div className="card" style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: 'white' }}>
+                                        <div className="flex items-center justify-between gap-sm">
+                                            <div>
+                                                <p className="text-sm opacity-90">Cash on hand</p>
+                                                <h3 className="text-2xl font-bold mt-xs">{formatCurrency(managerCashOnHand(handoverSummary))}</h3>
+                                                <p className="text-xs opacity-75 mt-xs">Verified: {formatCurrency(handoverSummary.totalHandedOverVerified ?? handoverSummary.totalHandedOver ?? 0)}</p>
+                                            </div>
+                                            {managerCashOnHand(handoverSummary) > 0 && (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-sm"
+                                                    style={{ background: 'rgba(255,255,255,0.25)', color: 'white', border: '1px solid rgba(255,255,255,0.5)' }}
+                                                    onClick={() => {
+                                                        const m = managerCashOnHand(handoverSummary);
+                                                        setHandoverAmount(m > 0 ? m.toFixed(2) : '');
+                                                        setShowHandoverModal(true);
+                                                    }}
+                                                >
+                                                    Submit
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {(user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN) && managersOverview.length > 0 && (
+                        <div className="card mb-lg">
+                            <div className="card-header">
+                                <h3 className="card-title">Managers — collection overview</h3>
+                            </div>
+                            <div className="table-container">
+                                <table className="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Manager</th>
+                                            <th>Collected</th>
+                                            <th>Submitted to admin</th>
+                                            <th>Expenses</th>
+                                            <th>Cash on hand</th>
+                                            <th>Last handover</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {managersOverview.map((row) => (
+                                            <tr key={row.managerId}>
+                                                <td className="font-medium">{row.managerName}</td>
+                                                <td>{formatCurrency(row.totalCollectedLifetime)}</td>
+                                                <td>{formatCurrency(row.totalSubmittedToAdmin ?? 0)}</td>
+                                                <td>{formatCurrency(row.totalExpensesFromFloat ?? 0)}</td>
+                                                <td className="font-semibold">{formatCurrency(row.remainingOnHand ?? row.unsubmittedAmount ?? 0)}</td>
+                                                <td>
+                                                    {row.lastHandoverAt ? (
+                                                        <span>
+                                                            {formatDateTime(row.lastHandoverAt)}
+                                                            {row.lastHandoverStatus ? (
+                                                                <span className="text-xs text-gray-500 ml-sm">({row.lastHandoverStatus})</span>
+                                                            ) : null}
+                                                        </span>
+                                                    ) : (
+                                                        '—'
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     )}
 
-                    {/* Handover History Table */}
                     <div className="card">
                         <div className="card-header">
-                            <h3 className="card-title">Handover History</h3>
+                            <h3 className="card-title">Handover history</h3>
                             {user?.role === USER_ROLES.MANAGEMENT && (
-                                <button className="btn btn-sm btn-primary" onClick={() => setShowHandoverModal(true)}>
-                                    <Plus size={14} /> <span>New Handover</span>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm btn-primary"
+                                    onClick={() => {
+                                        const m = managerCashOnHand(handoverSummary);
+                                        setHandoverAmount(m > 0 ? m.toFixed(2) : '');
+                                        setShowHandoverModal(true);
+                                    }}
+                                >
+                                    <Plus size={14} /> <span>New handover</span>
                                 </button>
                             )}
                         </div>
@@ -1104,28 +1461,64 @@ const FeesPage = () => {
                             <table className="table">
                                 <thead>
                                     <tr>
-                                        <th>Date</th>
-                                        <th>Submitted By</th>
-                                        <th>Amount Submitted</th>
-                                        <th>Total Collected at Time</th>
-                                        <th>Backup Remaining</th>
+                                        <th>Submitted</th>
+                                        <th>Verified</th>
+                                        {(user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN) && <th>Manager</th>}
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                        {(user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN) && <th>Action</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {handovers.length === 0 ? (
-                                        <tr><td colSpan={5} className="text-center text-gray-500 py-lg">No handovers recorded yet</td></tr>
-                                    ) : handovers.map(h => (
-                                        <tr key={h.id}>
-                                            <td>{formatDate(h.submittedAt)}</td>
-                                            <td>
-                                                <div className="font-medium">{h.User?.name || '—'}</div>
-                                                <div className="text-sm text-gray-500">{h.User?.role}</div>
+                                        <tr>
+                                            <td
+                                                colSpan={
+                                                    user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN ? 6 : 4
+                                                }
+                                                className="text-center text-gray-500 py-lg"
+                                            >
+                                                No handovers recorded yet
                                             </td>
-                                            <td><span className="font-bold text-success-700">{formatCurrency(h.amountSubmitted)}</span></td>
-                                            <td>{formatCurrency(h.totalCollectedAtTime)}</td>
-                                            <td>{formatCurrency(h.backupAmount)}</td>
                                         </tr>
-                                    ))}
+                                    ) : (
+                                        handovers.map((h) => (
+                                            <tr key={h.id}>
+                                                <td className="text-sm whitespace-nowrap">{formatDateTime(h.submittedAt)}</td>
+                                                <td className="text-sm text-gray-600">
+                                                    {h.verifiedAt ? formatDateTime(h.verifiedAt) : '—'}
+                                                </td>
+                                                {(user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN) && (
+                                                    <td>
+                                                        <div className="font-medium">{h.manager?.name || '—'}</div>
+                                                    </td>
+                                                )}
+                                                <td>
+                                                    <span className="font-bold text-success-700">{formatCurrency(h.amountSubmitted)}</span>
+                                                </td>
+                                                <td>
+                                                    {h.status === 'VERIFIED' ? (
+                                                        <span className="badge badge-success">Verified</span>
+                                                    ) : (
+                                                        <span className="badge badge-warning">Pending</span>
+                                                    )}
+                                                </td>
+                                                {(user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPER_ADMIN) && (
+                                                    <td>
+                                                        {h.status === 'PENDING' && (
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-sm btn-primary"
+                                                                onClick={() => handleVerifyHandover(h.id)}
+                                                            >
+                                                                Verify
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -1133,9 +1526,9 @@ const FeesPage = () => {
                 </>
             )}
 
-            {/* Payment Modal */}
+            {/* Payment Modal (staff only — parents are view-only) */}
             <Modal
-                isOpen={showPaymentModal}
+                isOpen={showPaymentModal && isAdmin}
                 onClose={() => {
                     setShowPaymentModal(false);
                     setSelectedStudent(null);
@@ -1157,6 +1550,7 @@ const FeesPage = () => {
                                 setShowPaymentModal(false);
                                 setSelectedStudent(null);
                                 setEditingPaymentId(null);
+                                setIsAdvanceMode(false);
                                 const n = new Date();
                                 setPaymentMonth(n.getMonth() + 1);
                                 setPaymentYear(n.getFullYear());
@@ -1167,9 +1561,18 @@ const FeesPage = () => {
                         <button
                             className="btn btn-primary"
                             onClick={handlePaymentSubmit}
+                            disabled={submittingPayment}
                         >
                             <DollarSign size={18} />
-                            <span>{editingPaymentId ? 'Save total' : 'Record payment'}</span>
+                            <span>
+                                {submittingPayment
+                                    ? 'Saving…'
+                                    : editingPaymentId
+                                      ? 'Save total'
+                                      : isAdvanceMode
+                                        ? 'Record advance'
+                                        : 'Record payment'}
+                            </span>
                         </button>
                     </>
                 }
@@ -1195,37 +1598,73 @@ const FeesPage = () => {
                         </div>
 
                         <div className="form-group">
-                            <label className="form-label">Payment month & year *</label>
-                            <div className="flex gap-sm flex-wrap">
-                                <select
-                                    className="select"
-                                    style={{ minWidth: '160px', flex: 1 }}
-                                    value={paymentMonth}
-                                    disabled={!!editingPaymentId}
-                                    onChange={(e) => setPaymentMonth(Number(e.target.value))}
-                                >
-                                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                                        <option key={m} value={m}>
-                                            {getMonthName(m)}
-                                        </option>
-                                    ))}
-                                </select>
-                                <select
-                                    className="select"
-                                    style={{ minWidth: '100px', flex: 1 }}
-                                    value={paymentYear}
-                                    disabled={!!editingPaymentId}
-                                    onChange={(e) => setPaymentYear(Number(e.target.value))}
-                                >
-                                    {paymentYearOptions.map((y) => (
-                                        <option key={y} value={y}>
-                                            {y}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <label className="form-label">
+                                {isAdvanceMode ? 'Advance payment for (future month) *' : 'Payment month & year *'}
+                            </label>
+                            {isAdvanceMode ? (
+                                (() => {
+                                    /** Build the N allowed future months based on the class's advance policy. */
+                                    const policy = getAdvancePolicyFor(selectedStudent);
+                                    const maxAhead = Math.max(1, policy.advanceMonths || 3);
+                                    const today = new Date();
+                                    const options = [];
+                                    for (let i = 1; i <= maxAhead; i++) {
+                                        const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+                                        options.push({ month: d.getMonth() + 1, year: d.getFullYear() });
+                                    }
+                                    const value = `${paymentYear}-${paymentMonth}`;
+                                    return (
+                                        <select
+                                            className="select"
+                                            value={value}
+                                            onChange={(e) => {
+                                                const [y, m] = e.target.value.split('-').map(Number);
+                                                setPaymentMonth(m);
+                                                setPaymentYear(y);
+                                            }}
+                                        >
+                                            {options.map((o) => (
+                                                <option key={`${o.year}-${o.month}`} value={`${o.year}-${o.month}`}>
+                                                    {getMonthName(o.month)} {o.year}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    );
+                                })()
+                            ) : (
+                                <div className="flex gap-sm flex-wrap">
+                                    <select
+                                        className="select"
+                                        style={{ minWidth: '160px', flex: 1 }}
+                                        value={paymentMonth}
+                                        disabled={!!editingPaymentId}
+                                        onChange={(e) => setPaymentMonth(Number(e.target.value))}
+                                    >
+                                        {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                                            <option key={m} value={m}>
+                                                {getMonthName(m)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <select
+                                        className="select"
+                                        style={{ minWidth: '100px', flex: 1 }}
+                                        value={paymentYear}
+                                        disabled={!!editingPaymentId}
+                                        onChange={(e) => setPaymentYear(Number(e.target.value))}
+                                    >
+                                        {paymentYearOptions.map((y) => (
+                                            <option key={y} value={y}>
+                                                {y}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <span className="text-xs text-gray-500 mt-xs">
-                                Pick the fee period this money is for (e.g. pay April on March 29 by choosing April here). Table filters only change the list, not this field.
+                                {isAdvanceMode
+                                    ? `Pay up to ${Math.max(1, getAdvancePolicyFor(selectedStudent).advanceMonths || 3)} month(s) in advance.`
+                                    : 'Pick the fee period this money is for (e.g. pay April on March 29 by choosing April here). Table filters only change the list, not this field.'}
                             </span>
                         </div>
 
@@ -1274,19 +1713,6 @@ const FeesPage = () => {
                                     <span className="text-xs text-gray-500 mt-xs">Reference only — you can enter a different amount below</span>
                                 </div>
                             </>
-                        )}
-
-                        {isParent && (
-                            <div className="form-group">
-                                <label className="form-label">Amount due for this period (after discount)</label>
-                                <input
-                                    type="text"
-                                    className="input"
-                                    value={formatCurrency(paymentCalculations.calculated)}
-                                    disabled
-                                    style={{ background: '#f9fafb', color: '#6b7280' }}
-                                />
-                            </div>
                         )}
 
                         <div className="form-group">
@@ -1358,38 +1784,39 @@ const FeesPage = () => {
             <Modal
                 isOpen={showHandoverModal}
                 onClose={() => { setShowHandoverModal(false); setHandoverAmount(''); }}
-                title="Record Fee Handover"
+                title="Submit fee handover"
                 footer={
                     <>
-                        <button className="btn btn-secondary" onClick={() => { setShowHandoverModal(false); setHandoverAmount(''); }}>Cancel</button>
-                        <button className="btn btn-primary" onClick={handleHandoverSubmit} disabled={submittingHandover}>
-                            {submittingHandover ? 'Submitting...' : 'Submit Handover'}
+                        <button type="button" className="btn btn-secondary" onClick={() => { setShowHandoverModal(false); setHandoverAmount(''); }}>Cancel</button>
+                        <button type="button" className="btn btn-primary" onClick={handleHandoverSubmit} disabled={submittingHandover}>
+                            {submittingHandover ? 'Submitting…' : 'Submit handover'}
                         </button>
                     </>
                 }
             >
                 {handoverSummary && (
                     <div>
-                        <div className="mb-md p-md bg-gray-50 rounded-lg">
-                            <div className="grid grid-cols-2 gap-sm text-sm">
-                                <div><span className="text-gray-500">Total Collected:</span> <strong>{formatCurrency(handoverSummary.totalCollected)}</strong></div>
-                                <div><span className="text-gray-500">Already Handed Over:</span> <strong>{formatCurrency(handoverSummary.totalHandedOver)}</strong></div>
-                                <div className="col-span-2"><span className="text-gray-500">Available to Submit:</span> <strong className="text-success-700 text-lg">{formatCurrency(handoverSummary.availableAmount)}</strong></div>
-                            </div>
+                        <p className="text-sm text-gray-600 mb-md">
+                            Enter how much you are handing to the office now (partial or full). Maximum is your current cash on hand after expenses.
+                        </p>
+                        <div className="mb-md p-md bg-gray-50 rounded-lg text-sm space-y-xs">
+                            <div className="flex justify-between"><span className="text-gray-500">Fees collected</span><strong>{formatCurrency(handoverSummary.totalCollected ?? 0)}</strong></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Already submitted to admin</span><strong>{formatCurrency(handoverSummary.totalSubmittedToAdmin ?? 0)}</strong></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Your expenses</span><strong>{formatCurrency(handoverSummary.totalExpensesFromFloat ?? 0)}</strong></div>
+                            <div className="flex justify-between border-t pt-sm mt-sm"><span className="text-gray-700">Cash on hand (max)</span><strong className="text-primary-700">{formatCurrency(managerCashOnHand(handoverSummary))}</strong></div>
                         </div>
                         <div className="form-group">
-                            <label className="form-label">Amount to Submit *</label>
+                            <label className="form-label">Amount to submit *</label>
                             <input
                                 type="number"
                                 className="input"
-                                min="0"
-                                max={handoverSummary.availableAmount}
+                                min="0.01"
                                 step="0.01"
+                                max={managerCashOnHand(handoverSummary)}
                                 value={handoverAmount}
-                                onChange={e => setHandoverAmount(e.target.value)}
-                                placeholder="Enter amount to hand over"
+                                onChange={(e) => setHandoverAmount(e.target.value)}
                             />
-                            <p className="text-xs text-gray-500 mt-xs">Maximum: {formatCurrency(handoverSummary.availableAmount)}</p>
+                            <p className="text-xs text-gray-500 mt-xs">Maximum: {formatCurrency(managerCashOnHand(handoverSummary))}</p>
                         </div>
                     </div>
                 )}

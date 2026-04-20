@@ -122,6 +122,47 @@ export class UsersController {
     return this.usersService.getUsersByRole(schoolId, UserRole.MANAGEMENT);
   }
 
+  @Get('staff/search')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @ApiOperation({
+    summary:
+      'Lightweight name/email search across staff roles (ADMIN, MANAGEMENT, TEACHER). Used by the messaging composer.',
+  })
+  async searchStaff(
+    @SchoolContext() schoolId: string,
+    @Query('q') search?: string,
+    @Query('roles') roles?: string,
+    @Query('excludeUserId') excludeUserId?: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    const ALLOWED: UserRole[] = [
+      UserRole.ADMIN,
+      UserRole.SUPER_ADMIN,
+      UserRole.MANAGEMENT,
+      UserRole.TEACHER,
+    ];
+    const requested =
+      roles?.split(',').map((r) => r.trim().toUpperCase() as UserRole) || ALLOWED;
+    /** Never let clients widen the filter to PARENT/STUDENT from this endpoint. */
+    const filtered = requested.filter((r) => ALLOWED.includes(r));
+    const roleList = filtered.length > 0 ? filtered : ALLOWED;
+    const limit = limitStr ? parseInt(limitStr, 10) : 10;
+    return this.usersService.searchUsersByRoles(
+      schoolId,
+      roleList,
+      search,
+      excludeUserId,
+      Number.isFinite(limit) ? limit : 10,
+    );
+  }
+
+  @Get(':id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.TEACHER)
+  @ApiOperation({ summary: 'Get a user by id in the current school' })
+  async getOne(@SchoolContext() schoolId: string, @Param('id') userId: string) {
+    return this.usersService.findOne(userId, schoolId);
+  }
+
   @Patch(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
   @ApiOperation({ summary: 'Update a user account' })

@@ -63,19 +63,26 @@ export class ExpensesController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update an expense' })
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Update an expense — admins only (managers cannot edit their own entries once recorded)',
+  })
   @ApiResponse({ status: 200, description: 'Expense updated successfully' })
   async update(
     @SchoolContext() schoolId: string,
     @Param('id') id: string,
+    @CurrentUser() user: any,
     @Body() updateExpenseDto: UpdateExpenseDto,
   ) {
-    return this.expensesService.update(schoolId, id, updateExpenseDto);
+    return this.expensesService.update(schoolId, id, user.id, user.role, updateExpenseDto);
   }
 
   @Delete(':id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Delete an expense (soft delete)' })
+  @ApiOperation({
+    summary: 'Delete an expense (soft delete) — admins only',
+  })
   @ApiResponse({ status: 200, description: 'Expense deleted successfully' })
   async remove(@SchoolContext() schoolId: string, @Param('id') id: string) {
     return this.expensesService.remove(schoolId, id);

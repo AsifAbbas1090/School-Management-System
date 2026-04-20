@@ -2,7 +2,9 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
+  Param,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -32,33 +34,70 @@ import { UserRole } from '@prisma/client';
 export class FeeHandoversController {
   constructor(private readonly feeHandoversService: FeeHandoversService) {}
 
-  @Post()
+  @Get('my-summary')
   @Roles(UserRole.MANAGEMENT)
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Submit fee handover (Management only)' })
-  @ApiResponse({ status: 201, description: 'Handover submitted successfully' })
-  async create(
+  @ApiOperation({ summary: 'Current manager unsubmitted total and recent handovers' })
+  @ApiResponse({ status: 200, description: 'Summary retrieved successfully' })
+  async getMySummary(
     @SchoolContext() schoolId: string,
-    @CurrentUser() user: any,
-    @Body() createFeeHandoverDto: CreateFeeHandoverDto,
+    @CurrentUser() user: { id: string; role: UserRole },
   ) {
-    return this.feeHandoversService.create(schoolId, user.id, createFeeHandoverDto);
+    return this.feeHandoversService.getManagerSummary(schoolId, user.id);
   }
 
-  @Get()
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
-  @ApiOperation({ summary: 'Get all fee handovers with pagination' })
-  @ApiResponse({ status: 200, description: 'Handovers retrieved successfully' })
-  async findAll(@SchoolContext() schoolId: string, @Query() query: FeeQueryDto) {
-    return this.feeHandoversService.findAll(schoolId, query);
+  @Get('managers')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Per-manager collection overview (admin)' })
+  @ApiResponse({ status: 200, description: 'Overview retrieved successfully' })
+  async getManagersOverview(@SchoolContext() schoolId: string) {
+    return this.feeHandoversService.getManagersOverview(schoolId);
   }
 
   @Get('summary')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
-  @ApiOperation({ summary: 'Get handover summary (total collected, handed over, available)' })
+  @ApiOperation({ summary: 'Handover summary (admin: school-wide; management: own)' })
   @ApiResponse({ status: 200, description: 'Handover summary retrieved successfully' })
-  async getSummary(@SchoolContext() schoolId: string) {
-    return this.feeHandoversService.getHandoverSummary(schoolId);
+  async getSummary(
+    @SchoolContext() schoolId: string,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.feeHandoversService.getHandoverSummary(schoolId, user);
+  }
+
+  @Get()
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
+  @ApiOperation({ summary: 'List handovers (admin: all; management: own)' })
+  @ApiResponse({ status: 200, description: 'Handovers retrieved successfully' })
+  async findAll(
+    @SchoolContext() schoolId: string,
+    @Query() query: FeeQueryDto,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.feeHandoversService.findAll(schoolId, query, user);
+  }
+
+  @Patch(':id/verify')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Verify a submitted handover' })
+  @ApiResponse({ status: 200, description: 'Handover verified' })
+  async verify(
+    @SchoolContext() schoolId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string; role: UserRole },
+  ) {
+    return this.feeHandoversService.verify(id, schoolId, user.id);
+  }
+
+  @Post()
+  @Roles(UserRole.MANAGEMENT)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Submit fee handover (all unsubmitted collections for this manager)' })
+  @ApiResponse({ status: 201, description: 'Handover submitted successfully' })
+  async create(
+    @SchoolContext() schoolId: string,
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Body() createFeeHandoverDto: CreateFeeHandoverDto,
+  ) {
+    return this.feeHandoversService.create(schoolId, user.id, createFeeHandoverDto);
   }
 }
-

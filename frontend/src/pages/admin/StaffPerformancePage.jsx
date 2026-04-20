@@ -207,7 +207,7 @@ const StaffPerformancePage = () => {
                                             </div>
                                             <div className="flex-1">
                                                 <p className="text-sm font-medium text-gray-900">
-                                                    {h.User?.name || 'Staff'} submitted {formatCurrency(h.amountSubmitted)}
+                                                    {h.manager?.name || h.User?.name || 'Staff'} submitted {formatCurrency(h.amountSubmitted)}
                                                 </p>
                                                 <p className="text-xs text-gray-500">
                                                     {new Date(h.submittedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}

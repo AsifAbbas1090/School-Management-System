@@ -1,13 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { Send, Inbox, Mail, Search } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Inbox, Search, X } from 'lucide-react';
 import { useMessagesStore, useAuthStore } from '../../store';
 import { messagesService, usersService } from '../../services/api';
 import { getRelativeTime } from '../../utils';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Modal from '../../components/common/Modal';
 import Avatar from '../../components/common/Avatar';
-import { AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+/**
+ * Normalize a raw Prisma message into the flat shape the UI renders.
+ * Backend returns `body` + `User_Message_senderIdToUser` relations; the UI
+ * historically read `content`/`senderName`, so we map once at the boundary
+ * instead of sprinkling relation lookups through JSX.
+ */
+const normalizeMessage = (m) => {
+  if (!m || typeof m !== 'object') return m;
+  const sender = m.User_Message_senderIdToUser || m.sender || null;
+  const receiver = m.User_Message_receiverIdToUser || m.receiver || null;
+  return {
+    ...m,
+    content: m.content ?? m.body ?? '',
+    senderName: m.senderName || sender?.name || 'Unknown',
+    senderRole: m.senderRole || sender?.role || null,
+    receiverName: m.receiverName || receiver?.name || null,
+  };
+};
 
 const MessagesPage = () => {
   const { user } = useAuthStore();
@@ -20,11 +38,63 @@ const MessagesPage = () => {
   const [composeData, setComposeData] = useState({
     receiverId: '',
     receiverRole: '',
+    receiverName: '',
     subject: '',
     content: '',
   });
   const [replyContent, setReplyContent] = useState('');
   const [replying, setReplying] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  /** Recipient combobox state — debounced name-search limited to staff roles. */
+  const [recipientQuery, setRecipientQuery] = useState('');
+  const [recipientOptions, setRecipientOptions] = useState([]);
+  const [showRecipientDropdown, setShowRecipientDropdown] = useState(false);
+  const [recipientLoading, setRecipientLoading] = useState(false);
+  const recipientSearchRef = useRef(null);
+  const recipientBoxRef = useRef(null);
+
+  /** 300ms debounce so every keystroke doesn't hit the API. */
+  useEffect(() => {
+    if (!showComposeModal) return;
+    if (composeData.receiverId) return; // already picked, no search needed
+    if (recipientSearchRef.current) clearTimeout(recipientSearchRef.current);
+    recipientSearchRef.current = setTimeout(async () => {
+      setRecipientLoading(true);
+      try {
+        const res = await usersService.searchStaff({
+          q: recipientQuery,
+          roles: ['ADMIN', 'MANAGEMENT', 'TEACHER', 'SUPER_ADMIN'],
+          excludeUserId: user?.id,
+          limit: 10,
+        });
+        if (res?.success) {
+          const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+          setRecipientOptions(list);
+          setShowRecipientDropdown(true);
+        }
+      } catch {
+        setRecipientOptions([]);
+      } finally {
+        setRecipientLoading(false);
+      }
+    }, 300);
+    return () => {
+      if (recipientSearchRef.current) clearTimeout(recipientSearchRef.current);
+    };
+  }, [recipientQuery, showComposeModal, composeData.receiverId, user?.id]);
+
+  /** Close dropdown on outside click. */
+  useEffect(() => {
+    if (!showRecipientDropdown) return;
+    const onDocClick = (e) => {
+      if (recipientBoxRef.current && !recipientBoxRef.current.contains(e.target)) {
+        setShowRecipientDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showRecipientDropdown]);
 
   const breadcrumbItems = [
     { label: 'Dashboard', path: '/dashboard' },
@@ -41,7 +111,8 @@ const MessagesPage = () => {
       const response = await messagesService.getAll();
       if (response.success && response.data) {
         const messagesData = response.data.data || response.data;
-        setMessages(Array.isArray(messagesData) ? messagesData : []);
+        const list = Array.isArray(messagesData) ? messagesData : [];
+        setMessages(list.map(normalizeMessage));
       }
     } catch (error) {
       // Silently handle errors - toast shows user message
@@ -50,38 +121,69 @@ const MessagesPage = () => {
     }
   };
 
+  const resetComposeForm = () => {
+    setComposeData({
+      receiverId: '',
+      receiverRole: '',
+      receiverName: '',
+      subject: '',
+      content: '',
+    });
+    setRecipientQuery('');
+    setRecipientOptions([]);
+    setShowRecipientDropdown(false);
+  };
+
+  const handlePickRecipient = (u) => {
+    setComposeData((p) => ({
+      ...p,
+      receiverId: u.id,
+      receiverRole: u.role,
+      receiverName: u.name,
+    }));
+    setRecipientQuery(u.name);
+    setShowRecipientDropdown(false);
+  };
+
+  const handleClearRecipient = () => {
+    setComposeData((p) => ({ ...p, receiverId: '', receiverRole: '', receiverName: '' }));
+    setRecipientQuery('');
+    setRecipientOptions([]);
+    setShowRecipientDropdown(true);
+  };
+
   const handleSendMessage = async () => {
     if (!composeData.receiverId || !composeData.subject || !composeData.content) {
       toast.error('Please fill in all required fields');
       return;
     }
+    if (sending) return;
 
+    setSending(true);
     try {
+      /** Backend DTO expects `receiverType` (USER/ROLE/CLASS/SECTION) + `body` (not "content"). */
       const messageData = {
+        receiverType: 'USER',
         receiverId: composeData.receiverId,
-        receiverRole: composeData.receiverRole,
+        receiverRole: composeData.receiverRole || undefined,
         subject: composeData.subject,
-        content: composeData.content,
+        body: composeData.content,
       };
 
       const response = await messagesService.create(messageData);
       if (response.success && response.data) {
-        addMessage(response.data);
+        addMessage(normalizeMessage(response.data));
         toast.success('Message sent successfully');
         setShowComposeModal(false);
-        setComposeData({
-          receiverId: '',
-          receiverRole: '',
-          subject: '',
-          content: '',
-        });
+        resetComposeForm();
         loadMessages();
       } else {
         toast.error(response.error || 'Failed to send message');
       }
     } catch (error) {
-      // Silently handle errors - toast shows user message
       toast.error('Failed to send message');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -90,9 +192,10 @@ const MessagesPage = () => {
     setReplying(true);
     try {
       const response = await messagesService.reply({
+        receiverType: 'USER',
         receiverId: selectedMessage.senderId,
         subject: `Re: ${selectedMessage.subject}`,
-        content: replyContent,
+        body: replyContent,
       });
       if (response.success) {
         toast.success('Reply sent');
@@ -130,10 +233,13 @@ const MessagesPage = () => {
     return isParticipant && matchesMode;
   });
 
-  const filteredMessages = visibleMessages.filter(msg =>
-    msg.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    msg.senderName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMessages = visibleMessages.filter((msg) => {
+    const q = searchTerm.toLowerCase();
+    return (
+      (msg.subject || '').toLowerCase().includes(q) ||
+      (msg.senderName || '').toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="messages-page">
@@ -260,33 +366,137 @@ const MessagesPage = () => {
       {/* Compose Modal */}
       <Modal
         isOpen={showComposeModal}
-        onClose={() => setShowComposeModal(false)}
+        onClose={() => {
+          setShowComposeModal(false);
+          resetComposeForm();
+        }}
         title="Compose Message"
         size="lg"
         footer={
           <>
-            <button className="btn btn-outline" onClick={() => setShowComposeModal(false)}>
+            <button
+              className="btn btn-outline"
+              onClick={() => {
+                setShowComposeModal(false);
+                resetComposeForm();
+              }}
+              disabled={sending}
+            >
               Cancel
             </button>
-            <button className="btn btn-primary" onClick={handleSendMessage}>
+            <button className="btn btn-primary" onClick={handleSendMessage} disabled={sending}>
               <Send size={18} />
-              <span>Send</span>
+              <span>{sending ? 'Sending…' : 'Send'}</span>
             </button>
           </>
         }
       >
-        <form>
-          <div className="form-group">
-            <label className="form-label">Recipient User ID *</label>
-            <input
-              type="text"
-              className="input"
-              placeholder="Enter recipient user ID"
-              value={composeData.receiverId}
-              onChange={e => setComposeData(p => ({ ...p, receiverId: e.target.value }))}
-            />
+        <form onSubmit={(e) => e.preventDefault()}>
+          <div className="form-group" ref={recipientBoxRef} style={{ position: 'relative' }}>
+            <label className="form-label">Recipient *</label>
+            {composeData.receiverId ? (
+              <div
+                className="flex items-center gap-md"
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--gray-50)',
+                }}
+              >
+                <Avatar name={composeData.receiverName} size="sm" />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600 }}>{composeData.receiverName}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    {composeData.receiverRole}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleClearRecipient}
+                  title="Change recipient"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Search by name…"
+                  value={recipientQuery}
+                  onChange={(e) => {
+                    setRecipientQuery(e.target.value);
+                    setShowRecipientDropdown(true);
+                  }}
+                  onFocus={() => setShowRecipientDropdown(true)}
+                  autoComplete="off"
+                />
+                {showRecipientDropdown && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      marginTop: '0.25rem',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-md)',
+                      boxShadow: 'var(--shadow-md)',
+                      zIndex: 10,
+                      maxHeight: '240px',
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {recipientLoading && (
+                      <div style={{ padding: '0.75rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                        Searching…
+                      </div>
+                    )}
+                    {!recipientLoading && recipientOptions.length === 0 && (
+                      <div style={{ padding: '0.75rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                        No staff members match that name.
+                      </div>
+                    )}
+                    {!recipientLoading &&
+                      recipientOptions.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => handlePickRecipient(u)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            width: '100%',
+                            padding: '0.625rem 0.75rem',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: '1px solid var(--border-color)',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--gray-50)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                        >
+                          <Avatar name={u.name} size="sm" />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{u.name}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              {u.role} · {u.email}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </>
+            )}
             <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-              Find user IDs from the Students, Teachers, or Parents pages.
+              Messaging is limited to Admins, Management, and Teachers.
             </p>
           </div>
 

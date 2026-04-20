@@ -27,6 +27,8 @@ const ExpensesPage = () => {
         setExpenses,
     } = useExpensesStore();
     const [loading, setLoading] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
 
     const loadExpenses = useCallback(async () => {
         setLoading(true);
@@ -43,6 +45,22 @@ const ExpensesPage = () => {
         }
     }, [currentSchool, setExpenses]);
 
+    /** Non-blocking background refresh — used after a create/update/delete completes. The local
+     *  store is already updated optimistically, so we never want the UI to wait on this. */
+    const refreshExpensesInBackground = useCallback(() => {
+        expensesService
+            .getAll()
+            .then((response) => {
+                if (response?.success && response.data) {
+                    const expensesData = response.data.data || response.data;
+                    setExpenses(Array.isArray(expensesData) ? expensesData : []);
+                }
+            })
+            .catch((error) => {
+                console.error('Failed to refresh expenses:', error);
+            });
+    }, [setExpenses]);
+
     useEffect(() => {
         loadExpenses();
     }, [loadExpenses]);
@@ -56,7 +74,9 @@ const ExpensesPage = () => {
     const [formState, setFormState] = useState(INITIAL_FORM_STATE);
     const [formErrors, setFormErrors] = useState({});
 
-    const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT].includes(user?.role);
+    const isAuthorized = [USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT, USER_ROLES.SUPER_ADMIN].includes(user?.role);
+    /** Only admins can edit/delete expenses — managers record only. */
+    const canManageEntries = [USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN].includes(user?.role);
 
     const breadcrumbItems = [
         { label: 'Dashboard', path: '/dashboard' },
@@ -185,14 +205,15 @@ const ExpensesPage = () => {
 
     const handleSubmit = async () => {
         if (!validateForm()) return;
+        if (submitting) return;
 
+        setSubmitting(true);
         try {
             let receiptImageUrl = formState.receiptImage;
 
             // Upload image if it's a file (base64 data URL)
             if (formState.receiptImage && formState.receiptImage.startsWith('data:image')) {
                 try {
-                    // Convert base64 to blob
                     const response = await fetch(formState.receiptImage);
                     const blob = await response.blob();
                     const file = new File([blob], 'receipt.jpg', { type: 'image/jpeg' });
@@ -206,7 +227,6 @@ const ExpensesPage = () => {
                         receiptImageUrl = uploadResponse.data.receiptImageUrl || uploadResponse.data.url;
                     }
                 } catch (uploadError) {
-                    // Silently handle errors - toast shows user message
                     toast.error('Failed to upload receipt image');
                 }
             }
@@ -222,47 +242,54 @@ const ExpensesPage = () => {
             if (selectedExpense) {
                 const response = await expensesService.update(selectedExpense.id, payload);
                 if (response.success && response.data) {
+                    /** Optimistic: merge the server row into local state and close immediately. */
                     updateExpense(selectedExpense.id, response.data);
                     toast.success('Expense updated successfully');
-                    loadExpenses();
+                    handleCloseModal();
+                    refreshExpensesInBackground();
                 } else {
                     toast.error(response.error || 'Failed to update expense');
-                    return;
                 }
             } else {
                 const response = await expensesService.create(payload);
                 if (response.success && response.data) {
                     addExpense(response.data);
                     toast.success('Expense added successfully');
-                    await loadExpenses();
+                    handleCloseModal();
+                    refreshExpensesInBackground();
                 } else {
                     toast.error(response.error || 'Failed to create expense');
-                    return;
                 }
             }
-
-            handleCloseModal();
         } catch (error) {
             console.error('Expense creation error:', error);
             toast.error(error?.response?.data?.message || error?.message || 'Failed to save expense');
+        } finally {
+            setSubmitting(false);
         }
     };
 
     const handleDelete = async (expense) => {
         if (!window.confirm('Are you sure you want to delete this expense?')) return;
-        
+
+        setDeletingId(expense.id);
+        /** Optimistic: remove from local list immediately; restore on error. */
+        deleteExpense(expense.id);
         try {
             const response = await expensesService.delete(expense.id);
             if (response.success) {
-                deleteExpense(expense.id);
                 toast.success('Expense removed');
-                loadExpenses();
+                refreshExpensesInBackground();
             } else {
                 toast.error(response.error || 'Failed to delete expense');
+                /** Rollback by refetching the canonical list. */
+                loadExpenses();
             }
         } catch (error) {
-            // Silently handle errors - toast shows user message
             toast.error('Failed to delete expense');
+            loadExpenses();
+        } finally {
+            setDeletingId(null);
         }
     };
 
@@ -397,14 +424,19 @@ const ExpensesPage = () => {
                                     {formatCurrency(expense.amount)}
                                 </td>
                                 <td className="text-sm text-gray-600">
-                                    {expense.createdByRole && (
-                                        <span className="block capitalize">
-                                            {expense.createdByRole}
+                                    {expense.User?.name && (
+                                        <span className="block font-medium" style={{ color: 'var(--text-primary)' }}>
+                                            {expense.User.name}
                                         </span>
                                     )}
-                                    {expense.createdById && (
-                                        <span className="block text-xs text-gray-400">
-                                            ID: {expense.createdById}
+                                    {expense.createdByRole && (
+                                        <span className="block text-xs capitalize text-gray-500">
+                                            {expense.createdByRole.toLowerCase()}
+                                        </span>
+                                    )}
+                                    {expense.Editor?.name && (
+                                        <span className="block text-xs text-gray-400" style={{ fontStyle: 'italic' }}>
+                                            edited by {expense.Editor.name}
                                         </span>
                                     )}
                                 </td>
@@ -428,18 +460,29 @@ const ExpensesPage = () => {
                                 </td>
                                 <td>
                                     <div className="flex gap-sm justify-end">
-                                        <button
-                                            className="btn btn-sm btn-outline"
-                                            onClick={() => handleOpenModal(expense)}
-                                        >
-                                            Edit
-                                        </button>
-                                        <button
-                                            className="btn btn-sm btn-danger"
-                                            onClick={() => handleDelete(expense)}
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
+                                        {canManageEntries ? (
+                                            <>
+                                                <button
+                                                    className="btn btn-sm btn-outline"
+                                                    onClick={() => handleOpenModal(expense)}
+                                                    disabled={deletingId === expense.id}
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    className="btn btn-sm btn-danger"
+                                                    onClick={() => handleDelete(expense)}
+                                                    disabled={deletingId === expense.id}
+                                                    title="Delete expense"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <span className="text-xs text-gray-400" title="Only administrators can edit or delete expenses once recorded">
+                                                Locked
+                                            </span>
+                                        )}
                                     </div>
                                 </td>
                             </tr>
@@ -456,11 +499,11 @@ const ExpensesPage = () => {
                 size="md"
                 footer={
                     <>
-                        <button className="btn btn-outline" onClick={handleCloseModal}>
+                        <button className="btn btn-outline" onClick={handleCloseModal} disabled={submitting}>
                             Cancel
                         </button>
-                        <button className="btn btn-primary" onClick={handleSubmit}>
-                            Save
+                        <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+                            {submitting ? 'Saving…' : 'Save'}
                         </button>
                     </>
                 }

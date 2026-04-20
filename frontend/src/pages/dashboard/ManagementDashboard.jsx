@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Users, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { Users, TrendingUp, AlertCircle, CheckCircle, Banknote, Send, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { analyticsService } from '../../services/api';
 import { formatCurrency, getTargetSchoolIdForScopedApi } from '../../utils';
@@ -15,6 +16,7 @@ import toast from 'react-hot-toast';
  * - GET /school/analytics/dashboard?schoolId=&role=  (analyticsService.getDashboardStats)
  */
 const ManagementDashboard = () => {
+    const navigate = useNavigate();
     const { user } = useAuthStore();
     const { currentSchool } = useSchoolStore();
     const [stats, setStats] = useState(null);
@@ -143,6 +145,79 @@ const ManagementDashboard = () => {
                     );
                 })}
             </div>
+
+            {/* Personal collection/handover cards — uses the unsubmittedByManager slice scoped to the current manager. */}
+            {user?.role === USER_ROLES.MANAGEMENT && (() => {
+                const collections = stats?.collections || {};
+                const mine = (collections.unsubmittedByManager || []).find(r => r.managerId === user?.id) || {
+                    managerId: user?.id,
+                    managerName: user?.name,
+                    amountUnsubmitted: 0,
+                    paymentCount: 0,
+                    todayCollected: 0,
+                };
+                const lastHandover = (stats?.recentHandovers || []).find(h => h.manager?.id === user?.id || h.managerId === user?.id);
+                const lastStatus = lastHandover?.status || null;
+                const personalCards = [
+                    {
+                        title: 'Your Collections Today',
+                        value: formatCurrency(mine.todayCollected || 0),
+                        sublabel: 'Fees you collected today',
+                        icon: Banknote,
+                        color: 'success',
+                    },
+                    {
+                        title: 'Your Unsubmitted Total',
+                        value: formatCurrency(mine.amountUnsubmitted || 0),
+                        sublabel: `${mine.paymentCount || 0} payment(s) awaiting handover`,
+                        icon: Clock,
+                        color: (mine.amountUnsubmitted || 0) > 0 ? 'warning' : 'secondary',
+                        action: (mine.amountUnsubmitted || 0) > 0 ? {
+                            label: 'Submit Handover',
+                            onClick: () => navigate('/fees?tab=handovers'),
+                        } : null,
+                    },
+                    {
+                        title: 'Your Last Handover',
+                        value: lastHandover ? formatCurrency(lastHandover.amountSubmitted || 0) : '—',
+                        sublabel: lastHandover
+                            ? `${lastStatus === 'VERIFIED' ? 'Verified' : lastStatus === 'PENDING' ? 'Pending' : lastStatus} • ${new Date(lastHandover.submittedAt).toLocaleDateString()}`
+                            : 'No handovers yet',
+                        icon: Send,
+                        color: lastStatus === 'VERIFIED' ? 'success' : lastStatus === 'PENDING' ? 'warning' : 'primary',
+                    },
+                ];
+                return (
+                    <div className="grid grid-cols-3 mb-xl">
+                        {personalCards.map((card, idx) => {
+                            const Icon = card.icon;
+                            return (
+                                <div key={idx} className="kpi-card">
+                                    <div className="kpi-header">
+                                        <div className={`kpi-icon kpi-icon-${card.color}`}>
+                                            <Icon size={22} />
+                                        </div>
+                                    </div>
+                                    <div className="kpi-body">
+                                        <h3 className="kpi-value">{card.value}</h3>
+                                        <p className="kpi-title">{card.title}</p>
+                                        <p className="kpi-sublabel">{card.sublabel}</p>
+                                        {card.action && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-primary btn-sm mt-sm"
+                                                onClick={card.action.onClick}
+                                            >
+                                                {card.action.label}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                );
+            })()}
 
             {/* Charts Row */}
             <div className="grid grid-cols-2 mb-xl">

@@ -337,7 +337,7 @@ export class StudentsService {
         Class: true,
         Section: {
           include: {
-            classTeacher: {
+            User: {
               select: {
                 id: true,
                 name: true,
@@ -716,10 +716,10 @@ export class StudentsService {
       this.csvGet(m, 'dateOfBirth', 'dateofbirth', 'dob'),
       'dateOfBirth',
     );
-    const admissionDate = this.parseCsvDate(
-      this.csvGet(m, 'admissionDate', 'admissiondate', 'admission'),
-      'admissionDate',
-    );
+    const admissionRaw = this.csvGet(m, 'admissionDate', 'admissiondate', 'admission');
+    const admissionDate = admissionRaw?.trim()
+      ? this.parseCsvDate(admissionRaw, 'admissionDate')
+      : undefined;
 
     const monthlyFeeStr = this.csvGet(m, 'monthlyFee', 'monthlyfee', 'fees', 'fee', 'monthlyfeePKR');
     if (!monthlyFeeStr) throw new Error('monthlyFee is required');
@@ -791,12 +791,14 @@ export class StudentsService {
       rollNumber,
       gender: genderUpper as Gender,
       dateOfBirth,
-      admissionDate,
       monthlyFee,
       address,
       classId,
       sectionId,
     };
+    if (admissionDate) {
+      dto.admissionDate = admissionDate;
+    }
 
     if (parentId) {
       dto.parentId = parentId;

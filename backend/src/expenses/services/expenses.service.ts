@@ -1,16 +1,42 @@
 import { randomUUID } from 'crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
 import { UpdateExpenseDto } from '../dto/update-expense.dto';
 import { ExpenseQueryDto } from '../dto/expense-query.dto';
 import { UserRole, Prisma } from '@prisma/client';
+import { EPS, getManagerCashLedger } from '../../common/manager-cash-ledger';
+
+/** Include creator (`User`) + last-editor (`Editor`) on every expense read so admins can see
+ *  who added the entry and which admin (if any) last touched it. */
+const EXPENSE_INCLUDE = {
+  User: {
+    select: { id: true, name: true, email: true },
+  },
+  Editor: {
+    select: { id: true, name: true, email: true },
+  },
+} as const;
 
 @Injectable()
 export class ExpensesService {
   constructor(private prisma: PrismaService) {}
 
   async create(schoolId: string, userId: string, userRole: string, createExpenseDto: CreateExpenseDto) {
+    if (userRole === UserRole.MANAGEMENT) {
+      const ledger = await getManagerCashLedger(this.prisma, schoolId, userId);
+      if (createExpenseDto.amount > ledger.remainingOnHand + EPS) {
+        throw new BadRequestException(
+          `Expense exceeds cash on hand (${ledger.remainingOnHand.toFixed(2)}). Collected ${ledger.totalCollected.toFixed(2)} − submitted to admin ${ledger.totalSubmittedToAdmin.toFixed(2)} − prior expenses ${ledger.totalExpensesFromFloat.toFixed(2)}.`,
+        );
+      }
+    }
+
     return this.prisma.expense.create({
       data: {
         id: randomUUID(),
@@ -24,15 +50,7 @@ export class ExpensesService {
         createdByRole: userRole as UserRole,
         updatedAt: new Date(),
       } as Prisma.ExpenseUncheckedCreateInput,
-      include: {
-        User: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
+      include: EXPENSE_INCLUDE,
     });
   }
 
@@ -62,15 +80,7 @@ export class ExpensesService {
         skip,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
-        include: {
-          User: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-        },
+        include: EXPENSE_INCLUDE,
       }),
       this.prisma.expense.count({ where }),
     ]);
@@ -93,15 +103,7 @@ export class ExpensesService {
         schoolId,
         deletedAt: null,
       },
-      include: {
-        User: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
+      include: EXPENSE_INCLUDE,
     });
 
     if (!expense) {
@@ -111,7 +113,24 @@ export class ExpensesService {
     return expense;
   }
 
-  async update(schoolId: string, id: string, updateExpenseDto: UpdateExpenseDto) {
+  async update(
+    schoolId: string,
+    id: string,
+    editorUserId: string,
+    editorUserRole: string,
+    updateExpenseDto: UpdateExpenseDto,
+  ) {
+    /** Defence in depth: the controller already gates to ADMIN/SUPER_ADMIN, but if another
+     *  caller plugs into this service directly we still refuse MANAGEMENT edits here. */
+    if (
+      editorUserRole !== UserRole.ADMIN &&
+      editorUserRole !== UserRole.SUPER_ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only administrators can edit expenses. Contact an admin if you need a correction.',
+      );
+    }
+
     const existing = await this.prisma.expense.findFirst({
       where: {
         id,
@@ -124,18 +143,27 @@ export class ExpensesService {
       throw new NotFoundException(`Expense with ID ${id} not found`);
     }
 
+    const nextAmount =
+      updateExpenseDto.amount !== undefined ? updateExpenseDto.amount : existing.amount;
+    if (existing.createdByRole === UserRole.MANAGEMENT) {
+      const ledger = await getManagerCashLedger(this.prisma, schoolId, existing.createdById);
+      const headroom = ledger.remainingOnHand + existing.amount;
+      if (nextAmount > headroom + EPS) {
+        throw new BadRequestException(
+          `Updated expense exceeds available cash (${headroom.toFixed(2)} including this entry).`,
+        );
+      }
+    }
+
     return this.prisma.expense.update({
       where: { id },
-      data: updateExpenseDto,
-      include: {
-        User: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
+      data: {
+        ...updateExpenseDto,
+        /** Preserve original creator; record who touched it last for admin oversight. */
+        updatedById: editorUserId,
+        updatedByRole: editorUserRole as UserRole,
       },
+      include: EXPENSE_INCLUDE,
     });
   }
 

@@ -31,28 +31,24 @@ export function formatSettledApiError(settled) {
  */
 const getAuthToken = () => {
   const authStorage = localStorage.getItem('auth-storage');
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage);
-      return parsed?.state?.user?.accessToken || parsed?.user?.accessToken;
-    } catch (e) {
-      return null;
-    }
+  if (!authStorage) return null;
+  try {
+    const parsed = JSON.parse(authStorage);
+    return parsed?.state?.user?.accessToken || parsed?.user?.accessToken || null;
+  } catch {
+    return null;
   }
-  return null;
 };
 
 const getRefreshToken = () => {
   const authStorage = localStorage.getItem('auth-storage');
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage);
-      return parsed?.state?.user?.refreshToken || parsed?.user?.refreshToken;
-    } catch (e) {
-      return null;
-    }
+  if (!authStorage) return null;
+  try {
+    const parsed = JSON.parse(authStorage);
+    return parsed?.state?.user?.refreshToken || parsed?.user?.refreshToken || null;
+  } catch {
+    return null;
   }
-  return null;
 };
 
 /** Update persisted Zustand user.accessToken after a successful /auth/refresh. */
@@ -67,8 +63,8 @@ function persistAccessToken(accessToken) {
       parsed.user.accessToken = accessToken;
     }
     localStorage.setItem('auth-storage', JSON.stringify(parsed));
-  } catch (e) {
-    // ignore
+  } catch {
+    // best-effort: ignore corrupted storage
   }
 }
 
@@ -116,22 +112,6 @@ async function refreshAccessTokenOnce() {
 
   return refreshInFlight;
 }
-
-/**
- * Get school ID from auth storage
- */
-const getSchoolId = () => {
-  const authStorage = localStorage.getItem('auth-storage');
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage);
-      return parsed?.state?.user?.schoolId || parsed?.user?.schoolId;
-    } catch (e) {
-      return null;
-    }
-  }
-  return null;
-};
 
 /**
  * Make API request
@@ -228,7 +208,7 @@ const apiRequest = async (endpoint, options = {}) => {
             if (parsed?.state?.user || parsed?.user) {
               redirectToLoginClearingAuth();
             }
-          } catch (e) {
+          } catch {
             // ignore parse errors
           }
         }
@@ -526,6 +506,13 @@ export const subjectsService = {
     });
   },
 
+  bulkCreate: async (items) => {
+    return apiRequest('/school/subjects/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+  },
+
   update: async (id, data) => {
     return apiRequest(`/school/subjects/${id}`, {
       method: 'PATCH',
@@ -589,6 +576,16 @@ export const usersService = {
 
   getManagement: async () => {
     return apiRequest('/school/users/management');
+  },
+
+  /** Lightweight name search across staff roles — used by the messaging composer combobox. */
+  searchStaff: async ({ q = '', roles = ['ADMIN', 'MANAGEMENT', 'TEACHER'], excludeUserId, limit = 10 } = {}) => {
+    const params = new URLSearchParams();
+    if (q && q.trim()) params.set('q', q.trim());
+    if (Array.isArray(roles) && roles.length > 0) params.set('roles', roles.join(','));
+    if (excludeUserId) params.set('excludeUserId', excludeUserId);
+    if (limit) params.set('limit', String(limit));
+    return apiRequest(`/school/users/staff/search?${params}`);
   },
 
   updateUser: async (id, data) => {
@@ -663,6 +660,15 @@ export const feesService = {
     return apiRequest(`/school/fees/payments?${params}`);
   },
 
+  /** Compact {studentId -> payment summary} map for a given (month, year) — single round trip. */
+  getFeePaymentsByMonthMap: async (month, year, studentId) => {
+    const params = new URLSearchParams();
+    params.append('month', String(month));
+    params.append('year', String(year));
+    if (studentId) params.append('studentId', studentId);
+    return apiRequest(`/school/fees/payments/by-month-map?${params}`);
+  },
+
   createFeePayment: async (data) => {
     return apiRequest('/school/fees/payments', {
       method: 'POST',
@@ -733,15 +739,31 @@ export const feesService = {
     return apiRequest(`/school/fees/handovers?${params}`);
   },
 
-  createFeeHandover: async (data) => {
+  createFeeHandover: async (data = {}) => {
     return apiRequest('/school/fees/handovers', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(data || {}),
     });
   },
 
   getHandoverSummary: async () => {
     return apiRequest('/school/fees/handovers/summary');
+  },
+
+  /** Management: unsubmitted total + recent handovers */
+  getManagerHandoverMySummary: async () => {
+    return apiRequest('/school/fees/handovers/my-summary');
+  },
+
+  /** Admin: per-manager collection overview */
+  getHandoverManagersOverview: async () => {
+    return apiRequest('/school/fees/handovers/managers');
+  },
+
+  verifyFeeHandover: async (id) => {
+    return apiRequest(`/school/fees/handovers/${id}/verify`, {
+      method: 'PATCH',
+    });
   },
 };
 
@@ -942,9 +964,35 @@ export const timetableService = {
   },
 
   clearSlot: async (classId, sectionId, day, periodId) => {
-    return apiRequest(`/school/timetable/slot?classId=${classId}&sectionId=${sectionId}&day=${day}&periodId=${periodId}`, {
-      method: 'DELETE',
+    return apiRequest(
+      `/school/timetable/slot?classId=${classId}&sectionId=${sectionId}&day=${day}&periodId=${periodId}`,
+      { method: 'DELETE' },
+    );
+  },
+
+  getSettings: async () => {
+    return apiRequest('/school/timetable/settings');
+  },
+
+  saveSettings: async (data) => {
+    return apiRequest('/school/timetable/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
     });
+  },
+
+  copyDay: async (data) => {
+    return apiRequest('/school/timetable/copy-day', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getConflicts: async (classId, sectionId) => {
+    const qs = new URLSearchParams();
+    if (classId) qs.append('classId', classId);
+    if (sectionId) qs.append('sectionId', sectionId);
+    return apiRequest(`/school/timetable/conflicts?${qs}`);
   },
 };
 
@@ -1033,6 +1081,43 @@ export const analyticsService = {
   getSuperAdminStats: async () => {
     return apiRequest('/super-admin/analytics/overview');
   },
+};
+
+/**
+ * Teacher Salary Service
+ *
+ * Tracks what the school owes each teacher per month. Admin/management
+ * can create records, pay (partial or full), and pull a liability summary;
+ * teachers can read their own records via `getByTeacher`.
+ */
+export const teacherSalaryService = {
+  create: async (data) =>
+    apiRequest('/school/teacher-salary', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getAll: async (query = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(query).forEach(([k, v]) => {
+      if (v != null && v !== '') params.append(k, String(v));
+    });
+    const qs = params.toString();
+    return apiRequest(`/school/teacher-salary${qs ? `?${qs}` : ''}`);
+  },
+
+  getSummary: async () => apiRequest('/school/teacher-salary/summary'),
+
+  getPending: async () => apiRequest('/school/teacher-salary/pending'),
+
+  getByTeacher: async (teacherId) =>
+    apiRequest(`/school/teacher-salary/teacher/${encodeURIComponent(teacherId)}`),
+
+  pay: async (id, data) =>
+    apiRequest(`/school/teacher-salary/${encodeURIComponent(id)}/pay`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 };
 
 /**

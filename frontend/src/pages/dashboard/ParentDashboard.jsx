@@ -9,7 +9,6 @@ import Loading from '../../components/common/Loading';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import Avatar from '../../components/common/Avatar';
 import ChildSelector from '../../components/parent/ChildSelector';
-import Modal from '../../components/common/Modal';
 
 const normStatus = (s) => (s == null ? '' : String(s)).toLowerCase();
 
@@ -53,16 +52,6 @@ const ParentDashboard = () => {
   const [myLeaves, setMyLeaves] = useState([]);
   const [leaveLoading, setLeaveLoading] = useState(false);
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentSaving, setPaymentSaving] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({
-    studentId: '',
-    studentName: '',
-    amountPaid: '',
-    month: String(new Date().getMonth() + 1),
-    year: String(new Date().getFullYear()),
-    paymentMethod: 'CASH',
-  });
   const [leaveForm, setLeaveForm] = useState({
     type: 'SICK',
     fromDate: '',
@@ -253,71 +242,6 @@ const ParentDashboard = () => {
     if (remaining < totalDue) return 'Partial';
     return 'Unpaid';
   }, []);
-
-  const openPaymentModal = useCallback(() => {
-    if (!selectedChild) return;
-    setPaymentForm({
-      studentId: selectedChild.id,
-      studentName: selectedChild.name,
-      amountPaid: childFees.remaining > 0 ? String(childFees.remaining) : '',
-      month: String(new Date().getMonth() + 1),
-      year: String(new Date().getFullYear()),
-      paymentMethod: 'CASH',
-    });
-    setShowPaymentModal(true);
-  }, [selectedChild, childFees.remaining]);
-
-  const handleCreatePayment = useCallback(async () => {
-    const amountPaid = Number(paymentForm.amountPaid);
-    const month = Number(paymentForm.month);
-    const year = Number(paymentForm.year);
-    if (!paymentForm.studentId || !Number.isFinite(amountPaid) || amountPaid < 0) {
-      toast.error('Enter a valid amount');
-      return;
-    }
-    setPaymentSaving(true);
-    try {
-      const existingRes = await feesService.getFeePayments({
-        studentId: paymentForm.studentId,
-        month,
-        year,
-        page: 1,
-        pageSize: 1,
-      });
-      if (!existingRes.success) {
-        toast.error(existingRes.error || 'Could not verify fee payments for this month');
-        return;
-      }
-      const body = existingRes.data;
-      const rows = Array.isArray(body?.data) ? body.data : [];
-      const existing = rows[0];
-
-      const res = existing
-        ? await feesService.updateFeePayment(existing.id, {
-            amountPaid,
-            paymentMethod: paymentForm.paymentMethod,
-          })
-        : await feesService.createFeePayment({
-            studentId: paymentForm.studentId,
-            month,
-            year,
-            originalAmount: childFees.monthlyFee,
-            amountPaid,
-            discountPercentage: 0,
-            paymentMethod: paymentForm.paymentMethod,
-          });
-      if (res.success) {
-        toast.success(existing ? 'Payment updated successfully' : 'Payment added successfully');
-        setShowPaymentModal(false);
-        const feeRes = await feesService.getStudentSummary(paymentForm.studentId);
-        if (feeRes.success && feeRes.data) setFeeSummary(feeRes.data);
-      } else {
-        toast.error(res.error || 'Failed to add payment');
-      }
-    } finally {
-      setPaymentSaving(false);
-    }
-  }, [paymentForm, childFees.monthlyFee]);
 
   const childGradesPreview = useMemo(() => {
     return childExamResults.slice(0, 5).map((r) => ({
@@ -546,9 +470,9 @@ const ParentDashboard = () => {
                   <div className="text-xs text-gray-500">
                     Last Payment: {childFees.lastPaymentDate ? formatDate(childFees.lastPaymentDate) : 'No payments yet'}
                   </div>
-                  <button type="button" className="btn btn-primary w-full" onClick={openPaymentModal}>
-                    Add Payment
-                  </button>
+                  <p className="text-xs text-gray-600 bg-gray-50 rounded-lg p-md border border-gray-100">
+                    Fee payments are recorded by the school office. Use <strong>Fees &amp; invoices</strong> for details and receipts.
+                  </p>
                 </div>
               </div>
             </div>
@@ -677,9 +601,9 @@ const ParentDashboard = () => {
               {' · '}
               Last: {childFees.lastPaymentDate ? formatDate(childFees.lastPaymentDate) : 'No payments yet'}
             </div>
-            <button type="button" className="btn btn-primary w-full" onClick={openPaymentModal}>
-              Add Payment
-            </button>
+            <p className="text-xs text-gray-600 bg-gray-50 rounded-lg p-md border border-gray-100">
+              Payments are entered by school staff only. Contact the office for fee deposits or corrections.
+            </p>
           </div>
         </div>
         <div className="card">
@@ -874,75 +798,6 @@ const ParentDashboard = () => {
           </div>
         </div>
       )}
-
-      <Modal
-        isOpen={showPaymentModal}
-        onClose={() => setShowPaymentModal(false)}
-        title={`Add Payment${paymentForm.studentName ? ` — ${paymentForm.studentName}` : ''}`}
-        footer={
-          <>
-            <button className="btn btn-outline" onClick={() => setShowPaymentModal(false)} disabled={paymentSaving}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" onClick={handleCreatePayment} disabled={paymentSaving}>
-              {paymentSaving ? 'Saving…' : 'Add Payment'}
-            </button>
-          </>
-        }
-      >
-        <div className="grid grid-cols-2 gap-md">
-          <div className="form-group">
-            <label className="form-label">Amount (Rs.)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className="input"
-              value={paymentForm.amountPaid}
-              onChange={(e) => setPaymentForm((f) => ({ ...f, amountPaid: e.target.value }))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Payment Method</label>
-            <select
-              className="select"
-              value={paymentForm.paymentMethod}
-              onChange={(e) => setPaymentForm((f) => ({ ...f, paymentMethod: e.target.value }))}
-            >
-              <option value="CASH">Cash</option>
-              <option value="CARD">Card</option>
-              <option value="BANK_TRANSFER">Bank Transfer</option>
-              <option value="ONLINE">Online</option>
-              <option value="CHEQUE">Cheque</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Month</label>
-            <select
-              className="select"
-              value={paymentForm.month}
-              onChange={(e) => setPaymentForm((f) => ({ ...f, month: e.target.value }))}
-            >
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <option key={m} value={String(m)}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Year</label>
-            <input
-              type="number"
-              min="2000"
-              max="2100"
-              className="input"
-              value={paymentForm.year}
-              onChange={(e) => setPaymentForm((f) => ({ ...f, year: e.target.value }))}
-            />
-          </div>
-        </div>
-      </Modal>
 
       <style>{`
                 .dashboard-page {

@@ -15,6 +15,7 @@ import { FilesModule } from './files/files.module';
 import { TeacherAttendanceModule } from './teacher-attendance/teacher-attendance.module';
 import { StudentAttendanceModule } from './student-attendance/student-attendance.module';
 import { TimetableModule } from './timetable/timetable.module';
+import { TeacherSalaryModule } from './teacher-salary/teacher-salary.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { initializeFirebase } from './config/firebase.config';
 
@@ -40,6 +41,7 @@ import { initializeFirebase } from './config/firebase.config';
     TeacherAttendanceModule,
     StudentAttendanceModule,
     TimetableModule,
+    TeacherSalaryModule,
   ],
 })
 export class AppModule {

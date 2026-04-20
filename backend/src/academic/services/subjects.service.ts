@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateSubjectDto } from '../dto/create-subject.dto';
 import { UpdateSubjectDto } from '../dto/update-subject.dto';
@@ -7,6 +8,73 @@ import { AcademicQueryDto } from '../dto/query.dto';
 @Injectable()
 export class SubjectsService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Idempotent bulk insert used by the timetable page's "Import standard
+   * subjects" action. Existing codes (case-insensitive) are skipped so the
+   * user can click the button twice without creating duplicates.
+   */
+  async bulkCreate(schoolId: string, items: Array<{ name: string; code: string; description?: string }>) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return { created: 0, skipped: 0, subjects: [] as any[] };
+    }
+
+    const uniqueByCode = new Map<string, { name: string; code: string; description?: string }>();
+    for (const item of items) {
+      if (!item?.name || !item?.code) continue;
+      const key = item.code.trim().toUpperCase();
+      if (!uniqueByCode.has(key)) {
+        uniqueByCode.set(key, {
+          name: item.name.trim(),
+          code: item.code.trim().toUpperCase(),
+          description: item.description?.trim(),
+        });
+      }
+    }
+
+    const incomingCodes = Array.from(uniqueByCode.keys());
+    const existing = await this.prisma.subject.findMany({
+      where: {
+        schoolId,
+        deletedAt: null,
+        code: { in: incomingCodes },
+      },
+      select: { code: true },
+    });
+    const existingCodes = new Set(existing.map((s) => s.code.toUpperCase()));
+
+    const toCreate = Array.from(uniqueByCode.values()).filter(
+      (item) => !existingCodes.has(item.code),
+    );
+
+    if (toCreate.length === 0) {
+      return { created: 0, skipped: uniqueByCode.size, subjects: [] as any[] };
+    }
+
+    const now = new Date();
+    await this.prisma.subject.createMany({
+      data: toCreate.map((item) => ({
+        id: randomUUID(),
+        schoolId,
+        name: item.name,
+        code: item.code,
+        description: item.description || null,
+        updatedAt: now,
+      })) as any,
+      skipDuplicates: true,
+    });
+
+    const subjects = await this.prisma.subject.findMany({
+      where: { schoolId, deletedAt: null, code: { in: toCreate.map((i) => i.code) } },
+      select: { id: true, name: true, code: true, description: true },
+    });
+
+    return {
+      created: toCreate.length,
+      skipped: uniqueByCode.size - toCreate.length,
+      subjects,
+    };
+  }
 
   async create(schoolId: string, createSubjectDto: CreateSubjectDto) {
     // Check if subject with same code already exists

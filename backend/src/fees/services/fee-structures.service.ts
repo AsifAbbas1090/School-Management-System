@@ -30,6 +30,8 @@ export class FeeStructuresService {
       data: {
         id: randomUUID(),
         ...createFeeStructureDto,
+        allowAdvancePayment: createFeeStructureDto.allowAdvancePayment ?? false,
+        advanceMonths: createFeeStructureDto.advanceMonths ?? 3,
         schoolId,
         updatedAt: new Date(),
       } as Prisma.FeeStructureUncheckedCreateInput,

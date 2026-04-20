@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Users, UserCheck, DollarSign, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Users, UserCheck, DollarSign, AlertCircle, ShieldAlert, Clock, Send, Banknote, Wallet } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { analyticsService } from '../../services/api';
 import { formatCurrency, getTargetSchoolIdForScopedApi } from '../../utils';
@@ -179,6 +179,101 @@ const AdminDashboard = () => {
                 })}
             </div>
 
+            {/* Collection & handover KPI row — all values derived from the same dashboard response, zero extra API calls. */}
+            {(() => {
+                const collections = stats?.collections || {};
+                const salaries = stats?.salaries || {};
+                const pendingCount = collections.pendingHandoversCount || 0;
+                const cards = [
+                    {
+                        title: "Today's Collection",
+                        value: formatCurrency(collections.todayTotal || 0),
+                        sublabel: `${collections.todayCount || 0} payments today`,
+                        icon: Banknote,
+                        color: 'success',
+                    },
+                    {
+                        title: "This Month's Collection",
+                        value: formatCurrency(collections.monthTotal || 0),
+                        sublabel: `Expected: ${formatCurrency(collections.monthExpected || 0)}`,
+                        icon: Wallet,
+                        color: 'primary',
+                    },
+                    {
+                        title: 'Pending Handovers',
+                        value: pendingCount,
+                        sublabel: pendingCount > 0 ? 'Managers yet to submit' : 'All caught up',
+                        icon: Clock,
+                        color: pendingCount > 0 ? 'warning' : 'success',
+                    },
+                    {
+                        title: 'Pending Salary Dues',
+                        value: formatCurrency(salaries.pendingRemaining || 0),
+                        sublabel: `${salaries.pendingRecordCount || 0} record(s) unpaid`,
+                        icon: Send,
+                        color: (salaries.pendingRemaining || 0) > 0 ? 'warning' : 'secondary',
+                    },
+                ];
+                return (
+                    <div className="grid grid-cols-4 mb-xl">
+                        {cards.map((card, idx) => {
+                            const Icon = card.icon;
+                            return (
+                                <div key={idx} className="kpi-card">
+                                    <div className="kpi-header">
+                                        <div className={`kpi-icon kpi-icon-${card.color}`}>
+                                            <Icon size={22} />
+                                        </div>
+                                    </div>
+                                    <div className="kpi-body">
+                                        <h3 className="kpi-value">{card.value}</h3>
+                                        <p className="kpi-title">{card.title}</p>
+                                        <p className="kpi-sublabel">{card.sublabel}</p>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                );
+            })()}
+
+            {/* Pending handovers table — admin-only, visible when at least one manager has collections awaiting verification. */}
+            {Array.isArray(stats?.collections?.pendingHandovers) && stats.collections.pendingHandovers.length > 0 && (
+                <div className="card mb-xl">
+                    <div className="card-header">
+                        <h3 className="card-title">Pending Handovers</h3>
+                        <span className="badge badge-warning">{stats.collections.pendingHandovers.length}</span>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Manager</th>
+                                    <th>Submitted</th>
+                                    <th>Collected</th>
+                                    <th>Payments</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {stats.collections.pendingHandovers.map(h => (
+                                    <tr key={h.id}>
+                                        <td>{h.manager?.name || 'Staff'}</td>
+                                        <td style={{ fontWeight: 600, color: 'var(--success-600)' }}>{formatCurrency(h.amountSubmitted)}</td>
+                                        <td>{formatCurrency(h.totalCollected || h.amountSubmitted)}</td>
+                                        <td>{h._count?.payments ?? 0}</td>
+                                        <td>{h.submittedAt ? new Date(h.submittedAt).toLocaleDateString() : '—'}</td>
+                                        <td><span className="badge badge-warning">{h.status}</span></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-sm">Verify pending handovers from the Fees &rsaquo; Handovers page.</p>
+                </div>
+            )}
+
             {/* Fee + Attendance Charts */}
             <div className="grid grid-cols-2 mb-xl">
                 <div className="card">
@@ -273,7 +368,7 @@ const AdminDashboard = () => {
                             {stats.recentHandovers.slice(0,4).map(h => (
                                 <div key={h.id} className="flex items-center justify-between text-sm">
                                     <span className="text-gray-600" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>
-                                        {h.User?.name || 'Staff'}
+                                        {h.manager?.name || h.User?.name || 'Staff'}
                                     </span>
                                     <span className="font-semibold" style={{ color: 'var(--success-600)' }}>{formatCurrency(h.amountSubmitted)}</span>
                                 </div>

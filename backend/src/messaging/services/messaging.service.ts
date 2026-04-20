@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateMessageDto } from '../dto/create-message.dto';
 import { MessageQueryDto } from '../dto/message-query.dto';
@@ -26,10 +27,24 @@ export class MessagingService {
           schoolId,
           deletedAt: null,
         },
+        select: { id: true, role: true },
       });
 
       if (!receiver) {
         throw new NotFoundException('Receiver not found');
+      }
+
+      /** Messaging is currently restricted to staff accounts only — no parents/students. */
+      const STAFF_ROLES: UserRole[] = [
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+        UserRole.MANAGEMENT,
+        UserRole.TEACHER,
+      ];
+      if (!STAFF_ROLES.includes(receiver.role)) {
+        throw new BadRequestException(
+          'Messaging is restricted to staff accounts (admins, management, and teachers).',
+        );
       }
     } else if (createMessageDto.receiverType === MessageReceiverType.CLASS) {
       if (!createMessageDto.receiverClassId) {
@@ -49,8 +64,10 @@ export class MessagingService {
       }
     }
 
+    const now = new Date();
     return this.prisma.message.create({
       data: {
+        id: randomUUID(),
         schoolId,
         senderId,
         receiverType: createMessageDto.receiverType,
@@ -60,6 +77,7 @@ export class MessagingService {
         receiverSectionId: createMessageDto.receiverSectionId || null,
         subject: createMessageDto.subject,
         body: createMessageDto.body,
+        updatedAt: now,
       } as any,
       include: {
         User_Message_senderIdToUser: {

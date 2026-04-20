@@ -7,6 +7,8 @@ import {
   IsNumber,
   IsArray,
   IsDateString,
+  IsInt,
+  Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Gender, UserStatus } from '@prisma/client';
@@ -94,6 +96,27 @@ export class CreateTeacherDto {
   @IsArray()
   @IsString({ each: true })
   subjectIds?: string[];
+
+  @ApiPropertyOptional({ example: 'Mathematics' })
+  @IsString()
+  @IsOptional()
+  department?: string;
+
+  @ApiPropertyOptional({ example: 'M.Sc Mathematics' })
+  @IsString()
+  @IsOptional()
+  qualification?: string;
+
+  @ApiPropertyOptional({ example: 5, description: 'Years of teaching experience' })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  experience?: number;
+
+  @ApiPropertyOptional({ example: '+92 300 7654321' })
+  @IsString()
+  @IsOptional()
+  emergencyContact?: string;
 }
 
 export class CreateManagementDto {

@@ -1,0 +1,17 @@
+{
+  "schoolId": "test-school-1",
+  "class5Id": "class-test-5",
+  "sectionAId": "section-test-a",
+  "subjectMathId": "subject-test-math",
+  "student001Id": "student-test-001",
+  "student002Id": "student-test-002",
+  "student003Id": "student-test-003",
+  "teacherUserId": "user-test-teacher",
+  "parent1UserId": "user-test-parent1",
+  "parent2UserId": "user-test-parent2",
+  "adminUserId": "user-test-admin",
+  "feeStructureId": "fee-structure-test-5",
+  "examMidTermId": "exam-mid-term-test",
+  "leavePendingId": "leave-pending-teacher-test",
+  "receiptPartialMarch2025": "RCPT-TEST-M3-2025-test-s"
+}

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertParentOwnsStudent } from '../../common/assert-parent-owns-student';
 import { CreateFeePaymentDto } from '../dto/create-fee-payment.dto';
@@ -41,10 +41,6 @@ export class FeePaymentsService {
         throw new NotFoundException(`Student with ID ${createFeePaymentDto.studentId} not found`);
       }
 
-      if (user?.role === UserRole.PARENT) {
-        await assertParentOwnsStudent(this.prisma, schoolId, user.id, createFeePaymentDto.studentId);
-      }
-
       // Check if payment already exists for this student/month/year
       const existingPayment = await this.prisma.feePayment.findFirst({
         where: {
@@ -61,7 +57,41 @@ export class FeePaymentsService {
         );
       }
 
-      // Calculate discount
+      // Advance-payment validation: require a FeeStructure for the student's class (or global) with allowAdvancePayment=true
+      // and ensure the claimed advance month/year are within the allowed window.
+      if (createFeePaymentDto.isAdvance) {
+        const advanceMonth = createFeePaymentDto.advanceForMonth ?? createFeePaymentDto.month;
+        const advanceYear = createFeePaymentDto.advanceForYear ?? createFeePaymentDto.year;
+        const structure = await this.prisma.feeStructure.findFirst({
+          where: {
+            schoolId,
+            allowAdvancePayment: true,
+            OR: [{ classId: student.classId }, { classId: null }],
+          },
+          orderBy: { classId: 'desc' }, // class-specific first, then global
+          select: { advanceMonths: true },
+        });
+        if (!structure) {
+          throw new BadRequestException(
+            'Advance payments are not enabled for this fee structure',
+          );
+        }
+        const now = new Date();
+        const currentIdx = now.getFullYear() * 12 + now.getMonth();
+        const advanceIdx = advanceYear * 12 + (advanceMonth - 1);
+        const maxMonths = structure.advanceMonths ?? 3;
+        if (advanceIdx <= currentIdx) {
+          throw new BadRequestException(
+            'Advance payments must target a future month',
+          );
+        }
+        if (advanceIdx - currentIdx > maxMonths) {
+          throw new BadRequestException(
+            `Advance payments allowed up to ${maxMonths} month(s) ahead only`,
+          );
+        }
+      }
+
       const discountPercentage = createFeePaymentDto.discountPercentage || 0;
       const discountAmount = (createFeePaymentDto.originalAmount * discountPercentage) / 100;
       
@@ -83,7 +113,6 @@ export class FeePaymentsService {
         receiptNumber,
       );
 
-      // Create payment
       const payment = await this.prisma.feePayment.create({
         data: {
           schoolId,
@@ -98,6 +127,14 @@ export class FeePaymentsService {
           transactionId: createFeePaymentDto.transactionId || null,
           remarks: createFeePaymentDto.remarks || null,
           receiptNumber,
+          collectedById: user?.id ?? null,
+          isAdvance: createFeePaymentDto.isAdvance ?? false,
+          advanceForMonth: createFeePaymentDto.isAdvance
+            ? createFeePaymentDto.advanceForMonth ?? null
+            : null,
+          advanceForYear: createFeePaymentDto.isAdvance
+            ? createFeePaymentDto.advanceForYear ?? null
+            : null,
         } as Prisma.FeePaymentUncheckedCreateInput,
         include: {
           Student: {
@@ -106,6 +143,9 @@ export class FeePaymentsService {
               Section: true,
               User: true,
             },
+          },
+          collectedBy: {
+            select: { id: true, name: true, email: true },
           },
         },
       });
@@ -138,7 +178,7 @@ export class FeePaymentsService {
     query: PaymentQueryDto,
     user?: { id: string; role: UserRole },
   ) {
-    const { studentId, paymentMethod, month, year, page = 1, pageSize = 100 } = query;
+    const { studentId, paymentMethod, month, year, page = 1, pageSize = 100, mineOnly } = query;
     const skip = (page - 1) * pageSize;
 
     if (user?.role === UserRole.PARENT) {
@@ -148,9 +188,14 @@ export class FeePaymentsService {
       await assertParentOwnsStudent(this.prisma, schoolId, user.id, studentId);
     }
 
-    const where: any = {
+    const where: Prisma.FeePaymentWhereInput = {
       schoolId,
     };
+
+    /** School-wide list by default so "paid/unpaid" matches DB; use mineOnly for collector-scoped reports. */
+    if (user?.role === UserRole.MANAGEMENT && mineOnly) {
+      where.collectedById = user.id;
+    }
 
     if (studentId) {
       where.studentId = studentId;
@@ -183,9 +228,12 @@ export class FeePaymentsService {
               monthlyFee: true,
               classId: true,
               sectionId: true,
-              Class: { select: { name: true } },
+              Class: { select: { name: true, grade: true } },
               Section: { select: { name: true } },
             },
+          },
+          collectedBy: {
+            select: { id: true, name: true, email: true },
           },
         },
       }),
@@ -204,62 +252,148 @@ export class FeePaymentsService {
   }
 
   /**
-   * Get revenue statistics
+   * Compact per-student payment list for a given (month, year) — one row per (studentId, month, year)
+   * in a single round trip with no heavy joins. Drop-in replacement for the paginated getFeePayments
+   * calls the Fees list view previously chained together.
+   *
+   * Returns both a flat `rows` array (shape-compatible with the paginated endpoint) and a
+   * `map` keyed by studentId for O(1) lookup.
    */
-  async getRevenueStats(schoolId: string, month?: number, year?: number) {
-    // Get all active students
-    const students = await this.prisma.student.findMany({
-      where: {
-        schoolId,
-        status: 'ACTIVE',
-      },
+  async getByMonthMap(
+    schoolId: string,
+    month: number,
+    year: number,
+    user?: { id: string; role: UserRole },
+    studentId?: string,
+  ) {
+    if (!month || !year) {
+      throw new BadRequestException('month and year are required');
+    }
+
+    if (user?.role === UserRole.PARENT) {
+      if (!studentId) {
+        throw new BadRequestException('studentId is required for parents');
+      }
+      await assertParentOwnsStudent(this.prisma, schoolId, user.id, studentId);
+    }
+
+    const where: Prisma.FeePaymentWhereInput = {
+      schoolId,
+      month,
+      year,
+    };
+    if (studentId) where.studentId = studentId;
+
+    const payments = await this.prisma.feePayment.findMany({
+      where,
+      orderBy: { paidAt: 'desc' },
       select: {
         id: true,
-        monthlyFee: true,
+        studentId: true,
+        schoolId: true,
+        amountPaid: true,
+        originalAmount: true,
+        discountPercentage: true,
+        discountAmount: true,
+        paymentMethod: true,
+        transactionId: true,
+        remarks: true,
+        paidAt: true,
+        month: true,
+        year: true,
+        isAdvance: true,
+        advanceForMonth: true,
+        advanceForYear: true,
+        receiptNumber: true,
+        collectedById: true,
       },
     });
 
-    // Calculate expected revenue (sum of all student monthly fees)
-    const expectedRevenue = students.reduce((sum, s) => sum + (s.monthlyFee || 0), 0);
+    /** One aggregate row per (studentId, month, year). Uniqueness is already enforced at create time,
+     *  but we aggregate defensively to stay correct if a legacy duplicate exists. */
+    const rowByStudent = new Map<string, (typeof payments)[number]>();
+    for (const p of payments) {
+      const existing = rowByStudent.get(p.studentId);
+      if (!existing) {
+        rowByStudent.set(p.studentId, p);
+      } else {
+        /** Sum into the most-recent row so amountPaid reflects the cumulative total. */
+        existing.amountPaid += p.amountPaid;
+      }
+    }
 
-    // Build where clause for payments
+    const rows = Array.from(rowByStudent.values());
+    const map: Record<string, { paymentId: string; totalPaid: number; isAdvance: boolean }> = {};
+    for (const r of rows) {
+      map[r.studentId] = {
+        paymentId: r.id,
+        totalPaid: r.amountPaid,
+        isAdvance: r.isAdvance ?? false,
+      };
+    }
+
+    return {
+      month,
+      year,
+      rows,
+      map,
+      total: rows.length,
+      totalAmount: rows.reduce((s, r) => s + r.amountPaid, 0),
+    };
+  }
+
+  /**
+   * Get revenue statistics
+   */
+  async getRevenueStats(schoolId: string, month?: number, year?: number) {
     const paymentWhere: any = { schoolId };
     if (month) paymentWhere.month = month;
     if (year) paymentWhere.year = year;
 
-    // Get all payments
-    const payments = await this.prisma.feePayment.findMany({
-      where: paymentWhere,
-      select: {
-        amountPaid: true,
-        month: true,
-        year: true,
-      },
-    });
+    const [students, periodPayments] = await Promise.all([
+      this.prisma.student.findMany({
+        where: {
+          schoolId,
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          monthlyFee: true,
+        },
+      }),
+      this.prisma.feePayment.findMany({
+        where: paymentWhere,
+        select: {
+          amountPaid: true,
+          studentId: true,
+        },
+      }),
+    ]);
 
-    // Calculate collected revenue
-    const collectedRevenue = payments.reduce((sum, p) => sum + p.amountPaid, 0);
-
-    // Calculate pending revenue
+    const expectedRevenue = students.reduce((sum, s) => sum + (s.monthlyFee || 0), 0);
+    const collectedRevenue = periodPayments.reduce((sum, p) => sum + p.amountPaid, 0);
     const pendingRevenue = expectedRevenue - collectedRevenue;
 
-    // Get students who haven't paid (for current month if month/year provided)
     const currentMonth = month || new Date().getMonth() + 1;
     const currentYear = year || new Date().getFullYear();
 
-    // Get all payments for the specified month/year to find paid students
-    const monthPayments = await this.prisma.feePayment.findMany({
-      where: {
-        schoolId,
-        month: currentMonth,
-        year: currentYear,
-      },
-      select: {
-        studentId: true,
-      },
-    });
-
-    const paidStudentIds = new Set(monthPayments.map(p => p.studentId));
+    /** When month/year filters match the "unpaid" period, reuse one query; otherwise fetch that period only. */
+    let paidStudentIds: Set<string>;
+    if (month != null && year != null) {
+      paidStudentIds = new Set(periodPayments.map((p) => p.studentId));
+    } else {
+      const monthRows = await this.prisma.feePayment.findMany({
+        where: {
+          schoolId,
+          month: currentMonth,
+          year: currentYear,
+        },
+        select: {
+          studentId: true,
+        },
+      });
+      paidStudentIds = new Set(monthRows.map((p) => p.studentId));
+    }
     const unpaidStudents = students.filter(s => !paidStudentIds.has(s.id));
 
     return {
@@ -382,6 +516,9 @@ export class FeePaymentsService {
             },
           },
         },
+        collectedBy: {
+          select: { id: true, name: true, email: true },
+        },
       },
     });
 
@@ -397,7 +534,7 @@ export class FeePaymentsService {
   }
 
   /**
-   * Update a fee payment (admin: full edit; parent: amountPaid / paymentMethod / remarks only — same child)
+   * Update a fee payment
    */
   async update(
     schoolId: string,
@@ -406,15 +543,6 @@ export class FeePaymentsService {
     user?: { id: string; role: UserRole },
   ) {
     const existing = await this.findOne(schoolId, id, user);
-
-    if (user?.role === UserRole.PARENT) {
-      if (
-        updateFeePaymentDto.originalAmount !== undefined ||
-        updateFeePaymentDto.discountPercentage !== undefined
-      ) {
-        throw new ForbiddenException('Parents cannot change fee amount or discount; contact the school to adjust.');
-      }
-    }
 
     // Calculate discount if discountPercentage or originalAmount changed
     let discountAmount = existing.discountAmount;
@@ -466,6 +594,9 @@ export class FeePaymentsService {
             User: true,
           },
         },
+        collectedBy: {
+          select: { id: true, name: true, email: true },
+        },
       },
     });
 
@@ -475,7 +606,11 @@ export class FeePaymentsService {
   /**
    * Bulk-import fee payments from parsed CSV rows (rollNumber, month, year, amountPaid, paymentMethod, …).
    */
-  async bulkImportFromRows(schoolId: string, rows: Record<string, unknown>[]) {
+  async bulkImportFromRows(
+    schoolId: string,
+    rows: Record<string, unknown>[],
+    collectedById?: string,
+  ) {
     const results = {
       total: rows.length,
       success: 0,
@@ -647,6 +782,7 @@ export class FeePaymentsService {
             receiptNumber,
             remarks: row.remarks,
             transactionId: null,
+            collectedById: collectedById ?? null,
           },
         });
         results.success++;
@@ -673,18 +809,40 @@ export class FeePaymentsService {
       throw new NotFoundException('Student not found');
     }
 
-    // Get school data
-    const school = await this.prisma.school.findUnique({
-      where: { id: schoolId },
-    });
+    const [school, totalPaidAgg] = await Promise.all([
+      this.prisma.school.findUnique({
+        where: { id: schoolId },
+        select: {
+          name: true,
+          address: true,
+          phone: true,
+          email: true,
+          logoUrl: true,
+          principalName: true,
+          ownerName: true,
+        },
+      }),
+      this.prisma.feePayment.aggregate({
+        where: { schoolId, studentId: payment.studentId },
+        _sum: { amountPaid: true },
+      }),
+    ]);
 
     if (!school) {
       throw new NotFoundException('School not found');
     }
 
-    const className = payment.Student.Class
-      ? `Class ${payment.Student.Class.grade}${payment.Student.Section ? ` - Section ${payment.Student.Section.name}` : ''}`
+    const st = payment.Student;
+    const className = st.Class
+      ? `${st.Class.name || st.Class.grade}${st.Section ? ` — ${st.Section.name}` : ''}`
       : 'N/A';
+    const sectionName = st.Section?.name || '—';
+
+    const monthlyFee = st.monthlyFee ?? 0;
+    const pendingDues = st.pendingDues ?? 0;
+    const totalDue = monthlyFee + pendingDues;
+    const totalPaidAllTime = totalPaidAgg._sum.amountPaid ?? 0;
+    const remaining = totalDue - totalPaidAllTime;
 
     return {
       payment: {
@@ -699,14 +857,20 @@ export class FeePaymentsService {
         year: payment.year,
         transactionId: payment.transactionId || null,
         remarks: payment.remarks || null,
+        collectedByName: payment.collectedBy?.name ?? null,
       },
       student: {
-        name: payment.Student.name,
-        rollNumber: payment.Student.rollNumber,
+        name: st.name,
+        rollNumber: st.rollNumber,
         className,
-        fatherName: payment.Student.User?.name || 'N/A',
-        phone: payment.Student.User?.phone || payment.Student.phone || 'N/A',
-        contact: payment.Student.User?.phone || payment.Student.phone || 'N/A',
+        classLabel: st.Class?.name || 'N/A',
+        sectionName,
+        monthlyFee,
+        pendingDues,
+        fatherName: st.User?.name || 'N/A',
+        parentName: st.User?.name || 'N/A',
+        phone: st.User?.phone || st.phone || 'N/A',
+        contact: st.User?.phone || st.phone || 'N/A',
       },
       school: {
         name: school.name,
@@ -716,6 +880,11 @@ export class FeePaymentsService {
         address: school.address || null,
         phone: school.phone || null,
         email: school.email || null,
+      },
+      balance: {
+        totalDue,
+        totalPaidAllTime,
+        remaining,
       },
     };
   }

@@ -44,7 +44,7 @@ export class FeePaymentsController {
   constructor(private readonly feePaymentsService: FeePaymentsService) {}
 
   @Post()
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.PARENT)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
   @ApiOperation({ summary: 'Record a fee payment for a student' })
   @ApiResponse({ status: 201, description: 'Payment recorded successfully' })
   async create(
@@ -75,6 +75,7 @@ export class FeePaymentsController {
       }),
     )
     file: Express.Multer.File,
+    @CurrentUser() user: { id: string; role: UserRole },
   ) {
     const raw = file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
     if (!raw.trim()) {
@@ -88,7 +89,7 @@ export class FeePaymentsController {
     if (!records.length) {
       throw new BadRequestException('CSV has no data rows');
     }
-    return this.feePaymentsService.bulkImportFromRows(schoolId, records);
+    return this.feePaymentsService.bulkImportFromRows(schoolId, records, user.id);
   }
 
   @Get()
@@ -113,6 +114,28 @@ export class FeePaymentsController {
     @Query('year') year?: number,
   ) {
     return this.feePaymentsService.getRevenueStats(schoolId, month, year);
+  }
+
+  @Get('by-month-map')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.PARENT)
+  @ApiOperation({
+    summary:
+      'Get a compact per-student payment map for a given (month, year). Intended for the Fees list view.',
+  })
+  @ApiResponse({ status: 200, description: 'Payment map retrieved successfully' })
+  async getByMonthMap(
+    @SchoolContext() schoolId: string,
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Query('studentId') studentId?: string,
+  ) {
+    const m = Number(month);
+    const y = Number(year);
+    if (!Number.isFinite(m) || !Number.isFinite(y)) {
+      throw new BadRequestException('month and year query params are required and must be numbers');
+    }
+    return this.feePaymentsService.getByMonthMap(schoolId, m, y, user, studentId || undefined);
   }
 
   @Get('student/:studentId/summary')
@@ -152,10 +175,8 @@ export class FeePaymentsController {
   }
 
   @Put(':id')
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT, UserRole.PARENT)
-  @ApiOperation({
-    summary: 'Update a fee payment (admin: full; parent: top-up amountPaid / method / remarks only)',
-  })
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGEMENT)
+  @ApiOperation({ summary: 'Update a fee payment' })
   @ApiResponse({ status: 200, description: 'Payment updated successfully' })
   async update(
     @SchoolContext() schoolId: string,

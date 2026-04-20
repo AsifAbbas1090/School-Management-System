@@ -398,7 +398,7 @@ export const useExamsStore = create((set, get) => ({
 /**
  * Announcements Store
  */
-export const useAnnouncementsStore = create((set, get) => ({
+export const useAnnouncementsStore = create((set) => ({
     announcements: [],
     loading: false,
 
@@ -430,7 +430,7 @@ export const useAnnouncementsStore = create((set, get) => ({
 /**
  * Messages Store
  */
-export const useMessagesStore = create((set, get) => ({
+export const useMessagesStore = create((set) => ({
     messages: [],
     unreadCount: 0,
     loading: false,

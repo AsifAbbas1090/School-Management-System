@@ -20,7 +20,36 @@ export interface CreateUserDto {
   joiningDate?: string | Date;
   subjectIds?: string[];
   occupation?: string;
+  department?: string;
+  qualification?: string;
+  experience?: number;
+  emergencyContact?: string;
 }
+
+/** Shared user `select` used by create/update/findOne/getUsersByRole so every response includes every persisted teacher HR field. */
+const USER_PUBLIC_SELECT = {
+  id: true,
+  email: true,
+  name: true,
+  role: true,
+  status: true,
+  phone: true,
+  occupation: true,
+  employeeId: true,
+  salary: true,
+  gender: true,
+  dateOfBirth: true,
+  address: true,
+  joiningDate: true,
+  subjectIds: true,
+  department: true,
+  qualification: true,
+  experience: true,
+  emergencyContact: true,
+  schoolId: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 @Injectable()
 export class UsersService {
@@ -49,7 +78,11 @@ export class UsersService {
           ? parseFloat(data.salary)
           : Number(data.salary);
 
-    // Create user
+    const experienceNum =
+      data.experience === undefined || data.experience === null
+        ? null
+        : Number(data.experience);
+
     const user = await this.prisma.user.create({
       data: {
         id: crypto.randomUUID(),
@@ -68,27 +101,13 @@ export class UsersService {
         address: data.address ?? null,
         joiningDate: data.joiningDate ? new Date(data.joiningDate) : null,
         subjectIds: Array.isArray(data.subjectIds) ? data.subjectIds : [],
+        department: data.department ?? null,
+        qualification: data.qualification ?? null,
+        experience: experienceNum !== null && !Number.isNaN(experienceNum) ? experienceNum : null,
+        emergencyContact: data.emergencyContact ?? null,
         updatedAt: new Date(),
       } as Prisma.UserUncheckedCreateInput,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        status: true,
-        phone: true,
-        occupation: true,
-        employeeId: true,
-        salary: true,
-        gender: true,
-        dateOfBirth: true,
-        address: true,
-        joiningDate: true,
-        subjectIds: true,
-        schoolId: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: USER_PUBLIC_SELECT,
     });
 
     return user;
@@ -136,7 +155,27 @@ export class UsersService {
       address: data.address,
       joiningDate: data.joiningDate,
       subjectIds: data.subjectIds,
+      department: data.department,
+      qualification: data.qualification,
+      experience: data.experience,
+      emergencyContact: data.emergencyContact,
     });
+  }
+
+  /** Get a single user in the current school (no password). */
+  async findOne(userId: string, schoolId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        schoolId,
+        deletedAt: null,
+      },
+      select: USER_PUBLIC_SELECT,
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
   }
 
   /**
@@ -192,6 +231,18 @@ export class UsersService {
     }
     if (data.subjectIds !== undefined) updateData.subjectIds = data.subjectIds;
     if (data.occupation !== undefined) updateData.occupation = data.occupation;
+    if (data.department !== undefined) updateData.department = data.department;
+    if (data.qualification !== undefined) updateData.qualification = data.qualification;
+    if (data.experience !== undefined) {
+      if (data.experience === null) {
+        updateData.experience = null;
+      } else {
+        const raw = data.experience as number | string;
+        const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
+        updateData.experience = Number.isNaN(n) ? null : Math.trunc(n);
+      }
+    }
+    if (data.emergencyContact !== undefined) updateData.emergencyContact = data.emergencyContact;
     if (data.password) {
       updateData.password = await bcrypt.hash(data.password, 10);
     }
@@ -200,25 +251,7 @@ export class UsersService {
     return this.prisma.user.update({
       where: { id: userId },
       data: updateData,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        status: true,
-        phone: true,
-        occupation: true,
-        employeeId: true,
-        salary: true,
-        gender: true,
-        dateOfBirth: true,
-        address: true,
-        joiningDate: true,
-        subjectIds: true,
-        schoolId: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: USER_PUBLIC_SELECT,
     });
   }
 
@@ -310,25 +343,7 @@ export class UsersService {
       status?: string;
     },
   ) {
-    const selectBase = {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-      status: true,
-      phone: true,
-      occupation: true,
-      employeeId: true,
-      salary: true,
-      gender: true,
-      dateOfBirth: true,
-      address: true,
-      joiningDate: true,
-      subjectIds: true,
-      schoolId: true,
-      createdAt: true,
-      updatedAt: true,
-    };
+    const selectBase = USER_PUBLIC_SELECT;
 
     const select: Prisma.UserSelect =
       role === UserRole.PARENT
@@ -407,6 +422,45 @@ export class UsersService {
       select,
       orderBy: orderByLoose,
       take: 1000,
+    });
+  }
+
+  /**
+   * Lightweight name/email search across an arbitrary set of roles — used by the messaging
+   * composer combobox so users can type a name instead of pasting an id.
+   */
+  async searchUsersByRoles(
+    schoolId: string,
+    roles: UserRole[],
+    search: string | undefined,
+    excludeUserId?: string,
+    limit = 10,
+  ) {
+    const where: Prisma.UserWhereInput = {
+      schoolId,
+      deletedAt: null,
+      role: { in: roles },
+    };
+    if (excludeUserId) {
+      where.id = { not: excludeUserId };
+    }
+    if (search?.trim()) {
+      const q = search.trim();
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    return this.prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+      orderBy: { name: 'asc' },
+      take: Math.min(50, Math.max(1, limit)),
     });
   }
 

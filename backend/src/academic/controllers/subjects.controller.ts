@@ -43,6 +43,16 @@ export class SubjectsController {
     return this.subjectsService.create(schoolId, createSubjectDto);
   }
 
+  @Post('bulk')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk import subjects (dedupes by code)' })
+  async bulk(
+    @SchoolContext() schoolId: string,
+    @Body() body: { items: Array<{ name: string; code: string; description?: string }> },
+  ) {
+    return this.subjectsService.bulkCreate(schoolId, body?.items || []);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get all subjects with filters and pagination' })
   @ApiResponse({ status: 200, description: 'Subjects retrieved successfully' })

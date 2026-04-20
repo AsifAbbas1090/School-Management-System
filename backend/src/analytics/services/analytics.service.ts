@@ -22,7 +22,8 @@ export class AnalyticsService {
       teacherCount,
       pendingLeaves,
       feeStats,
-      invoiceSumAgg,
+      activeStudentsMonthlyFeeSum,
+      currentMonthPaymentsSum,
       allPayments,
       weekAttendanceRaw,
       presentToday,
@@ -38,6 +39,11 @@ export class AnalyticsService {
       attendanceTrendRows,
       schoolClasses,
       parentCount,
+      /** Cards for admin & management dashboards — resolved in this same round-trip so no extra API call is needed. */
+      todayCollectionAgg,
+      pendingHandoversList,
+      unsubmittedByManager,
+      pendingSalariesAgg,
     ] = await Promise.all([
       this.prisma.student.count({ where: { schoolId } }),
       this.prisma.user.count({ where: { schoolId, role: 'TEACHER', status: 'ACTIVE', deletedAt: null } }),
@@ -46,9 +52,17 @@ export class AnalyticsService {
         where: { schoolId },
         _sum: { amountPaid: true },
       }),
-      this.prisma.feeInvoice.aggregate({
-        where: { schoolId },
-        _sum: { amount: true },
+      this.prisma.student.aggregate({
+        where: { schoolId, status: 'ACTIVE' },
+        _sum: { monthlyFee: true },
+      }),
+      this.prisma.feePayment.aggregate({
+        where: {
+          schoolId,
+          month: now.getMonth() + 1,
+          year: now.getFullYear(),
+        },
+        _sum: { amountPaid: true },
       }),
       this.prisma.feePayment.findMany({
         where: { schoolId, paidAt: { gte: sixMonthsAgo } },
@@ -80,7 +94,7 @@ export class AnalyticsService {
         where: { schoolId },
         take: 5,
         orderBy: { submittedAt: 'desc' },
-        include: { User: { select: { id: true, name: true, role: true } } },
+        include: { manager: { select: { id: true, name: true, role: true } } },
       }),
       this.prisma.expense.findMany({
         where: { schoolId, deletedAt: null },
@@ -137,11 +151,79 @@ export class AnalyticsService {
       this.prisma.user.count({
         where: { schoolId, role: 'PARENT', deletedAt: null },
       }),
+      this.prisma.feePayment.aggregate({
+        where: { schoolId, paidAt: { gte: todayStart, lt: todayEnd } },
+        _sum: { amountPaid: true },
+        _count: { _all: true },
+      }),
+      this.prisma.feeHandover.findMany({
+        where: { schoolId, status: 'PENDING' },
+        orderBy: { submittedAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          amountSubmitted: true,
+          totalCollected: true,
+          status: true,
+          submittedAt: true,
+          manager: { select: { id: true, name: true, role: true } },
+          _count: { select: { payments: true } },
+        },
+      }),
+      this.prisma.feePayment.groupBy({
+        by: ['collectedById'],
+        where: { schoolId, handoverId: null, collectedById: { not: null } },
+        _sum: { amountPaid: true },
+        _count: { _all: true },
+      }),
+      this.prisma.teacherSalaryRecord.aggregate({
+        where: { schoolId, status: { not: 'PAID' } },
+        _sum: { remainingDue: true },
+        _count: { _all: true },
+      }),
     ]);
 
+    // Name + today's collection hydration for "unsubmitted by manager" — single follow-up query.
+    const managerIds = unsubmittedByManager
+      .map((row) => row.collectedById)
+      .filter((id): id is string => Boolean(id));
+    const [managers, todayByManagerRaw] = managerIds.length
+      ? await Promise.all([
+          this.prisma.user.findMany({
+            where: { id: { in: managerIds } },
+            select: { id: true, name: true, role: true },
+          }),
+          this.prisma.feePayment.groupBy({
+            by: ['collectedById'],
+            where: {
+              schoolId,
+              paidAt: { gte: todayStart, lt: todayEnd },
+              collectedById: { in: managerIds },
+            },
+            _sum: { amountPaid: true },
+          }),
+        ])
+      : [[], [] as any[]];
+    const managerMap = Object.fromEntries(managers.map((m) => [m.id, m]));
+    const todayByManagerMap = Object.fromEntries(
+      todayByManagerRaw.map((g: any) => [g.collectedById, g._sum.amountPaid ?? 0]),
+    );
+    const unsubmittedCollections = unsubmittedByManager
+      .filter((row) => row.collectedById)
+      .map((row) => ({
+        managerId: row.collectedById as string,
+        managerName: managerMap[row.collectedById as string]?.name ?? 'Unknown',
+        managerRole: managerMap[row.collectedById as string]?.role ?? null,
+        amountUnsubmitted: row._sum.amountPaid ?? 0,
+        paymentCount: row._count._all ?? 0,
+        todayCollected: todayByManagerMap[row.collectedById as string] ?? 0,
+      }));
+
     const totalFeePaid = feeStats._sum.amountPaid || 0;
-    const totalFeeAmount = invoiceSumAgg._sum.amount || 0;
-    const totalFeePending = totalFeeAmount - totalFeePaid;
+    /** Current calendar month: expected (sum of active students' monthly fee) minus recorded payments for that month — aligns with Fees page / revenue stats, not legacy invoices. */
+    const expectedThisMonth = activeStudentsMonthlyFeeSum._sum.monthlyFee || 0;
+    const collectedThisMonth = currentMonthPaymentsSum._sum.amountPaid || 0;
+    const totalFeePending = Math.max(0, expectedThisMonth - collectedThisMonth);
 
     const monthlyFeeMap: Record<string, number> = {};
     for (let i = 5; i >= 0; i--) {
@@ -306,6 +388,20 @@ export class AnalyticsService {
       totalHandedOver: handoverStats._sum.amountSubmitted || 0,
       handoverCount: handoverStats._count.id || 0,
       recentHandovers,
+      /** Section 7 dashboard cards — all derived from the single Promise.all above. */
+      collections: {
+        todayTotal: todayCollectionAgg._sum.amountPaid ?? 0,
+        todayCount: todayCollectionAgg._count._all ?? 0,
+        monthTotal: collectedThisMonth,
+        monthExpected: expectedThisMonth,
+        pendingHandoversCount: pendingHandoversList.length,
+        pendingHandovers: pendingHandoversList,
+        unsubmittedByManager: unsubmittedCollections,
+      },
+      salaries: {
+        pendingRemaining: pendingSalariesAgg._sum.remainingDue ?? 0,
+        pendingRecordCount: pendingSalariesAgg._count._all ?? 0,
+      },
       // Chart data
       monthlyFeeData,
       weeklyAttendance,

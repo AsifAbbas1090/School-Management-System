@@ -117,6 +117,7 @@ model Exam {
   @@index([schoolId])
   @@index([sectionId])
   @@index([subjectId])
+  @@index([schoolId, classId])
 }
 
 model ExamResult {
@@ -146,34 +147,52 @@ model Expense {
   receiptImageUrl String?
   createdById     String
   createdByRole   UserRole
+  updatedById     String?
+  updatedByRole   UserRole?
   deletedAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-  User            User      @relation(fields: [createdById], references: [id])
+  User            User      @relation("ExpenseCreator", fields: [createdById], references: [id])
+  Editor          User?     @relation("ExpenseEditor", fields: [updatedById], references: [id])
   School          School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([category])
   @@index([createdById])
+  @@index([updatedById])
   @@index([deletedAt])
   @@index([schoolId])
 }
 
+enum HandoverStatus {
+  PENDING
+  SUBMITTED
+  VERIFIED
+}
+
 model FeeHandover {
-  id                   String   @id @default(uuid())
+  id                   String         @id @default(uuid())
   schoolId             String
-  submittedById        String
+  managerId            String
   amountSubmitted      Float
-  totalCollectedAtTime Float
-  backupAmount         Float
-  submittedAt          DateTime @default(now())
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  School               School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  User                 User     @relation(fields: [submittedById], references: [id])
+  /// Sum of linked fee payments at submission time (same as amountSubmitted for auto handovers)
+  totalCollected       Float          @default(0)
+  status               HandoverStatus @default(PENDING)
+  verifiedById         String?
+  verifiedAt           DateTime?
+  totalCollectedAtTime Float?
+  backupAmount         Float?
+  submittedAt          DateTime       @default(now())
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  School               School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  manager              User           @relation("HandoverManager", fields: [managerId], references: [id])
+  verifiedBy           User?          @relation("HandoverVerifier", fields: [verifiedById], references: [id])
+  payments             FeePayment[]
 
   @@index([schoolId])
   @@index([submittedAt])
-  @@index([submittedById])
+  @@index([managerId])
+  @@index([status])
 }
 
 model FeeInvoice {
@@ -215,11 +234,19 @@ model FeePayment {
   receiptNumber      String        @unique
   transactionId      String?
   remarks            String?
+  collectedById      String?
+  handoverId         String?
+  /// When true, this payment is being collected for a future period (see advanceFor*). The month/year above still store the period this row covers.
+  isAdvance          Boolean       @default(false)
+  advanceForMonth    Int?
+  advanceForYear     Int?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   FeeInvoice         FeeInvoice?   @relation(fields: [invoiceId], references: [id])
   School             School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   Student            Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  collectedBy        User?         @relation("PaymentCollector", fields: [collectedById], references: [id])
+  feeHandover        FeeHandover?  @relation(fields: [handoverId], references: [id], onDelete: SetNull)
 
   @@unique([studentId, month, year]) // One payment per student per month
   @@index([invoiceId])
@@ -229,20 +256,26 @@ model FeePayment {
   @@index([schoolId])
   @@index([studentId])
   @@index([year])
+  @@index([collectedById])
+  @@index([handoverId])
+  @@index([schoolId, month, year])
 }
 
 model FeeStructure {
-  id         String       @id @default(uuid())
-  schoolId   String
-  classId    String?
-  name       String
-  amount     Float
-  frequency  FeeFrequency
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-  FeeInvoice FeeInvoice[]
-  Class      Class?       @relation(fields: [classId], references: [id], onDelete: Cascade)
-  School     School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  id                   String       @id @default(uuid())
+  schoolId             String
+  classId              String?
+  name                 String
+  amount               Float
+  frequency            FeeFrequency
+  /// When true, payers can record fees for future months up to `advanceMonths` ahead.
+  allowAdvancePayment  Boolean      @default(false)
+  advanceMonths        Int?         @default(3)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  FeeInvoice           FeeInvoice[]
+  Class                Class?       @relation(fields: [classId], references: [id], onDelete: Cascade)
+  School               School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([classId])
   @@index([schoolId])
@@ -338,11 +371,30 @@ model School {
   Subject               Subject[]
   TeacherAttendance     TeacherAttendance[]
   StudentAttendance     StudentAttendance[]
+  TeacherSalaryRecord   TeacherSalaryRecord[]
   TimetableSlot         TimetableSlot[]
   User                  User[]
+  ScheduleSettings      ScheduleSettings?
 
   @@index([deletedAt])
   @@index([slug])
+}
+
+/// Per-school schedule settings used by the timetable generator:
+/// school open/close times, lecture duration, and one or more breaks.
+/// `breaks` is a JSON array of { name, startTime, endTime }.
+model ScheduleSettings {
+  id              String   @id @default(uuid())
+  schoolId        String   @unique
+  startTime       String   @default("08:00")
+  endTime         String   @default("14:00")
+  lectureDuration Int      @default(40)
+  breaks          Json     @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  School          School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
 }
 
 model Section {
@@ -456,13 +508,21 @@ model User {
   address                                           String?
   joiningDate                                       DateTime?
   subjectIds                                        String[]            @default([])
+  /// Teacher HR — optional extra fields so modal edit/save persists everything the form collects.
+  department                                        String?
+  qualification                                     String?
+  experience                                        Int?
+  emergencyContact                                  String?
   schoolId                                          String?
   deletedAt                                         DateTime?
   createdAt                                         DateTime            @default(now())
   updatedAt                                         DateTime
   Announcement                                      Announcement[]
-  Expense                                           Expense[]
-  FeeHandover                                       FeeHandover[]
+  Expense                                           Expense[]           @relation("ExpenseCreator")
+  ExpenseEdits                                      Expense[]           @relation("ExpenseEditor")
+  FeeHandover_FeeHandover_manager                   FeeHandover[]       @relation("HandoverManager")
+  FeeHandover_FeeHandover_verifiedBy                FeeHandover[]       @relation("HandoverVerifier")
+  FeePayment_collectedBy                            FeePayment[]        @relation("PaymentCollector")
   LeaveRequest_LeaveRequest_decisionByUserIdToUser  LeaveRequest[]      @relation("LeaveRequest_decisionByUserIdToUser")
   LeaveRequest_LeaveRequest_requestedByUserIdToUser LeaveRequest[]      @relation("LeaveRequest_requestedByUserIdToUser")
   Message_Message_receiverIdToUser                  Message[]           @relation("Message_receiverIdToUser")
@@ -473,6 +533,7 @@ model User {
   TeacherAttendance_RecordedBy                      TeacherAttendance[]  @relation("TeacherAttendance_RecordedBy")
   StudentAttendance_RecordedBy                      StudentAttendance[]  @relation("StudentAttendance_RecordedBy")
   TimetableSlot_Teacher                             TimetableSlot[]      @relation("TimetableSlot_Teacher")
+  TeacherSalaryRecord                               TeacherSalaryRecord[] @relation("TeacherSalary")
   School                                            School?              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([deletedAt])
@@ -628,6 +689,41 @@ enum StudentAttendanceStatus {
   ABSENT
   LATE
   LEAVE
+}
+
+enum SalaryStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+/// Monthly salary liability for a teacher — tracks what the school owes vs. what has been paid.
+model TeacherSalaryRecord {
+  id            String       @id @default(uuid())
+  schoolId      String
+  teacherId     String
+  month         Int
+  year          Int
+  /// Total salary owed for this month (copied from User.salary at record creation).
+  salaryDue     Float
+  /// Optional advance paid before record creation — reduces remainingDue on create.
+  advancePaid   Float        @default(0)
+  /// Cumulative amountPaid across all pay events (not counting advancePaid).
+  amountPaid    Float        @default(0)
+  /// salaryDue - (advancePaid + amountPaid); kept denormalized for fast summaries.
+  remainingDue  Float        @default(0)
+  status        SalaryStatus @default(PENDING)
+  paidAt        DateTime?
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  School        School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacher       User         @relation("TeacherSalary", fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, month, year])
+  @@index([schoolId, teacherId])
+  @@index([schoolId, status])
+  @@index([teacherId, year, month])
 }
 
 model StudentAttendance {

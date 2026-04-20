@@ -1,5 +1,5 @@
-import { IsOptional, IsString, IsInt, Min, Max, IsEnum } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsString, IsInt, Min, Max, IsEnum, IsBoolean } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { FeeInvoiceStatus, PaymentMethod } from '@prisma/client';
 
@@ -81,6 +81,13 @@ export class PaymentQueryDto {
   @Max(500)
   @IsOptional()
   pageSize?: number = 10;
+
+  /** Management: when true, only payments collected by the current user (reports). Default false — full school list for accurate paid/unpaid. */
+  @ApiPropertyOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  @IsOptional()
+  mineOnly?: boolean;
 }
 
 

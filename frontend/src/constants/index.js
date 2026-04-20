@@ -55,20 +55,6 @@ export const DAYS_OF_WEEK = [
     'Saturday',
 ];
 
-export const PERIODS = [
-    { id: '1', name: 'Period 1', startTime: '08:00', endTime: '08:45' },
-    { id: '2', name: 'Period 2', startTime: '08:45', endTime: '09:30' },
-    { id: '3', name: 'Period 3', startTime: '09:30', endTime: '10:15' },
-    { id: 'break1', name: 'Break', startTime: '10:15', endTime: '10:30' },
-    { id: '4', name: 'Period 4', startTime: '10:30', endTime: '11:15' },
-    { id: '5', name: 'Period 5', startTime: '11:15', endTime: '12:00' },
-    { id: '6', name: 'Period 6', startTime: '12:00', endTime: '12:45' },
-    { id: 'break2', name: 'Lunch', startTime: '12:45', endTime: '01:30' },
-    { id: '7', name: 'Period 7', startTime: '01:30', endTime: '02:15' },
-    { id: '8', name: 'Period 8', startTime: '02:15', endTime: '03:00' },
-    { id: '9', name: 'Period 9', startTime: '03:00', endTime: '03:45' },
-];
-
 export const GRADE_SCALE = [
     { grade: 'A+', min: 90, max: 100, gpa: 4.0 },
     { grade: 'A', min: 85, max: 89, gpa: 3.7 },
@@ -108,16 +94,16 @@ export const NAVIGATION_ITEMS = {
     ],
     ADMIN: [
         { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard' },
-        { id: 'classes', label: 'Classes', icon: 'BookOpen', path: '/classes' },
-        { id: 'students', label: 'Students', icon: 'Users', path: '/students' },
-        { id: 'teachers', label: 'Teachers', icon: 'UserCheck', path: '/teachers' },
-        { id: 'parents', label: 'Parents', icon: 'UserCircle', path: '/parents' },
-        { id: 'support_staff', label: 'Support Staff', icon: 'UserCog', path: '/support-staff' },
-        { id: 'attendance', label: 'Attendance', icon: 'ClipboardCheck', path: '/attendance' },
-        { id: 'teacher_attendance', label: 'Teacher Attendance', icon: 'UserCheck', path: '/teacher-attendance' },
-        { id: 'fees', label: 'Fees & Revenue', icon: 'DollarSign', path: '/fees' },
+        { id: 'fees', label: 'Fee Collection', icon: 'DollarSign', path: '/fees' },
         { id: 'expenses', label: 'Expenses', icon: 'Receipt', path: '/expenses' },
         { id: 'exams', label: 'Exams & Results', icon: 'FileText', path: '/exams' },
+        { id: 'classes', label: 'Classes', icon: 'BookOpen', path: '/classes' },
+        { id: 'students', label: 'Students', icon: 'Users', path: '/students' },
+        { id: 'support_staff', label: 'Management', icon: 'UserCog', path: '/support-staff' },
+        { id: 'teachers', label: 'Teachers', icon: 'UserCheck', path: '/teachers' },
+        { id: 'parents', label: 'Parents', icon: 'UserCircle', path: '/parents' },
+        { id: 'attendance', label: 'Attendance', icon: 'ClipboardCheck', path: '/attendance' },
+        { id: 'teacher_attendance', label: 'Teacher Attendance', icon: 'UserCheck', path: '/teacher-attendance' },
         { id: 'timetable', label: 'Timetable', icon: 'Calendar', path: '/timetable' },
         { id: 'announcements', label: 'Announcements', icon: 'Megaphone', path: '/announcements' },
         { id: 'messages', label: 'Messages', icon: 'MessageSquare', path: '/messages' },

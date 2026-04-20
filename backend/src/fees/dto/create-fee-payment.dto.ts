@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsEnum, Min, Max } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsEnum, IsBoolean, IsInt, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '@prisma/client';
 
@@ -50,4 +50,23 @@ export class CreateFeePaymentDto {
   @IsString()
   @IsOptional()
   remarks?: string;
+
+  @ApiPropertyOptional({ example: false, description: 'When true, this payment is for a future month (requires fee structure allowAdvancePayment = true)' })
+  @IsBoolean()
+  @IsOptional()
+  isAdvance?: boolean;
+
+  @ApiPropertyOptional({ example: 12, minimum: 1, maximum: 12, description: 'Future month this advance payment covers' })
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  @IsOptional()
+  advanceForMonth?: number;
+
+  @ApiPropertyOptional({ example: 2026, minimum: 2000, maximum: 2100, description: 'Future year this advance payment covers' })
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  @IsOptional()
+  advanceForYear?: number;
 }
