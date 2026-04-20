@@ -152,18 +152,22 @@ export class SubjectsService {
         take: pageSize,
         orderBy: { code: 'asc' },
         include: {
-          _count: {
-            select: {
-              SubjectClass: true,
-            },
-          },
+          SubjectClass: { select: { classId: true } },
+          _count: { select: { SubjectClass: true } },
         },
       }),
       this.prisma.subject.count({ where }),
     ]);
 
+    /** Flatten `SubjectClass[]` into a compact `classIds` array so the UI
+     *  can filter subjects by selected class without a second round-trip. */
+    const data = subjects.map((s) => ({
+      ...s,
+      classIds: (s.SubjectClass || []).map((sc) => sc.classId),
+    }));
+
     return {
-      data: subjects,
+      data,
       meta: {
         total,
         page,

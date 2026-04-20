@@ -208,7 +208,7 @@
  * @property {string} studentId
  * @property {string} examId
  * @property {string} subjectId
- * @property {number} marksObtained
+ * @property {number} obtainedMarks
  * @property {number} totalMarks
  * @property {string} grade
  * @property {string} [remarks]

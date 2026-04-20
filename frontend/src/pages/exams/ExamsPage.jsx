@@ -13,8 +13,8 @@ import toast from 'react-hot-toast';
 
 const ExamsPage = () => {
     const { user } = useAuthStore();
-    const { classes, sections } = useClassesStore();
-    const { students } = useStudentsStore();
+    const { classes, sections, setClasses, setSections } = useClassesStore();
+    const { students, setStudents } = useStudentsStore();
     const { teachers } = useTeachersStore();
 
     // Access control: Authorized roles for full management
@@ -67,29 +67,32 @@ const ExamsPage = () => {
                 setExams(Array.isArray(examsData) ? examsData : []);
             }
             
-            // Load classes
-            const classesResponse = await classesService.getAll();
+            /** Fetch lookups in parallel and push them into the Zustand stores so
+             *  the create-exam modal's dropdowns aren't empty. The previous code
+             *  fetched these lists but then dropped them on the floor. */
+            const [classesResponse, sectionsResponse, studentsResponse, subjectsResponse] =
+                await Promise.all([
+                    classesService.getAll({ pageSize: 500 }),
+                    sectionsService.getAll({ pageSize: 500 }),
+                    studentsService.getAll({ pageSize: 500 }),
+                    subjectsService.getAll({ pageSize: 500 }),
+                ]);
+
             if (classesResponse.success && classesResponse.data) {
                 const classesData = classesResponse.data.data || classesResponse.data;
-                // Update store if needed
+                setClasses(Array.isArray(classesData) ? classesData : []);
             }
-            
-            // Load sections
-            const sectionsResponse = await sectionsService.getAll();
+
             if (sectionsResponse.success && sectionsResponse.data) {
                 const sectionsData = sectionsResponse.data.data || sectionsResponse.data;
-                // Update store if needed
+                setSections(Array.isArray(sectionsData) ? sectionsData : []);
             }
-            
-            // Load students
-            const studentsResponse = await studentsService.getAll();
+
             if (studentsResponse.success && studentsResponse.data) {
                 const studentsData = studentsResponse.data.data || studentsResponse.data;
-                // Update store if needed
+                setStudents(Array.isArray(studentsData) ? studentsData : []);
             }
-            
-            // Load subjects
-            const subjectsResponse = await subjectsService.getAll();
+
             if (subjectsResponse.success && subjectsResponse.data) {
                 const subjectsData = subjectsResponse.data.data || subjectsResponse.data;
                 setSubjects(Array.isArray(subjectsData) ? subjectsData : []);
@@ -147,8 +150,32 @@ const ExamsPage = () => {
     // Exam creation handlers
     const handleExamFormChange = (e) => {
         const { name, value } = e.target;
-        setExamFormData(prev => ({ ...prev, [name]: value }));
+        setExamFormData((prev) => {
+            /** When the class changes we must clear any previously-picked subject
+             *  so it doesn't stay selected with a now-invisible option. */
+            if (name === 'classId' && value !== prev.classId) {
+                return { ...prev, classId: value, subjectId: '' };
+            }
+            return { ...prev, [name]: value };
+        });
     };
+
+    /** Subjects available for the class currently picked in the Create Exam
+     *  modal. We use the `classIds` array that the backend now returns; if a
+     *  subject has no class links we treat it as school-wide (shown for every
+     *  class) to stay compatible with schools that haven't wired up the link. */
+    const subjectsForSelectedClass = (() => {
+        if (!examFormData.classId) return subjects;
+        const scoped = subjects.filter(
+            (s) => Array.isArray(s.classIds) && s.classIds.includes(examFormData.classId),
+        );
+        const schoolWide = subjects.filter(
+            (s) => !Array.isArray(s.classIds) || s.classIds.length === 0,
+        );
+        // Prefer class-scoped subjects, but fall back to school-wide ones so
+        // the dropdown is never empty when links are missing.
+        return scoped.length > 0 ? [...scoped, ...schoolWide] : subjects;
+    })();
 
     const handleCreateExam = async (e) => {
         e.preventDefault();
@@ -246,7 +273,7 @@ const ExamsPage = () => {
             rollNumber: student.rollNumber,
             name: student.name,
             subject: '',
-            marksObtained: '',
+            obtainedMarks: '',
         }));
 
         setMarksData(initialData);
@@ -284,15 +311,22 @@ const ExamsPage = () => {
         }
 
         try {
-            // Prepare bulk results data
+            /** Backend DTO expects `obtainedMarks`; we accept either legacy
+             *  `marksObtained` or the new `obtainedMarks` state key so a
+             *  mid-session HMR swap can't silently drop entries. Blank
+             *  optional fields are omitted to satisfy class-validator. */
             const resultsData = marksData
-                .filter(m => m.marksObtained && m.marksObtained !== '')
-                .map(m => ({
-                    studentId: m.studentId,
-                    marksObtained: parseFloat(m.marksObtained),
-                    grade: m.grade || '',
-                    remarks: m.remarks || '',
-                }));
+                .map((m) => {
+                    const raw = m.obtainedMarks ?? m.marksObtained;
+                    if (raw === '' || raw === null || raw === undefined) return null;
+                    const value = Number(raw);
+                    if (!Number.isFinite(value) || value < 0) return null;
+                    const item = { studentId: m.studentId, obtainedMarks: value };
+                    if (m.grade) item.grade = m.grade;
+                    if (m.remarks) item.remarks = m.remarks;
+                    return item;
+                })
+                .filter(Boolean);
 
             if (resultsData.length === 0) {
                 toast.error('Please enter marks for at least one student');
@@ -336,7 +370,7 @@ const ExamsPage = () => {
                 return {
                     ...existing,
                     subject: imported.subject || existing.subject,
-                    marksObtained: imported.marks || existing.marksObtained,
+                    obtainedMarks: imported.marks ?? existing.obtainedMarks,
                 };
             }
 
@@ -501,10 +535,10 @@ const ExamsPage = () => {
                                             <td>{result.className}</td>
                                             <td>{result.examName}</td>
                                             <td>{result.subject}</td>
-                                            <td>{result.marksObtained}/{result.totalMarks}</td>
+                                            <td>{result.obtainedMarks}/{result.totalMarks}</td>
                                             <td>
                                                 <span className={`badge badge-success`}>
-                                                    {calculateGrade(result.marksObtained, result.totalMarks)}
+                                                    {calculateGrade(result.obtainedMarks, result.totalMarks)}
                                                 </span>
                                             </td>
                                         </tr>
@@ -633,9 +667,9 @@ const ExamsPage = () => {
                                                         placeholder="0"
                                                         min="0"
                                                         max={selectedExam?.totalMarks}
-                                                        value={student.marksObtained}
+                                                        value={student.obtainedMarks}
                                                         onChange={(e) =>
-                                                            handleMarksChange(student.studentId, 'marksObtained', e.target.value)
+                                                            handleMarksChange(student.studentId, 'obtainedMarks', e.target.value)
                                                         }
                                                     />
                                                 </td>
@@ -737,11 +771,23 @@ const ExamsPage = () => {
                                 required
                                 disabled={!examFormData.classId}
                             >
-                                <option value="">-- Select Subject --</option>
-                                {subjects.filter(s => !examFormData.classId || true).map(subject => (
-                                    <option key={subject.id} value={subject.id}>{subject.name}</option>
+                                <option value="">
+                                    {examFormData.classId
+                                        ? '-- Select Subject --'
+                                        : '-- Pick a class first --'}
+                                </option>
+                                {subjectsForSelectedClass.map((subject) => (
+                                    <option key={subject.id} value={subject.id}>
+                                        {subject.name} {subject.code ? `(${subject.code})` : ''}
+                                    </option>
                                 ))}
                             </select>
+                            {examFormData.classId && subjectsForSelectedClass.length === 0 && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                    No subjects found. Add subjects under <strong>Classes & Subjects</strong> (or use
+                                    the <strong>Subject Library</strong> on the Timetable page) first.
+                                </p>
+                            )}
                         </div>
 
                         <div className="form-group">

@@ -133,81 +133,93 @@ export class ExamsService {
 
   async submitBulkResults(schoolId: string, examId: string, bulkResultsDto: BulkResultsDto) {
     const exam = await this.prisma.exam.findFirst({
-      where: {
-        id: examId,
-        schoolId,
-      },
+      where: { id: examId, schoolId },
+      select: { id: true, classId: true, totalMarks: true },
     });
 
     if (!exam) {
       throw new NotFoundException(`Exam with ID ${examId} not found`);
     }
 
-    // Verify all students belong to exam's class/section
-    const studentIds = bulkResultsDto.results.map((r) => r.studentId);
-    const students = await this.prisma.student.findMany({
+    const incoming = bulkResultsDto.results;
+    if (!incoming?.length) {
+      return { message: 'No results to submit', examId, resultsCount: 0 };
+    }
+
+    // Marks-cap validation up front — avoids half-written state.
+    for (const r of incoming) {
+      if (r.obtainedMarks > exam.totalMarks) {
+        throw new BadRequestException(
+          `Obtained marks (${r.obtainedMarks}) cannot exceed total marks (${exam.totalMarks})`,
+        );
+      }
+    }
+
+    // Verify every student is in this school AND exam's class in one query.
+    const studentIds = incoming.map((r) => r.studentId);
+    const validStudents = await this.prisma.student.findMany({
       where: {
         id: { in: studentIds },
         schoolId,
         classId: exam.classId,
       },
+      select: { id: true },
     });
-
-    if (students.length !== studentIds.length) {
-      throw new BadRequestException('One or more students not found or do not belong to the exam class');
+    const validIds = new Set(validStudents.map((s) => s.id));
+    const missing = studentIds.filter((id) => !validIds.has(id));
+    if (missing.length) {
+      throw new BadRequestException(
+        `Students not in exam's class: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}`,
+      );
     }
 
-    // Validate marks don't exceed total
-    for (const result of bulkResultsDto.results) {
-      if (result.obtainedMarks > exam.totalMarks) {
-        throw new BadRequestException(
-          `Obtained marks (${result.obtainedMarks}) cannot exceed total marks (${exam.totalMarks})`
-        );
-      }
-    }
+    /** Split-write strategy: fetch existing result ids, then do a single
+     *  `updateMany` per row + `createMany` for the rest inside one
+     *  transaction. Avoids N round-trips from per-row upsert+include that
+     *  previously caused the submit to time out on larger classes. */
+    const existing = await this.prisma.examResult.findMany({
+      where: { examId, studentId: { in: studentIds } },
+      select: { studentId: true },
+    });
+    const existingIds = new Set(existing.map((e) => e.studentId));
+    const now = new Date();
+    const toUpdate = incoming.filter((r) => existingIds.has(r.studentId));
+    const toCreate = incoming.filter((r) => !existingIds.has(r.studentId));
 
-    // Create or update results
-    const results = [];
-    for (const resultData of bulkResultsDto.results) {
-      const result = await this.prisma.examResult.upsert({
-        where: {
-          examId_studentId: {
-            examId,
-            studentId: resultData.studentId,
+    await this.prisma.$transaction([
+      ...toUpdate.map((r) =>
+        this.prisma.examResult.update({
+          where: { examId_studentId: { examId, studentId: r.studentId } },
+          data: {
+            obtainedMarks: r.obtainedMarks,
+            grade: r.grade || null,
+            remarks: r.remarks || null,
+            updatedAt: now,
           },
-        },
-        update: {
-          obtainedMarks: resultData.obtainedMarks,
-          grade: resultData.grade || null,
-          remarks: resultData.remarks || null,
-          updatedAt: new Date(),
-        },
-        create: {
-          id: randomUUID(),
-          examId,
-          studentId: resultData.studentId,
-          obtainedMarks: resultData.obtainedMarks,
-          grade: resultData.grade || null,
-          remarks: resultData.remarks || null,
-          updatedAt: new Date(),
-        } as any,
-        include: {
-          Student: {
-            include: {
-              Class: true,
-              Section: true,
-            },
-          },
-        },
-      });
-      results.push(result);
-    }
+        }),
+      ),
+      ...(toCreate.length
+        ? [
+            this.prisma.examResult.createMany({
+              data: toCreate.map((r) => ({
+                id: randomUUID(),
+                examId,
+                studentId: r.studentId,
+                obtainedMarks: r.obtainedMarks,
+                grade: r.grade || null,
+                remarks: r.remarks || null,
+                updatedAt: now,
+              })),
+              skipDuplicates: true,
+            }),
+          ]
+        : []),
+    ]);
 
     return {
       message: 'Results submitted successfully',
       examId,
-      resultsCount: results.length,
-      results,
+      resultsCount: incoming.length,
     };
   }
 
