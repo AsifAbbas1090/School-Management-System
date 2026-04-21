@@ -173,47 +173,28 @@ export class ExamsService {
       );
     }
 
-    /** Split-write strategy: fetch existing result ids, then do a single
-     *  `updateMany` per row + `createMany` for the rest inside one
-     *  transaction. Avoids N round-trips from per-row upsert+include that
-     *  previously caused the submit to time out on larger classes. */
-    const existing = await this.prisma.examResult.findMany({
-      where: { examId, studentId: { in: studentIds } },
-      select: { studentId: true },
-    });
-    const existingIds = new Set(existing.map((e) => e.studentId));
+    /** Two-round-trip strategy: delete whatever already exists for this
+     *  (exam, studentIds) set, then bulk-insert the new rows with
+     *  `createMany`. This is O(1) DB round-trips regardless of class size,
+     *  so a 30-student class submit completes in well under a second even
+     *  on a remote Postgres instance. */
     const now = new Date();
-    const toUpdate = incoming.filter((r) => existingIds.has(r.studentId));
-    const toCreate = incoming.filter((r) => !existingIds.has(r.studentId));
-
     await this.prisma.$transaction([
-      ...toUpdate.map((r) =>
-        this.prisma.examResult.update({
-          where: { examId_studentId: { examId, studentId: r.studentId } },
-          data: {
-            obtainedMarks: r.obtainedMarks,
-            grade: r.grade || null,
-            remarks: r.remarks || null,
-            updatedAt: now,
-          },
-        }),
-      ),
-      ...(toCreate.length
-        ? [
-            this.prisma.examResult.createMany({
-              data: toCreate.map((r) => ({
-                id: randomUUID(),
-                examId,
-                studentId: r.studentId,
-                obtainedMarks: r.obtainedMarks,
-                grade: r.grade || null,
-                remarks: r.remarks || null,
-                updatedAt: now,
-              })),
-              skipDuplicates: true,
-            }),
-          ]
-        : []),
+      this.prisma.examResult.deleteMany({
+        where: { examId, studentId: { in: studentIds } },
+      }),
+      this.prisma.examResult.createMany({
+        data: incoming.map((r) => ({
+          id: randomUUID(),
+          examId,
+          studentId: r.studentId,
+          obtainedMarks: r.obtainedMarks,
+          grade: r.grade || null,
+          remarks: r.remarks || null,
+          updatedAt: now,
+        })),
+        skipDuplicates: true,
+      }),
     ]);
 
     return {
@@ -299,6 +280,83 @@ export class ExamsService {
       },
       results,
       gpa: gpa.toFixed(2),
+    };
+  }
+
+  /**
+   * Fetch all results for a class, optionally filtered by exam or subject.
+   * Sections of the same class are merged; each row carries its section name
+   * so the UI can show a small A/B/C chip next to the student.
+   */
+  async getClassResults(
+    schoolId: string,
+    classId: string,
+    examId?: string,
+    subjectId?: string,
+  ) {
+    const cls = await this.prisma.class.findFirst({
+      where: { id: classId, schoolId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!cls) {
+      throw new NotFoundException(`Class with ID ${classId} not found`);
+    }
+
+    const results = await this.prisma.examResult.findMany({
+      where: {
+        Exam: {
+          schoolId,
+          classId,
+          ...(examId ? { id: examId } : {}),
+          ...(subjectId ? { subjectId } : {}),
+        },
+      },
+      include: {
+        Exam: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            totalMarks: true,
+            date: true,
+            Subject: { select: { id: true, name: true } },
+          },
+        },
+        Student: {
+          select: {
+            id: true,
+            name: true,
+            rollNumber: true,
+            Section: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: [
+        { Exam: { date: 'desc' } },
+        { Student: { rollNumber: 'asc' } },
+      ],
+    });
+
+    return {
+      class: cls,
+      results: results.map((r) => ({
+        id: r.id,
+        studentId: r.studentId,
+        studentName: r.Student?.name ?? '',
+        rollNumber: r.Student?.rollNumber ?? '',
+        sectionId: r.Student?.Section?.id ?? null,
+        sectionName: r.Student?.Section?.name ?? '',
+        examId: r.examId,
+        examName: r.Exam?.name ?? '',
+        examType: r.Exam?.type ?? '',
+        examDate: r.Exam?.date ?? null,
+        subjectId: r.Exam?.Subject?.id ?? null,
+        subjectName: r.Exam?.Subject?.name ?? '',
+        obtainedMarks: r.obtainedMarks,
+        totalMarks: r.Exam?.totalMarks ?? 0,
+        grade: r.grade ?? null,
+        remarks: r.remarks ?? null,
+      })),
     };
   }
 }

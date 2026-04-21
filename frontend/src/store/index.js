@@ -282,27 +282,22 @@ export const useExpensesStore = create(
         (set, get) => ({
             expenses: [],
 
+            /** Replace the whole list (used by `loadExpenses` after a server fetch).
+             *  Without this, the page was silently discarding the API response and the
+             *  list never refreshed — admin saw an empty table even when data existed. */
+            setExpenses: (list) => {
+                set({ expenses: Array.isArray(list) ? list : [] });
+            },
+
             /**
-             * Add a new expense entry.
+             * Add a new expense entry. We keep the FULL server row (including the
+             * `User` / `Editor` relations) so the creator's name renders correctly
+             * in the table and the per-manager rollup cards.
              * @param {Object} expense
              */
             addExpense: (expense) => {
                 set((state) => ({
-                    expenses: [
-                        {
-                            id: expense.id,
-                            title: expense.title,
-                            amount: expense.amount,
-                            category: expense.category || 'general',
-                            notes: expense.notes || '',
-                            receiptImage: expense.receiptImage || null, // base64 data URL
-                            createdById: expense.createdById || null,
-                            createdByRole: expense.createdByRole || null,
-                            schoolId: expense.schoolId || null,
-                            createdAt: expense.createdAt || new Date().toISOString(),
-                        },
-                        ...state.expenses,
-                    ],
+                    expenses: [expense, ...state.expenses],
                 }));
             },
 

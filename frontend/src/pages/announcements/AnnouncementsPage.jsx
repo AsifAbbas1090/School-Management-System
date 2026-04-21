@@ -315,6 +315,19 @@ const AnnouncementsPage = () => {
           background: var(--primary-50);
         }
 
+        /* Pinned card keeps strong contrast in dark mode without washing out */
+        [data-theme="dark"] .announcement-card.pinned {
+          background: rgba(37, 99, 235, 0.12);
+          border-color: rgba(96, 165, 250, 0.45);
+        }
+        [data-theme="dark"] .announcement-card.pinned .announcement-title,
+        [data-theme="dark"] .announcement-card.pinned .announcement-content {
+          color: var(--text-primary);
+        }
+        [data-theme="dark"] .announcement-card.pinned .announcement-meta {
+          color: var(--gray-600);
+        }
+
         .pin-badge {
           position: absolute;
           top: var(--spacing-md);
@@ -323,11 +336,12 @@ const AnnouncementsPage = () => {
           align-items: center;
           gap: 0.25rem;
           padding: 0.25rem 0.75rem;
-          background: var(--primary-500);
+          background: var(--primary-600);
           color: white;
           border-radius: var(--radius-full);
           font-size: 0.75rem;
           font-weight: 600;
+          box-shadow: var(--shadow-sm);
         }
 
         .announcement-header {

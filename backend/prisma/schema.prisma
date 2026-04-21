@@ -309,32 +309,73 @@ model LeaveRequest {
   @@index([toDate])
 }
 
+/// Chat-style messages. Each message belongs to a Conversation shared by
+/// exactly two users. Old fan-out fields (subject/body/receiverType/etc.)
+/// remain nullable for historical rows; the chat UI only reads `content`.
 model Message {
   id                            String              @id
   schoolId                      String
   senderId                      String
-  receiverType                  MessageReceiverType
+  conversationId                String?
+  content                       String?             @db.Text
+  isDeleted                     Boolean             @default(false)
+  // Legacy fan-out fields (kept nullable for backwards compatibility with pre-chat rows).
+  receiverType                  MessageReceiverType?
   receiverRole                  UserRole?
   receiverId                    String?
   receiverClassId               String?
   receiverSectionId             String?
-  subject                       String
-  body                          String
+  subject                       String?
+  body                          String?
   isRead                        Boolean             @default(false)
   sentAt                        DateTime            @default(now())
   readAt                        DateTime?
   createdAt                     DateTime            @default(now())
   updatedAt                     DateTime
+  Conversation                  Conversation?       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   User_Message_receiverIdToUser User?               @relation("Message_receiverIdToUser", fields: [receiverId], references: [id])
   School                        School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   User_Message_senderIdToUser   User                @relation("Message_senderIdToUser", fields: [senderId], references: [id])
 
+  @@index([conversationId, sentAt])
   @@index([isRead])
   @@index([receiverId])
   @@index([receiverRole])
   @@index([schoolId])
   @@index([senderId])
   @@index([sentAt])
+}
+
+/// One persistent thread shared between exactly two users in a school.
+/// `updatedAt` is bumped on every new message so the conversation list
+/// can sort by most-recent-activity cheaply (indexed).
+model Conversation {
+  id           String                    @id @default(uuid())
+  schoolId     String
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  School       School                    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([schoolId, updatedAt])
+}
+
+/// Junction row — one per (conversation, user). `lastReadAt` tracks how
+/// far this user has read; unread = messages where sentAt > lastReadAt
+/// AND senderId != this.userId.
+model ConversationParticipant {
+  id             String       @id @default(uuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime?
+  createdAt      DateTime     @default(now())
+  Conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  User           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId])
 }
 
 model School {
@@ -366,6 +407,7 @@ model School {
   FeeStructure          FeeStructure[]
   LeaveRequest          LeaveRequest[]
   Message               Message[]
+  Conversation          Conversation[]
   Section               Section[]
   Student               Student[]
   Subject               Subject[]
@@ -527,6 +569,7 @@ model User {
   LeaveRequest_LeaveRequest_requestedByUserIdToUser LeaveRequest[]      @relation("LeaveRequest_requestedByUserIdToUser")
   Message_Message_receiverIdToUser                  Message[]           @relation("Message_receiverIdToUser")
   Message_Message_senderIdToUser                    Message[]           @relation("Message_senderIdToUser")
+  ConversationParticipant                           ConversationParticipant[]
   Section                                           Section[]
   Student                                           Student[]
   TeacherAttendance_Teacher                         TeacherAttendance[]  @relation("TeacherAttendance_Teacher")

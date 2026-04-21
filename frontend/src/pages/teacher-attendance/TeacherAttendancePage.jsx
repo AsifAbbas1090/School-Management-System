@@ -104,16 +104,55 @@ const TeacherAttendancePage = () => {
         }
     }, [teachers]);
 
-    // Filter attendance records
-    const filteredAttendance = useMemo(() => {
-        return attendance.filter(record => {
-            const matchesSearch = !searchTerm || 
-                record.Teacher?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                record.Teacher?.email.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesStatus = !filterStatus || record.status === filterStatus;
+    /** Roster view: one row per teacher on the selected date. Teachers without a record
+     *  show as "Not Marked" with a quick-record button — this is what the old view was
+     *  missing (it only listed teachers who already had a record for that date). */
+    const roster = useMemo(() => {
+        const byTeacher = new Map();
+        for (const rec of attendance) {
+            if (rec.teacherId) byTeacher.set(rec.teacherId, rec);
+        }
+        const rows = teachers.map((t) => {
+            const rec = byTeacher.get(t.id);
+            return {
+                teacherId: t.id,
+                teacher: t,
+                record: rec || null,
+                status: rec?.status || 'NOT_MARKED',
+            };
+        });
+        return rows.filter((row) => {
+            const matchesSearch = !searchTerm ||
+                row.teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                row.teacher.email?.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesStatus = !filterStatus || row.status === filterStatus;
             return matchesSearch && matchesStatus;
         });
-    }, [attendance, searchTerm, filterStatus]);
+    }, [teachers, attendance, searchTerm, filterStatus]);
+
+    /** Back-compat alias so the rest of the component keeps working without refactor. */
+    const filteredAttendance = roster;
+
+    /** Quick-mark: record PRESENT / ABSENT / PERMITTED_LEAVE for an unmarked teacher
+     *  directly from the roster row, without opening the modal. */
+    const handleQuickMark = useCallback(async (teacherId, status) => {
+        try {
+            const res = await teacherAttendanceService.create({
+                teacherId,
+                date: filterDate,
+                status,
+            });
+            if (res.success) {
+                toast.success('Attendance recorded');
+                loadData();
+            } else {
+                toast.error(res.error || 'Failed to record attendance');
+            }
+        } catch (err) {
+            console.error('Quick-mark failed:', err);
+            toast.error('Failed to record attendance');
+        }
+    }, [filterDate, loadData]);
 
     const handleOpenModal = (record = null) => {
         if (record) {
@@ -279,10 +318,11 @@ const TeacherAttendancePage = () => {
                         onChange={(e) => setFilterStatus(e.target.value)}
                         className="select"
                     >
-                        <option value="">All Status</option>
+                        <option value="">All Teachers</option>
                         <option value="PRESENT">Present</option>
                         <option value="ABSENT">Absent</option>
                         <option value="PERMITTED_LEAVE">Permitted Leave</option>
+                        <option value="NOT_MARKED">Not Marked</option>
                     </select>
                 </div>
             </div>
@@ -305,54 +345,102 @@ const TeacherAttendancePage = () => {
                         {filteredAttendance.length === 0 ? (
                             <tr>
                                 <td colSpan="7" className="text-center text-gray-500 py-8">
-                                    No attendance records found
+                                    {teachers.length === 0
+                                        ? 'No teachers found in this school yet.'
+                                        : 'No teachers match the current filters.'}
                                 </td>
                             </tr>
                         ) : (
-                            filteredAttendance.map((record) => (
-                                <tr key={record.id}>
-                                    <td>
-                                        <div className="flex items-center gap-md">
-                                            <div>
-                                                <div className="font-medium">{record.Teacher?.name}</div>
-                                                <div className="text-sm text-gray-500">{record.Teacher?.email}</div>
+                            filteredAttendance.map((row) => {
+                                const record = row.record;
+                                const status = row.status;
+                                return (
+                                    <tr key={row.teacherId}>
+                                        <td>
+                                            <div className="flex items-center gap-md">
+                                                <div>
+                                                    <div className="font-medium">{row.teacher?.name}</div>
+                                                    <div className="text-sm text-gray-500">{row.teacher?.email}</div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td>{formatDate(record.date)}</td>
-                                    <td>
-                                        <span className={`badge badge-${
-                                            record.status === 'PRESENT' ? 'success' :
-                                            record.status === 'ABSENT' ? 'error' : 'warning'
-                                        }`}>
-                                            {record.status.replace('_', ' ')}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {record.entryTime ? formatDate(record.entryTime, 'HH:mm') : '-'}
-                                    </td>
-                                    <td>
-                                        {record.exitTime ? formatDate(record.exitTime, 'HH:mm') : '-'}
-                                    </td>
-                                    <td>{record.RecordedBy?.name || '-'}</td>
-                                    <td>
-                                        <div className="flex gap-sm">
-                                            <button
-                                                className="btn btn-sm btn-outline"
-                                                onClick={() => handleOpenModal(record)}
-                                            >
-                                                <Edit size={14} />
-                                            </button>
-                                            <button
-                                                className="btn btn-sm btn-danger"
-                                                onClick={() => handleDelete(record.id)}
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))
+                                        </td>
+                                        <td>{formatDate(filterDate)}</td>
+                                        <td>
+                                            {status === 'NOT_MARKED' ? (
+                                                <span className="badge badge-outline" style={{ opacity: 0.8 }}>
+                                                    Not Marked
+                                                </span>
+                                            ) : (
+                                                <span className={`badge badge-${
+                                                    status === 'PRESENT' ? 'success' :
+                                                    status === 'ABSENT' ? 'error' : 'warning'
+                                                }`}>
+                                                    {status.replace('_', ' ')}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td>{record?.entryTime ? formatDate(record.entryTime, 'HH:mm') : '-'}</td>
+                                        <td>{record?.exitTime ? formatDate(record.exitTime, 'HH:mm') : '-'}</td>
+                                        <td>{record?.RecordedBy?.name || '-'}</td>
+                                        <td>
+                                            <div className="flex gap-sm">
+                                                {record ? (
+                                                    <>
+                                                        <button
+                                                            className="btn btn-sm btn-outline"
+                                                            onClick={() => handleOpenModal(record)}
+                                                            title="Edit attendance"
+                                                        >
+                                                            <Edit size={14} />
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-sm btn-danger"
+                                                            onClick={() => handleDelete(record.id)}
+                                                            title="Delete attendance"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            className="btn btn-sm btn-success"
+                                                            onClick={() => handleQuickMark(row.teacherId, 'PRESENT')}
+                                                            title="Mark present"
+                                                        >
+                                                            Present
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-sm btn-danger"
+                                                            onClick={() => handleQuickMark(row.teacherId, 'ABSENT')}
+                                                            title="Mark absent"
+                                                        >
+                                                            Absent
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-sm btn-outline"
+                                                            onClick={() => {
+                                                                setFormData((prev) => ({
+                                                                    ...prev,
+                                                                    teacherName: row.teacher?.name || '',
+                                                                    teacherId: row.teacherId,
+                                                                    date: filterDate,
+                                                                    status: 'PRESENT',
+                                                                }));
+                                                                setSelectedRecord(null);
+                                                                setShowModal(true);
+                                                            }}
+                                                            title="Record with details"
+                                                        >
+                                                            …
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })
                         )}
                     </tbody>
                 </table>

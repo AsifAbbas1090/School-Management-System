@@ -49,10 +49,20 @@ export class ExpensesController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all expenses with filters and pagination' })
+  @ApiOperation({
+    summary:
+      'List expenses — ADMIN sees every entry across schools; MANAGEMENT sees only their own.',
+  })
   @ApiResponse({ status: 200, description: 'Expenses retrieved successfully' })
-  async findAll(@SchoolContext() schoolId: string, @Query() query: ExpenseQueryDto) {
-    return this.expensesService.findAll(schoolId, query);
+  async findAll(
+    @CurrentUser() user: any,
+    @Query() query: ExpenseQueryDto,
+  ) {
+    /** Intentionally NOT using @SchoolContext here — admin oversight must not be
+     *  blocked if the admin user's JWT schoolId is unset/mismatched. The service
+     *  enforces the correct row-level scope per role. */
+    const schoolId = user?.schoolId ?? null;
+    return this.expensesService.findAll(schoolId, user.id, user.role, query);
   }
 
   @Get(':id')

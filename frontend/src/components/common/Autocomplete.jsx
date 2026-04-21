@@ -127,7 +127,7 @@ const Autocomplete = ({
             />
             
             {isOpen && filteredOptions.length > 0 && (
-                <div 
+                <div
                     ref={dropdownRef}
                     className="autocomplete-dropdown"
                     style={{
@@ -136,13 +136,14 @@ const Autocomplete = ({
                         left: 0,
                         right: 0,
                         zIndex: 1000,
-                        backgroundColor: 'white',
-                        border: '1px solid #e5e7eb',
+                        backgroundColor: 'var(--bg-card)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
                         borderRadius: '0.375rem',
                         marginTop: '0.25rem',
                         maxHeight: '200px',
                         overflowY: 'auto',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        boxShadow: 'var(--shadow-lg)',
                     }}
                 >
                     {filteredOptions.map((option, index) => (
@@ -153,10 +154,10 @@ const Autocomplete = ({
                             style={{
                                 padding: '0.5rem 1rem',
                                 cursor: 'pointer',
-                                backgroundColor: highlightedIndex === index ? '#f3f4f6' : 'white',
-                                borderBottom: index < filteredOptions.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                backgroundColor: highlightedIndex === index ? 'var(--gray-100)' : 'transparent',
+                                color: 'var(--text-primary)',
+                                borderBottom: index < filteredOptions.length - 1 ? '1px solid var(--border-color)' : 'none',
                             }}
-                            className="hover:bg-gray-100"
                         >
                             {option}
                         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, FileText, Award, TrendingUp, Download, Upload, BookOpen } from 'lucide-react';
 import { useAuthStore, useClassesStore, useStudentsStore, useTeachersStore } from '../../store';
 import { examsService, classesService, sectionsService, studentsService, subjectsService } from '../../services/api';
@@ -49,9 +49,15 @@ const ExamsPage = () => {
     });
 
     const [exams, setExams] = useState([]);
-    const [results, setResults] = useState([]);
     const [subjects, setSubjects] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    // Results tab state: filters + loaded rows
+    const [resultsClassId, setResultsClassId] = useState('');
+    const [resultsExamId, setResultsExamId] = useState('');
+    const [resultsSubjectId, setResultsSubjectId] = useState('');
+    const [classResults, setClassResults] = useState([]);
+    const [loadingResults, setLoadingResults] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -97,12 +103,90 @@ const ExamsPage = () => {
                 const subjectsData = subjectsResponse.data.data || subjectsResponse.data;
                 setSubjects(Array.isArray(subjectsData) ? subjectsData : []);
             }
-        } catch (error) {
+        } catch {
             // Silently handle errors - toast shows user message
         } finally {
             setLoading(false);
         }
     };
+
+    /** Load class-wide results whenever the Results-tab filters change.
+     *  Keeps a guard against stale responses overwriting newer state. */
+    const loadClassResults = useCallback(async () => {
+        if (!resultsClassId) {
+            setClassResults([]);
+            return;
+        }
+        setLoadingResults(true);
+        const response = await examsService.getClassResults({
+            classId: resultsClassId,
+            examId: resultsExamId || undefined,
+            subjectId: resultsSubjectId || undefined,
+        });
+        if (response.success && response.data) {
+            const rows = response.data.results || response.data.data?.results || [];
+            setClassResults(Array.isArray(rows) ? rows : []);
+        } else {
+            setClassResults([]);
+        }
+        setLoadingResults(false);
+    }, [resultsClassId, resultsExamId, resultsSubjectId]);
+
+    useEffect(() => {
+        if (viewMode !== 'results') return;
+        loadClassResults();
+    }, [viewMode, loadClassResults]);
+
+    /** Exams that belong to the picked class — powers the Exam filter. */
+    const examsForResultsClass = useMemo(
+        () => (resultsClassId ? exams.filter((e) => e.classId === resultsClassId) : exams),
+        [exams, resultsClassId],
+    );
+
+    /** Subjects that appear in the loaded results — powers the Subject filter.
+     *  Falls back to the full subject list when we don't yet have results. */
+    const subjectsForResults = useMemo(() => {
+        if (classResults.length) {
+            const seen = new Map();
+            for (const r of classResults) {
+                if (r.subjectId && !seen.has(r.subjectId)) {
+                    seen.set(r.subjectId, { id: r.subjectId, name: r.subjectName });
+                }
+            }
+            return Array.from(seen.values());
+        }
+        return subjects;
+    }, [classResults, subjects]);
+
+    /** Overall performance summary for the currently-filtered rows. */
+    const resultsSummary = useMemo(() => {
+        if (!classResults.length) return null;
+        const totalMarksDenom = classResults.reduce((acc, r) => acc + (r.totalMarks || 0), 0);
+        const obtainedSum = classResults.reduce((acc, r) => acc + (r.obtainedMarks || 0), 0);
+        const percents = classResults
+            .filter((r) => r.totalMarks > 0)
+            .map((r) => (r.obtainedMarks / r.totalMarks) * 100);
+        const highest = percents.length ? Math.max(...percents) : 0;
+        const lowest = percents.length ? Math.min(...percents) : 0;
+        const avg = percents.length ? percents.reduce((a, b) => a + b, 0) / percents.length : 0;
+        const passCount = classResults.filter(
+            (r) => r.totalMarks > 0 && r.obtainedMarks >= (r.passingMarks || 0),
+        ).length;
+        const sections = Array.from(
+            new Set(classResults.map((r) => r.sectionName).filter(Boolean)),
+        ).sort();
+        return {
+            appeared: classResults.length,
+            obtainedSum,
+            totalMarksDenom,
+            avgPct: avg,
+            highestPct: highest,
+            lowestPct: lowest,
+            passCount,
+            passPct: classResults.length ? (passCount / classResults.length) * 100 : 0,
+            sections,
+        };
+    }, [classResults]);
 
     // Get teacher's assigned subjects (if logged in as teacher)
     const getTeacherSubjects = () => {
@@ -286,6 +370,13 @@ const ExamsPage = () => {
         }
 
         setSelectedExam(exam);
+        // The exam's subject is fixed at creation time. Seed the picker with it
+        // so the "Subject" step below becomes a read-only confirmation instead
+        // of a free-form field that silently diverges from the exam row.
+        setSelectedSubject(exam?.Subject?.name || '');
+        // Pre-select the exam's class/section when present so teachers skip ahead.
+        if (exam?.classId) setSelectedClass(exam.classId);
+        if (exam?.sectionId) setSelectedSection(exam.sectionId);
         setShowMarksModal(true);
     };
 
@@ -341,12 +432,14 @@ const ExamsPage = () => {
                 toast.success(`Marks entered for ${resultsData.length} students`);
                 setShowMarksModal(false);
                 setMarksData([]);
-                loadData();
+                // Previously we re-ran loadData() here which fetched exams, classes,
+                // sections, students AND subjects on every submit — that's why the
+                // dialog felt sluggish to close. Nothing in those lists changed as a
+                // result of writing marks, so we skip it.
             } else {
                 toast.error(response.error || 'Failed to submit marks');
             }
-        } catch (error) {
-            // Silently handle errors - toast shows user message
+        } catch {
             toast.error('Failed to submit marks');
         }
     };
@@ -387,16 +480,31 @@ const ExamsPage = () => {
             toast.error('No exam selected');
             return;
         }
+        if (!marksData.length) {
+            toast.error('Pick a class and section first — the template is prefilled with those students');
+            return;
+        }
 
-        const template = marksData.map(m => ({
+        const classObj = classes.find((c) => c.id === selectedClass);
+        const sectionObj = sections.find((s) => s.id === selectedSection);
+
+        /** Column name `marks` matches the CSVImport expectedFields below so
+         *  the upload round-trip is lossless. We also include read-only
+         *  `class` and `section` so the teacher can visually verify they
+         *  grabbed the right template. */
+        const template = marksData.map((m) => ({
             rollNumber: m.rollNumber,
             studentName: m.name,
+            class: classObj?.name || '',
+            section: sectionObj?.name || '',
             subject: selectedSubject || '',
-            [`marks (out of ${selectedExam.totalMarks})`]: '',
+            marks: '',
         }));
 
-        exportToCSV(template, `marks_template_${selectedClass}_${selectedSubject}_${Date.now()}.csv`);
-        toast.success(`Template downloaded! Total marks: ${selectedExam.totalMarks}`);
+        const slug = (s) => String(s || '').replace(/\s+/g, '_');
+        const fileName = `marks_template_${slug(classObj?.name) || 'class'}_${slug(sectionObj?.name) || 'section'}_${slug(selectedSubject) || 'subject'}_${Date.now()}.csv`;
+        exportToCSV(template, fileName);
+        toast.success(`Template ready (${template.length} students, out of ${selectedExam.totalMarks})`);
     };
 
     const canTeacherAddMarksForSubject = (subject) => {
@@ -497,52 +605,175 @@ const ExamsPage = () => {
                 <div className="card">
                     <div className="card-header">
                         <h3 className="card-title">Student Results</h3>
+                        <p className="text-gray-500 text-sm">
+                            Class-wise performance. Sections are merged — each row shows its own section chip.
+                        </p>
                     </div>
+
+                    <div className="card-body">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-md" style={{ marginBottom: '1rem' }}>
+                            <div>
+                                <label className="label">Class *</label>
+                                <select
+                                    className="input"
+                                    value={resultsClassId}
+                                    onChange={(e) => {
+                                        setResultsClassId(e.target.value);
+                                        setResultsExamId('');
+                                        setResultsSubjectId('');
+                                    }}
+                                >
+                                    <option value="">Select class…</option>
+                                    {classes.map((c) => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="label">Exam (optional)</label>
+                                <select
+                                    className="input"
+                                    value={resultsExamId}
+                                    onChange={(e) => setResultsExamId(e.target.value)}
+                                    disabled={!resultsClassId}
+                                >
+                                    <option value="">All exams</option>
+                                    {examsForResultsClass.map((e) => (
+                                        <option key={e.id} value={e.id}>
+                                            {e.name}{e.type ? ` (${e.type})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="label">Subject (optional)</label>
+                                <select
+                                    className="input"
+                                    value={resultsSubjectId}
+                                    onChange={(e) => setResultsSubjectId(e.target.value)}
+                                    disabled={!resultsClassId}
+                                >
+                                    <option value="">All subjects</option>
+                                    {subjectsForResults.map((s) => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {resultsClassId && resultsSummary && (
+                            <div
+                                className="grid grid-cols-2 md:grid-cols-6 gap-md"
+                                style={{ marginBottom: '1rem' }}
+                            >
+                                <div className="stat-card">
+                                    <div className="stat-label">Appeared</div>
+                                    <div className="stat-value">{resultsSummary.appeared}</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-label">Average</div>
+                                    <div className="stat-value">{resultsSummary.avgPct.toFixed(1)}%</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-label">Highest</div>
+                                    <div className="stat-value">{resultsSummary.highestPct.toFixed(1)}%</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-label">Lowest</div>
+                                    <div className="stat-value">{resultsSummary.lowestPct.toFixed(1)}%</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-label">Pass Rate</div>
+                                    <div className="stat-value">{resultsSummary.passPct.toFixed(0)}%</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-label">Sections</div>
+                                    <div className="stat-value" style={{ fontSize: '1rem' }}>
+                                        {resultsSummary.sections.length
+                                            ? resultsSummary.sections.join(', ')
+                                            : '—'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="table-container">
                         <table className="table">
                             <thead>
                                 <tr>
                                     <th>Student</th>
-                                    <th>Roll Number</th>
-                                    <th>Class</th>
+                                    <th>Roll</th>
+                                    <th>Section</th>
                                     <th>Exam</th>
                                     <th>Subject</th>
                                     <th>Marks</th>
+                                    <th>%</th>
                                     <th>Grade</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {results.length === 0 ? (
+                                {!resultsClassId ? (
                                     <tr>
-                                        <td colSpan="7" className="text-center text-gray-500">
-                                            No results available yet
+                                        <td colSpan="8" className="text-center text-gray-500">
+                                            Pick a class to see results.
+                                        </td>
+                                    </tr>
+                                ) : loadingResults ? (
+                                    <tr>
+                                        <td colSpan="8" className="text-center text-gray-500">
+                                            Loading…
+                                        </td>
+                                    </tr>
+                                ) : classResults.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="8" className="text-center text-gray-500">
+                                            No results submitted yet for this class.
                                         </td>
                                     </tr>
                                 ) : (
-                                    results.filter(result => {
-                                        if (isParent) {
-                                            const student = students.find(s => s.id === result.studentId);
-                                            return student && student.parentId === user?.id;
-                                        }
-                                        if (isStudent) {
-                                            return result.studentId === user?.id;
-                                        }
-                                        return true;
-                                    }).map((result, index) => (
-                                        <tr key={index}>
-                                            <td>{result.studentName}</td>
-                                            <td>{result.rollNumber}</td>
-                                            <td>{result.className}</td>
-                                            <td>{result.examName}</td>
-                                            <td>{result.subject}</td>
-                                            <td>{result.obtainedMarks}/{result.totalMarks}</td>
-                                            <td>
-                                                <span className={`badge badge-success`}>
-                                                    {calculateGrade(result.obtainedMarks, result.totalMarks)}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))
+                                    classResults
+                                        .filter((r) => {
+                                            if (isParent) {
+                                                const student = students.find((s) => s.id === r.studentId);
+                                                return student && student.parentId === user?.id;
+                                            }
+                                            if (isStudent) return r.studentId === user?.id;
+                                            return true;
+                                        })
+                                        .map((r) => {
+                                            const pct = r.totalMarks
+                                                ? (r.obtainedMarks / r.totalMarks) * 100
+                                                : 0;
+                                            const grade = r.grade || calculateGrade(r.obtainedMarks, r.totalMarks);
+                                            const passed = r.totalMarks && r.obtainedMarks >= (r.passingMarks || 0);
+                                            return (
+                                                <tr key={r.id}>
+                                                    <td>{r.studentName}</td>
+                                                    <td>{r.rollNumber}</td>
+                                                    <td>
+                                                        {r.sectionName ? (
+                                                            <span className="badge badge-secondary">
+                                                                {r.sectionName}
+                                                            </span>
+                                                        ) : (
+                                                            '—'
+                                                        )}
+                                                    </td>
+                                                    <td>{r.examName}</td>
+                                                    <td>{r.subjectName}</td>
+                                                    <td>{r.obtainedMarks}/{r.totalMarks}</td>
+                                                    <td>{pct.toFixed(1)}%</td>
+                                                    <td>
+                                                        <span
+                                                            className={`badge ${passed ? 'badge-success' : 'badge-danger'}`}
+                                                        >
+                                                            {grade}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
                                 )}
                             </tbody>
                         </table>
@@ -599,24 +830,41 @@ const ExamsPage = () => {
                         </div>
                     )}
 
-                    {/* Step 3: Enter Subject (Autocomplete) */}
+                    {/* Step 3: Confirm Subject (exam's baked-in subject, read-only).
+                        Previously this was an autocomplete, but an Exam already has
+                        a single subject attached at creation time — letting the
+                        teacher type another name only created a mismatch between the
+                        marks saved against the exam and the Results filter. */}
                     {selectedSection && (
                         <div className="wizard-step">
                             <h4 className="step-title">
                                 <span className="step-number">3</span>
-                                Enter Subject
+                                Subject
                             </h4>
-                            <Autocomplete
-                                options={MAJOR_SUBJECTS}
-                                value={selectedSubject || ''}
-                                onChange={(value) => handleSubjectChange(value)}
-                                placeholder="Type subject name (e.g., Mathematics, Physics, Chemistry...)"
-                                className="w-full"
-                                filterFn={(term, opts) => filterSubjects(term)}
-                            />
-                            <p className="text-sm text-gray-500 mt-2">
-                                Type to search from major subjects (till intermediate level)
-                            </p>
+                            {selectedExam?.Subject?.name ? (
+                                <div className="flex items-center gap-sm">
+                                    <span className="badge badge-primary" style={{ fontSize: '1rem', padding: '0.5rem 0.75rem' }}>
+                                        {selectedExam.Subject.name}
+                                    </span>
+                                    <p className="text-sm text-gray-500" style={{ margin: 0 }}>
+                                        Subject is fixed for this exam. Create a separate exam for another subject.
+                                    </p>
+                                </div>
+                            ) : (
+                                <>
+                                    <Autocomplete
+                                        options={MAJOR_SUBJECTS}
+                                        value={selectedSubject || ''}
+                                        onChange={(value) => handleSubjectChange(value)}
+                                        placeholder="Type subject name (legacy exam — no subject attached)"
+                                        className="w-full"
+                                        filterFn={(term) => filterSubjects(term)}
+                                    />
+                                    <p className="text-sm text-gray-500 mt-2">
+                                        This exam was created without a subject. Pick one to label the marks, then re-create the exam properly.
+                                    </p>
+                                </>
+                            )}
                         </div>
                     )}
 

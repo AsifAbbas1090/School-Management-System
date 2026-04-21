@@ -33,7 +33,10 @@ const ExpensesPage = () => {
     const loadExpenses = useCallback(async () => {
         setLoading(true);
         try {
-            const response = await expensesService.getAll();
+            /** Request a generous page so the admin view lists every expense recorded by
+             *  every manager/admin. The backend default page size is 10 which would
+             *  silently hide older entries. */
+            const response = await expensesService.getAll({ pageSize: 500 });
             if (response.success && response.data) {
                 const expensesData = response.data.data || response.data;
                 setExpenses(Array.isArray(expensesData) ? expensesData : []);
@@ -49,7 +52,7 @@ const ExpensesPage = () => {
      *  store is already updated optimistically, so we never want the UI to wait on this. */
     const refreshExpensesInBackground = useCallback(() => {
         expensesService
-            .getAll()
+            .getAll({ pageSize: 500 })
             .then((response) => {
                 if (response?.success && response.data) {
                     const expensesData = response.data.data || response.data;
@@ -84,13 +87,15 @@ const ExpensesPage = () => {
     ];
 
     const schoolId = currentSchool?.id || null;
+    const [managerFilter, setManagerFilter] = useState('');
 
+    /** Backend already scopes results by JWT school context — we intentionally do not
+     *  re-filter by `currentSchool.id` on the client. Previously, when `currentSchool`
+     *  didn't exactly match the JWT schoolId (for example right after login, before
+     *  the school store hydrated), all entries were silently hidden and the admin saw
+     *  an empty table. */
     const filteredExpenses = useMemo(() => {
-        let list = expenses || [];
-
-        if (schoolId) {
-            list = list.filter((e) => e.schoolId === schoolId);
-        }
+        let list = Array.isArray(expenses) ? expenses : [];
 
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
@@ -105,13 +110,33 @@ const ExpensesPage = () => {
             list = list.filter((e) => e.category === categoryFilter);
         }
 
+        if (managerFilter) {
+            list = list.filter((e) => (e.createdById || e.User?.id) === managerFilter);
+        }
+
         return list;
-    }, [expenses, schoolId, searchTerm, categoryFilter]);
+    }, [expenses, searchTerm, categoryFilter, managerFilter]);
 
     const totalAmount = useMemo(
         () => filteredExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
         [filteredExpenses]
     );
+
+    /** Per-creator rollup used for the "spend by manager" cards. Keyed by user id so
+     *  the same person with different display variants collapses into one card. */
+    const byManager = useMemo(() => {
+        const buckets = new Map();
+        for (const e of expenses || []) {
+            const id = e.createdById || e.User?.id || 'unknown';
+            const name = e.User?.name || 'Unknown';
+            const role = e.createdByRole || e.User?.role || '';
+            const bucket = buckets.get(id) || { id, name, role, count: 0, total: 0 };
+            bucket.count += 1;
+            bucket.total += Number(e.amount) || 0;
+            buckets.set(id, bucket);
+        }
+        return Array.from(buckets.values()).sort((a, b) => b.total - a.total);
+    }, [expenses]);
 
     if (!isAuthorized) {
         return (
@@ -352,6 +377,51 @@ const ExpensesPage = () => {
                 </div>
             </div>
 
+            {/* Spend-by-manager rollup — one card per creator (manager/admin). Clicking a
+                card narrows the table below to that person's entries. */}
+            {byManager.length > 0 && (
+                <div className="manager-spend-grid mb-xl">
+                    <button
+                        type="button"
+                        className={`manager-card ${managerFilter === '' ? 'active' : ''}`}
+                        onClick={() => setManagerFilter('')}
+                        title="Show everyone"
+                    >
+                        <div className="manager-avatar manager-avatar-all">ALL</div>
+                        <div className="manager-body">
+                            <div className="manager-name">Everyone</div>
+                            <div className="manager-sub">
+                                {expenses?.length || 0} {(expenses?.length || 0) === 1 ? 'entry' : 'entries'}
+                            </div>
+                            <div className="manager-total">
+                                {formatCurrency((expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0))}
+                            </div>
+                        </div>
+                    </button>
+                    {byManager.map((m) => (
+                        <button
+                            key={m.id}
+                            type="button"
+                            className={`manager-card ${managerFilter === m.id ? 'active' : ''}`}
+                            onClick={() => setManagerFilter(managerFilter === m.id ? '' : m.id)}
+                            title={`Filter to ${m.name}'s expenses`}
+                        >
+                            <div className="manager-avatar">
+                                {(m.name || '?').trim().split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase()}
+                            </div>
+                            <div className="manager-body">
+                                <div className="manager-name">{m.name}</div>
+                                <div className="manager-sub">
+                                    {m.role && <span className="manager-role">{m.role.toLowerCase()}</span>}
+                                    <span>{m.count} {m.count === 1 ? 'entry' : 'entries'}</span>
+                                </div>
+                                <div className="manager-total">{formatCurrency(m.total)}</div>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {/* Filters */}
             <div className="card mb-lg p-lg">
                 <div className="filters-grid">
@@ -379,6 +449,35 @@ const ExpensesPage = () => {
                                 </option>
                             ))}
                         </select>
+                        {byManager.length > 0 && (
+                            <select
+                                value={managerFilter}
+                                onChange={(e) => setManagerFilter(e.target.value)}
+                                className="select"
+                                title="Filter by person who added the expense"
+                            >
+                                <option value="">All Managers</option>
+                                {byManager.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                        {m.name}{m.role ? ` — ${m.role.toLowerCase()}` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                        {(searchTerm || categoryFilter || managerFilter) && (
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setCategoryFilter('');
+                                    setManagerFilter('');
+                                }}
+                                title="Clear filters"
+                            >
+                                <X size={16} /> Clear
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -714,6 +813,85 @@ const ExpensesPage = () => {
 
                 .input-error {
                     border-color: var(--error-500);
+                }
+
+                /* Spend-by-manager rollup cards */
+                .manager-spend-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                    gap: var(--spacing-md);
+                }
+                .manager-card {
+                    text-align: left;
+                    background: var(--bg-card);
+                    border: 1px solid var(--border-color);
+                    border-radius: var(--radius-lg);
+                    padding: var(--spacing-md);
+                    display: flex;
+                    gap: var(--spacing-md);
+                    align-items: center;
+                    cursor: pointer;
+                    transition: border-color var(--transition-base), box-shadow var(--transition-base), transform var(--transition-base);
+                    box-shadow: var(--shadow-sm);
+                    color: var(--text-primary);
+                }
+                .manager-card:hover {
+                    border-color: var(--primary-accent, var(--primary-500));
+                    box-shadow: var(--shadow-md);
+                    transform: translateY(-1px);
+                }
+                .manager-card.active {
+                    border-color: var(--primary-600);
+                    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+                }
+                .manager-avatar {
+                    flex-shrink: 0;
+                    width: 44px;
+                    height: 44px;
+                    border-radius: var(--radius-full);
+                    background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
+                    color: #fff;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: 700;
+                    font-size: 0.9rem;
+                    letter-spacing: 0.02em;
+                }
+                .manager-avatar-all {
+                    background: linear-gradient(135deg, var(--gray-500), var(--gray-700));
+                    font-size: 0.75rem;
+                }
+                .manager-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+                .manager-name {
+                    font-weight: 600;
+                    color: var(--text-primary);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .manager-sub {
+                    font-size: 0.75rem;
+                    color: var(--text-secondary);
+                    display: flex;
+                    gap: 0.5rem;
+                    align-items: center;
+                    text-transform: capitalize;
+                }
+                .manager-role {
+                    background: var(--primary-100);
+                    color: var(--primary-accent, var(--primary-700));
+                    padding: 1px 8px;
+                    border-radius: var(--radius-full);
+                    font-size: 0.6875rem;
+                    font-weight: 600;
+                    letter-spacing: 0.03em;
+                }
+                .manager-total {
+                    font-size: 1rem;
+                    font-weight: 700;
+                    color: var(--error-600);
+                    margin-top: 2px;
                 }
 
                 @keyframes fadeIn {

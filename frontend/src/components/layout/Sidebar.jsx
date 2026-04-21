@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { PanelLeftClose } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { useAuthStore, useSchoolStore } from '../../store';
 import { NAVIGATION_ITEMS, SCHOOL_INFO } from '../../constants';
+import { messagingService } from '../../services/api';
 
 const Sidebar = ({ isOpen, onClose }) => {
   const location = useLocation();
@@ -11,6 +12,51 @@ const Sidebar = ({ isOpen, onClose }) => {
   const { currentSchool } = useSchoolStore();
 
   const navigationItems = NAVIGATION_ITEMS[user?.role] || [];
+
+  // Sidebar badge for unread messages.
+  //  • Poll every 15s and skip the call if the tab is hidden to avoid
+  //    waking backgrounded tabs.
+  //  • Reset to 0 immediately when the user navigates to /messages —
+  //    opening any conversation marks it read on the server, so a
+  //    stale number on the badge would feel laggy.
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    const fetchCount = async () => {
+      if (document.hidden) return;
+      try {
+        const res = await messagingService.getUnreadCount();
+        if (!cancelled && res?.success && res.data) {
+          setUnreadMessages(Number(res.data.count || 0));
+        }
+      } catch {
+        /* ignore — don't flash the UI for transient poll errors */
+      }
+    };
+
+    fetchCount();
+    const id = setInterval(fetchCount, 15000);
+    const onVis = () => {
+      if (!document.hidden) fetchCount();
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [user?.id]);
+
+  // Optimistic zero when the user is on the messages page.
+  useEffect(() => {
+    if (location.pathname === '/messages' || location.pathname.startsWith('/messages/')) {
+      setUnreadMessages(0);
+    }
+  }, [location.pathname]);
 
   const schoolName = currentSchool?.name || SCHOOL_INFO.name;
   const schoolTagline = currentSchool?.tagline || SCHOOL_INFO.tagline;
@@ -53,6 +99,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           {navigationItems.map((item) => {
             const Icon = Icons[item.icon];
             const active = isActive(item.path);
+            const badgeCount = item.id === 'messages' ? unreadMessages : 0;
             return (
               <Link
                 key={item.id}
@@ -63,7 +110,14 @@ const Sidebar = ({ isOpen, onClose }) => {
                   if (window.innerWidth < 1024) onClose();
                 }}
               >
-                <Icon size={20} />
+                <span className="nav-icon-wrap">
+                  <Icon size={20} />
+                  {badgeCount > 0 && (
+                    <span className="nav-badge">
+                      {badgeCount > 99 ? '99+' : badgeCount}
+                    </span>
+                  )}
+                </span>
                 <span>{item.label}</span>
               </Link>
             );
@@ -216,6 +270,34 @@ const Sidebar = ({ isOpen, onClose }) => {
             background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
             color: var(--primary-700);
             font-weight: 600;
+          }
+
+          /* Unread-message badge on the Messages nav item */
+          .nav-icon-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+          }
+          .nav-badge {
+            position: absolute;
+            top: -6px;
+            right: -8px;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            background: #ef4444;
+            color: #fff;
+            border-radius: 10px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 0 2px var(--bg-card, #fff);
           }
 
           .sidebar-footer {

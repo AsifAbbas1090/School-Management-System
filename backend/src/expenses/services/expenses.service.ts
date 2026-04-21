@@ -54,14 +54,32 @@ export class ExpensesService {
     });
   }
 
-  async findAll(schoolId: string, query: ExpenseQueryDto) {
+  /** Role-aware listing.
+   *  - ADMIN / SUPER_ADMIN: sees every non-deleted expense across ALL schools so the
+   *    admin has full oversight regardless of which school the manager was attached to
+   *    when recording the entry. (The product is single-tenant in practice.)
+   *  - MANAGEMENT: sees only their own entries (they record but don't oversee others).
+   *  - Any other role shouldn't reach this endpoint (controller-level role guard),
+   *    but we still scope to their school as a safety net. */
+  async findAll(
+    schoolId: string | null,
+    userId: string,
+    userRole: string,
+    query: ExpenseQueryDto,
+  ) {
     const { search, category, page = 1, pageSize = 10 } = query;
     const skip = (page - 1) * pageSize;
 
-    const where: any = {
-      schoolId,
-      deletedAt: null,
-    };
+    const where: any = { deletedAt: null };
+
+    if (userRole === UserRole.ADMIN || userRole === UserRole.SUPER_ADMIN) {
+      // no school scoping — admin sees everything
+    } else if (userRole === UserRole.MANAGEMENT) {
+      where.createdById = userId;
+      if (schoolId) where.schoolId = schoolId;
+    } else {
+      if (schoolId) where.schoolId = schoolId;
+    }
 
     if (search) {
       where.OR = [

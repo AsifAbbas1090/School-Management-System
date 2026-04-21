@@ -9,6 +9,22 @@ import { TeacherAttendanceStatus, UserRole, Prisma } from '@prisma/client';
 export class TeacherAttendanceService {
   constructor(private prisma: PrismaService) {}
 
+  /** Pin an incoming date string to UTC midnight so the same calendar-day bucket is
+   *  used on both write and read. Previously `create` used local-midnight
+   *  (`setHours(0,0,0,0)`) while `findAll` used UTC-midnight (`new Date("YYYY-MM-DD")`),
+   *  which caused records to disappear on any host outside the UTC timezone. */
+  private dayStartUtc(dateStr: string | Date): Date {
+    const s = typeof dateStr === 'string' ? dateStr : dateStr.toISOString();
+    const dayOnly = s.slice(0, 10);
+    return new Date(`${dayOnly}T00:00:00.000Z`);
+  }
+
+  private dayEndUtc(dateStr: string | Date): Date {
+    const s = typeof dateStr === 'string' ? dateStr : dateStr.toISOString();
+    const dayOnly = s.slice(0, 10);
+    return new Date(`${dayOnly}T23:59:59.999Z`);
+  }
+
   async create(schoolId: string, recordedById: string, createDto: CreateTeacherAttendanceDto) {
     // Verify teacher exists and belongs to school
     const teacher = await this.prisma.user.findFirst({
@@ -24,11 +40,9 @@ export class TeacherAttendanceService {
       throw new NotFoundException('Teacher not found or does not belong to this school');
     }
 
-    // Check if attendance already exists for this date
-    const dateOnly = new Date(createDto.date);
-    dateOnly.setHours(0, 0, 0, 0);
-    const nextDay = new Date(dateOnly);
-    nextDay.setDate(nextDay.getDate() + 1);
+    // Check if attendance already exists for this date (UTC day bucket)
+    const dateOnly = this.dayStartUtc(createDto.date);
+    const nextDay = new Date(dateOnly.getTime() + 24 * 60 * 60 * 1000);
 
     const existing = await this.prisma.teacherAttendance.findFirst({
       where: {
@@ -109,12 +123,10 @@ export class TeacherAttendanceService {
     if (startDate || endDate) {
       where.date = {};
       if (startDate) {
-        where.date.gte = new Date(startDate);
+        where.date.gte = this.dayStartUtc(startDate);
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.date.lte = end;
+        where.date.lte = this.dayEndUtc(endDate);
       }
     }
 
@@ -286,12 +298,10 @@ export class TeacherAttendanceService {
     if (startDate || endDate) {
       where.date = {};
       if (startDate) {
-        where.date.gte = new Date(startDate);
+        where.date.gte = this.dayStartUtc(startDate);
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.date.lte = end;
+        where.date.lte = this.dayEndUtc(endDate);
       }
     }
 
@@ -328,12 +338,10 @@ export class TeacherAttendanceService {
     if (startDate || endDate) {
       where.date = {};
       if (startDate) {
-        where.date.gte = new Date(startDate);
+        where.date.gte = this.dayStartUtc(startDate);
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.date.lte = end;
+        where.date.lte = this.dayEndUtc(endDate);
       }
     }
 

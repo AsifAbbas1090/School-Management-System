@@ -69,6 +69,24 @@ export class ExamsController {
     return this.examsService.getStudentResults(schoolId, studentId, user);
   }
 
+  @Get('results/by-class')
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.TEACHER,
+  )
+  @ApiOperation({ summary: 'Get class-wide results grouped across sections' })
+  @ApiResponse({ status: 200, description: 'Results retrieved successfully' })
+  async getClassResults(
+    @SchoolContext() schoolId: string,
+    @Query('classId') classId: string,
+    @Query('examId') examId?: string,
+    @Query('subjectId') subjectId?: string,
+  ) {
+    return this.examsService.getClassResults(schoolId, classId, examId, subjectId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get an exam by ID with results' })
   @ApiResponse({ status: 200, description: 'Exam retrieved successfully' })

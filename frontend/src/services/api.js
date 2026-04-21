@@ -840,40 +840,47 @@ export const announcementsService = {
 };
 
 /**
- * Messages Service
+ * Messaging service — chat-style 1-on-1 conversations backed by
+ * `/api/messaging/*`. The UI polls `getUnreadCount` for the sidebar
+ * badge and `getMessages` for new message delivery; there is no
+ * WebSocket layer.
  */
-export const messagesService = {
-  // getAll is aliased to inbox — backend only exposes GET /inbox
-  getAll: async (query = {}) => {
-    const params = new URLSearchParams(query);
-    return apiRequest(`/school/messages/inbox?${params}`);
-  },
+export const messagingService = {
+  getConversations: () =>
+    apiRequest('/messaging/conversations'),
 
-  getInbox: async (query = {}) => {
-    const params = new URLSearchParams(query);
-    return apiRequest(`/school/messages/inbox?${params}`);
-  },
-
-  create: async (data) => {
-    return apiRequest('/school/messages', {
+  startConversation: (recipientId) =>
+    apiRequest('/messaging/conversations', {
       method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
+      body: JSON.stringify({ recipientId }),
+    }),
 
-  reply: async (data) => {
-    return apiRequest('/school/messages', {
+  getMessages: (conversationId, page = 1, limit = 40) =>
+    apiRequest(
+      `/messaging/conversations/${conversationId}/messages` +
+        `?page=${page}&limit=${limit}`,
+    ),
+
+  sendMessage: (conversationId, content) =>
+    apiRequest(`/messaging/conversations/${conversationId}/messages`, {
       method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
+      body: JSON.stringify({ content }),
+    }),
 
-  markAsRead: async (id) => {
-    return apiRequest(`/school/messages/${id}/read`, {
-      method: 'PATCH',
-    });
-  },
+  getUnreadCount: () =>
+    apiRequest('/messaging/unread-count'),
+
+  searchUsers: (query) =>
+    apiRequest(`/messaging/users/search?q=${encodeURIComponent(query || '')}`),
 };
+
+/**
+ * Back-compat alias. The old inbox-style `MessagesPage.jsx` is being
+ * rewritten in this same change; the alias prevents a transient
+ * `undefined.getAll is not a function` if any other file imports
+ * `messagesService`. Safe to remove once no callers remain.
+ */
+export const messagesService = messagingService;
 
 /**
  * Student Attendance Service
@@ -1021,6 +1028,18 @@ export const examsService = {
   getStudentResults: async (params = {}) => {
     const q = new URLSearchParams(params);
     return apiRequest(`/school/exams/results?${q}`);
+  },
+
+  /** Class-wide results: sections are merged but each row carries its
+   *  section name so the UI can show a small chip next to the student. */
+  getClassResults: async ({ classId, examId, subjectId } = {}) => {
+    if (!classId) {
+      return { success: false, error: 'classId is required', data: null };
+    }
+    const q = new URLSearchParams({ classId });
+    if (examId) q.append('examId', examId);
+    if (subjectId) q.append('subjectId', subjectId);
+    return apiRequest(`/school/exams/results/by-class?${q}`);
   },
 
   addBulkResults: async (examId, data) => {
